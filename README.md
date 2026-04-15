@@ -211,6 +211,55 @@ val config = MqttConfig(
 
 Log levels from most to least verbose: `TRACE` → `DEBUG` → `INFO` → `WARN` → `ERROR` → `NONE`.
 
+## Android / KMP Integration
+
+The library is designed as a drop-in MQTT client for KMP projects. Consumer ProGuard/R8 rules are bundled automatically.
+
+### ViewModel-scoped client
+
+```kotlin
+class MqttViewModel : ViewModel() {
+    private val client = MqttClient("my-device") {
+        autoReconnect = true
+        keepAliveSeconds = 30
+    }
+
+    val connectionState = client.connectionState
+
+    fun connect(broker: String) {
+        viewModelScope.launch {
+            client.connect(MqttEndpoint.parse(broker))
+            client.subscribe("msh/2/e/#", QoS.AT_LEAST_ONCE)
+        }
+    }
+
+    fun observeMessages() = client.messagesMatching("msh/2/e/+/!/#")
+
+    override fun onCleared() {
+        viewModelScope.launch { client.close() }
+    }
+}
+```
+
+### Collecting in Compose
+
+```kotlin
+@Composable
+fun MqttScreen(viewModel: MqttViewModel) {
+    val state by viewModel.connectionState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        viewModel.observeMessages().collect { msg ->
+            // Process message
+        }
+    }
+}
+```
+
+### Version alignment
+
+The library uses **Ktor 3.4.2** and **kotlinx-coroutines 1.10.2**. If your project uses the same versions, no conflicts will arise. Pin versions in your `libs.versions.toml` to avoid Gradle resolution surprises.
+
 ## MQTT 5.0 Coverage
 
 | Feature | Status |
