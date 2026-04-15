@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.bytestring.ByteString
+import org.meshtastic.mqtt.packet.Auth
 import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.Connect
 import org.meshtastic.mqtt.packet.Disconnect
@@ -563,6 +564,146 @@ class MqttConnectionTest {
             assertEquals(1, pubComps.size)
             assertEquals(99, pubComps.first().packetIdentifier)
 
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    // --- QoS 2 Inbound Duplicate Suppression ---
+
+    @Test
+    fun qos2InboundDuplicateSuppressed() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            val received = mutableListOf<MqttMessage>()
+            val collectJob =
+                launch {
+                    connection.incomingMessages.collect { received.add(it) }
+                }
+            advanceUntilIdle()
+
+            // First QoS 2 PUBLISH — should be delivered
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "qos2/test",
+                    payload = "first".encodeToByteArray(),
+                    qos = QoS.EXACTLY_ONCE,
+                    packetIdentifier = 42,
+                    properties = MqttProperties.EMPTY,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, received.size, "First QoS 2 PUBLISH should be delivered")
+            assertEquals("first", received[0].payload.toByteArray().decodeToString())
+
+            // Retransmission with same packet ID — should NOT be delivered again
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "qos2/test",
+                    payload = "first".encodeToByteArray(),
+                    qos = QoS.EXACTLY_ONCE,
+                    dup = true,
+                    packetIdentifier = 42,
+                    properties = MqttProperties.EMPTY,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, received.size, "Duplicate QoS 2 PUBLISH should be suppressed")
+
+            // Both should have sent PUBREC
+            val pubRecs = transport.decodeSentPackets().filterIsInstance<PubRec>()
+            assertEquals(2, pubRecs.size, "PUBREC should be sent for both original and duplicate")
+
+            // PubRel should release the tracking
+            transport.enqueuePacket(PubRel(packetIdentifier = 42))
+            advanceUntilIdle()
+
+            collectJob.cancel()
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    // --- Server Keep Alive Override ---
+
+    @Test
+    fun serverKeepAliveOverridesConfig() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(keepAliveSeconds = 60)
+            val connection = MqttConnection(transport, config, this)
+
+            // CONNACK with Server Keep Alive of 30 seconds
+            transport.enqueuePacket(
+                ConnAck(
+                    reasonCode = ReasonCode.SUCCESS,
+                    properties = MqttProperties(serverKeepAlive = 30),
+                ),
+            )
+            val connAck = connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Verify the server keep alive was received
+            assertEquals(30, connAck.properties.serverKeepAlive)
+
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    // --- AUTH During Connect ---
+
+    @Test
+    fun authDuringConnectHandshake() =
+        runTest {
+            val transport = FakeTransport()
+            val config =
+                MqttConfig(
+                    clientId = "auth-client",
+                    keepAliveSeconds = 0,
+                    cleanStart = true,
+                    authenticationMethod = "SCRAM-SHA-256",
+                )
+            val connection = MqttConnection(transport, config, this)
+
+            val challenges = mutableListOf<AuthChallenge>()
+            val authJob =
+                launch {
+                    connection.authChallenges.collect { challenge ->
+                        challenges.add(challenge)
+                        // Respond to auth challenge
+                        connection.sendAuthResponse("response-data".encodeToByteArray())
+                    }
+                }
+            // Let the collector coroutine start
+            advanceUntilIdle()
+
+            // Enqueue: AUTH challenge then CONNACK
+            transport.enqueuePacket(
+                Auth(
+                    reasonCode = ReasonCode.CONTINUE_AUTHENTICATION,
+                    properties =
+                        MqttProperties(
+                            authenticationMethod = "SCRAM-SHA-256",
+                            authenticationData = "challenge-data".encodeToByteArray(),
+                        ),
+                ),
+            )
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+
+            val connAck = connection.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ReasonCode.SUCCESS, connAck.reasonCode)
+            assertEquals(1, challenges.size)
+            assertEquals(ReasonCode.CONTINUE_AUTHENTICATION, challenges[0].reasonCode)
+
+            authJob.cancel()
             connection.disconnect()
             advanceUntilIdle()
         }

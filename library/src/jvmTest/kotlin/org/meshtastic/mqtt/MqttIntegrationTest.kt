@@ -42,10 +42,7 @@ class MqttIntegrationTest {
     private val brokerPort = System.getenv("MQTT_BROKER_PORT")?.toIntOrNull() ?: 1883
     private val endpoint = MqttEndpoint.Tcp(brokerHost, brokerPort)
 
-    private fun createClient(config: MqttConfig = defaultConfig()): MqttClient {
-        val factory: (MqttEndpoint) -> MqttTransport = { TcpTransport() }
-        return MqttClient(config, factory)
-    }
+    private fun createClient(config: MqttConfig = defaultConfig()): MqttClient = MqttClient(config)
 
     private fun defaultConfig(
         clientId: String = "test-${System.nanoTime()}",

@@ -211,6 +211,7 @@ internal fun decodeProperties(
 
     var pos = offset
     val end = offset + length
+    val seenSingletons = mutableSetOf<Int>()
 
     var payloadFormatIndicator = false
     var messageExpiryInterval: Long? = null
@@ -243,8 +244,20 @@ internal fun decodeProperties(
     while (pos < end) {
         val idResult = VariableByteInt.decode(bytes, pos)
         pos += idResult.bytesConsumed
+        val propertyId = idResult.value
 
-        when (idResult.value) {
+        // Multi-occurrence properties: User Property and Subscription Identifier
+        val isMultiOccurrence =
+            propertyId == PropertyId.USER_PROPERTY ||
+                propertyId == PropertyId.SUBSCRIPTION_IDENTIFIER
+
+        if (!isMultiOccurrence) {
+            require(seenSingletons.add(propertyId)) {
+                "Duplicate property ID: 0x${propertyId.toString(16)}"
+            }
+        }
+
+        when (propertyId) {
             PropertyId.PAYLOAD_FORMAT_INDICATOR -> {
                 payloadFormatIndicator = decodeBooleanByte(bytes, pos)
                 pos += 1

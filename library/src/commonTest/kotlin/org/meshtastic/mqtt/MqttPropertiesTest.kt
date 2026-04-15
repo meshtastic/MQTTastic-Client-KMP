@@ -17,6 +17,8 @@
 package org.meshtastic.mqtt
 
 import org.meshtastic.mqtt.packet.MqttProperties
+import org.meshtastic.mqtt.packet.PropertyId
+import org.meshtastic.mqtt.packet.VariableByteInt
 import org.meshtastic.mqtt.packet.WireFormat
 import org.meshtastic.mqtt.packet.decodeProperties
 import org.meshtastic.mqtt.packet.encode
@@ -442,6 +444,54 @@ class MqttPropertiesTest {
             )
         val decoded = roundTrip(props)
         assertEquals(props, decoded)
+    }
+
+    // ===== Duplicate Singleton Property Rejection =====
+
+    @Test
+    fun duplicateSingletonPropertyThrows() {
+        // Manually construct bytes with duplicate Content Type (0x03) property
+        val contentType1 = "text/plain".encodeToByteArray()
+        val contentType2 = "application/json".encodeToByteArray()
+
+        val body =
+            byteArrayOf(PropertyId.CONTENT_TYPE.toByte()) +
+                WireFormat.encodeUtf8String(contentType1.decodeToString()) +
+                byteArrayOf(PropertyId.CONTENT_TYPE.toByte()) +
+                WireFormat.encodeUtf8String(contentType2.decodeToString())
+
+        val encoded = VariableByteInt.encode(body.size) + body
+
+        assertFailsWith<IllegalArgumentException> {
+            decodePropertiesFromEncoded(encoded)
+        }
+    }
+
+    @Test
+    fun multipleSubscriptionIdentifiersAllowed() {
+        // Subscription Identifier (0x0B) is multi-occurrence — should NOT throw
+        val props =
+            MqttProperties(
+                subscriptionIdentifier = listOf(1, 2, 3),
+            )
+        val result = roundTrip(props)
+        assertEquals(listOf(1, 2, 3), result.subscriptionIdentifier)
+    }
+
+    @Test
+    fun multipleUserPropertiesAllowed() {
+        // User Property (0x26) is multi-occurrence — should NOT throw
+        val props =
+            MqttProperties(
+                userProperties =
+                    listOf(
+                        "key1" to "val1",
+                        "key1" to "val2",
+                        "key2" to "val3",
+                    ),
+            )
+        val result = roundTrip(props)
+        assertEquals(3, result.userProperties.size)
     }
 
     // ===== Helpers =====

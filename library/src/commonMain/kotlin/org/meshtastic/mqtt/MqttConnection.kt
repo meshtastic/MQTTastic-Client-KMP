@@ -64,7 +64,7 @@ import kotlin.time.TimeSource
  * @property authenticationMethod The authentication method in use.
  * @property authenticationData The challenge data from the broker.
  */
-internal data class AuthChallenge(
+public data class AuthChallenge(
     val reasonCode: ReasonCode,
     val authenticationMethod: String?,
     val authenticationData: ByteArray?,
@@ -135,14 +135,17 @@ internal class MqttConnection(
     private val sendMutex = Mutex()
     private val acksMutex = Mutex()
     private val pendingAcks = mutableMapOf<Int, CompletableDeferred<MqttPacket>>()
+    private val inboundQos2PacketIds = mutableSetOf<Int>()
 
     private var readLoopJob: Job? = null
     private var keepAliveJob: Job? = null
     private var lastSendMark: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow()
+    private var awaitingPingResp = false
 
     // Server-assigned values from CONNACK
     private var serverReceiveMaximum: Int = DEFAULT_RECEIVE_MAXIMUM
     private var assignedClientId: String? = null
+    private var effectiveKeepAliveSeconds: Int = 0
 
     // Topic alias state (§3.3.2.3.4)
     private val aliasMutex = Mutex()
@@ -172,15 +175,8 @@ internal class MqttConnection(
             val connectPacket = buildConnectPacket()
             sendPacket(connectPacket)
 
-            // Read and decode CONNACK
-            val responseBytes = transport.receive()
-            val response = decodePacket(responseBytes)
-            val connAck =
-                response as? ConnAck
-                    ?: throw MqttConnectionException(
-                        ReasonCode.PROTOCOL_ERROR,
-                        "Expected CONNACK, got ${response.packetType}",
-                    )
+            // Read responses until CONNACK; AUTH packets may interleave for enhanced auth (§4.12)
+            val connAck = awaitConnAck()
 
             if (connAck.reasonCode != ReasonCode.SUCCESS) {
                 transport.close()
@@ -198,6 +194,10 @@ internal class MqttConnection(
             connAck.properties.assignedClientIdentifier?.let { assignedClientId = it }
             connAck.properties.topicAliasMaximum?.let { serverTopicAliasMaximum = it }
 
+            // Honor Server Keep Alive override (§3.2.2.3.14)
+            effectiveKeepAliveSeconds =
+                connAck.properties.serverKeepAlive ?: config.keepAliveSeconds
+
             // Initialize flow control semaphore based on server's Receive Maximum (§3.3.4)
             inflightSemaphore = Semaphore(serverReceiveMaximum)
 
@@ -213,6 +213,41 @@ internal class MqttConnection(
         ) {
             _connectionState.value = ConnectionState.DISCONNECTED
             throw MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, "Connection failed: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Read packets from the transport until CONNACK is received.
+     * Handles interleaved AUTH packets for enhanced authentication (§4.12).
+     */
+    private suspend fun awaitConnAck(): ConnAck {
+        while (true) {
+            val responseBytes = transport.receive()
+            val response = decodePacket(responseBytes)
+
+            when (response) {
+                is ConnAck -> {
+                    return response
+                }
+
+                is Auth -> {
+                    _authChallenges.emit(
+                        AuthChallenge(
+                            reasonCode = response.reasonCode,
+                            authenticationMethod = response.properties.authenticationMethod,
+                            authenticationData = response.properties.authenticationData,
+                        ),
+                    )
+                    // Application must call sendAuthResponse() to continue the handshake
+                }
+
+                else -> {
+                    throw MqttConnectionException(
+                        ReasonCode.PROTOCOL_ERROR,
+                        "Expected CONNACK or AUTH during handshake, got ${response.packetType}",
+                    )
+                }
+            }
         }
     }
 
@@ -234,11 +269,17 @@ internal class MqttConnection(
             if (config.cleanStart) {
                 packetIdAllocator.reset()
             }
-            outboundTopicAliases.clear()
-            inboundTopicAliases.clear()
-            nextOutboundAlias = 1
-            serverTopicAliasMaximum = 0
+            aliasMutex.withLock {
+                outboundTopicAliases.clear()
+                inboundTopicAliases.clear()
+                nextOutboundAlias = 1
+                serverTopicAliasMaximum = 0
+            }
+            acksMutex.withLock {
+                inboundQos2PacketIds.clear()
+            }
             inflightSemaphore = null
+            awaitingPingResp = false
         }
     }
 
@@ -494,10 +535,33 @@ internal class MqttConnection(
                     @Suppress("TooGenericExceptionCaught") e: Exception,
                 ) {
                     if (isActive) {
-                        _connectionState.value = ConnectionState.DISCONNECTED
+                        handleFatalError()
                     }
                 }
             }
+    }
+
+    /** Centralized fatal error handler: tear down resources and fail all pending waiters. */
+    private suspend fun handleFatalError() {
+        stopBackgroundJobs()
+        try {
+            transport.close()
+        } catch (
+            @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+        ) {
+            // Best-effort transport close
+        }
+        failAllPendingAcks()
+        _connectionState.value = ConnectionState.DISCONNECTED
+    }
+
+    /** Complete all pending ACK deferreds exceptionally so callers don't hang. */
+    private suspend fun failAllPendingAcks() {
+        val error = MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, "Connection lost")
+        acksMutex.withLock {
+            pendingAcks.values.forEach { it.completeExceptionally(error) }
+            pendingAcks.clear()
+        }
     }
 
     /** Dispatch an incoming packet to the appropriate handler. */
@@ -525,7 +589,8 @@ internal class MqttConnection(
             }
 
             is PubRel -> {
-                // Server-side QoS 2 completion: respond with PUBCOMP
+                // Server-side QoS 2 completion: respond with PUBCOMP and release tracking
+                acksMutex.withLock { inboundQos2PacketIds.remove(packet.packetIdentifier) }
                 sendPacket(PubComp(packetIdentifier = packet.packetIdentifier))
             }
 
@@ -544,7 +609,7 @@ internal class MqttConnection(
             }
 
             is PingReq, is PingResp -> {
-                // PingResp absorbed, PingReq unexpected but harmless
+                if (packet is PingResp) awaitingPingResp = false
             }
 
             is Auth -> {
@@ -555,6 +620,19 @@ internal class MqttConnection(
 
     /** Handle an incoming PUBLISH packet: resolve topic aliases, emit the message, and send QoS acks. */
     private suspend fun handleIncomingPublish(packet: Publish) {
+        // QoS 2 duplicate suppression — track packet IDs to prevent double delivery (§4.3.3)
+        if (packet.qos == QoS.EXACTLY_ONCE && packet.packetIdentifier != null) {
+            val isDuplicate =
+                acksMutex.withLock {
+                    !inboundQos2PacketIds.add(packet.packetIdentifier)
+                }
+            if (isDuplicate) {
+                // Retransmitted QoS 2 PUBLISH — send PUBREC again but do NOT deliver
+                sendPacket(PubRec(packetIdentifier = packet.packetIdentifier))
+                return
+            }
+        }
+
         val resolvedTopic = resolveInboundTopicAlias(packet)
 
         val message =
@@ -585,19 +663,29 @@ internal class MqttConnection(
     /**
      * Start the keepalive timer per §3.1.2.10.
      *
-     * Sends PINGREQ every `keepAliveSeconds * 0.75` seconds if no other packet was sent
-     * within that interval.
+     * Sends PINGREQ every `effectiveKeepAliveSeconds * 0.75` seconds if no other packet was sent
+     * within that interval. Honors Server Keep Alive from CONNACK (§3.2.2.3.14).
+     * Detects dead connections if no PINGRESP is received within the keepalive period.
      */
     private fun startKeepAlive() {
-        if (config.keepAliveSeconds <= 0) return
+        if (effectiveKeepAliveSeconds <= 0) return
 
-        val intervalMs = (config.keepAliveSeconds * KEEPALIVE_FACTOR).toLong()
+        val intervalMs = (effectiveKeepAliveSeconds * KEEPALIVE_FACTOR).toLong()
+        val deadlineMs = effectiveKeepAliveSeconds * MILLIS_PER_SECOND.toLong()
         keepAliveJob =
             scope.launch {
                 while (isActive && transport.isConnected) {
                     delay(intervalMs)
+
+                    // Check for PINGRESP timeout — dead connection
+                    if (awaitingPingResp) {
+                        handleFatalError()
+                        return@launch
+                    }
+
                     val elapsedMs = lastSendMark.elapsedNow().inWholeMilliseconds
                     if (elapsedMs >= intervalMs) {
+                        awaitingPingResp = true
                         sendPacket(PingReq)
                     }
                 }
@@ -725,17 +813,17 @@ internal class MqttConnection(
      * - If the packet has a topic alias with an empty topic: resolve from stored mapping.
      * - If the packet has no topic alias: return the topic as-is.
      */
-    private fun resolveInboundTopicAlias(packet: Publish): String {
+    private suspend fun resolveInboundTopicAlias(packet: Publish): String {
         val alias = packet.properties.topicAlias
         return if (alias != null) {
-            if (packet.topicName.isNotEmpty()) {
-                // New mapping: store topic for this alias
-                inboundTopicAliases[alias] = packet.topicName
-                packet.topicName
-            } else {
-                // Resolve from stored mapping
-                inboundTopicAliases[alias]
-                    ?: throw IllegalStateException("Unknown inbound topic alias: $alias")
+            aliasMutex.withLock {
+                if (packet.topicName.isNotEmpty()) {
+                    inboundTopicAliases[alias] = packet.topicName
+                    packet.topicName
+                } else {
+                    inboundTopicAliases[alias]
+                        ?: throw IllegalStateException("Unknown inbound topic alias: $alias")
+                }
             }
         } else {
             packet.topicName
@@ -770,6 +858,8 @@ internal class MqttConnection(
 
         /** Keepalive factor: send PINGREQ at 75% of keep alive interval. */
         const val KEEPALIVE_FACTOR = 750 // keepAliveSeconds * 750 = milliseconds at 75%
+
+        const val MILLIS_PER_SECOND = 1000
     }
 }
 

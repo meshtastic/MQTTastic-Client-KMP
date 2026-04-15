@@ -297,7 +297,7 @@ class MqttClientTest {
     // --- Close Releases Resources ---
 
     @Test
-    fun closeReleasesResources() =
+    fun closeSendsDisconnectAndClosesTransport() =
         runTest {
             val transport = FakeTransport()
             val client = connectedClient(transport, scope = this)
@@ -310,6 +310,10 @@ class MqttClientTest {
             advanceUntilIdle()
 
             assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+            // close() should have sent DISCONNECT and closed the transport
+            val sentDisconnect = transport.decodeSentPackets().last()
+            assertIs<Disconnect>(sentDisconnect)
+            assertTrue(!transport.isConnected, "Transport should be closed after close()")
         }
 
     // --- Publish ByteArray Convenience ---
@@ -330,6 +334,63 @@ class MqttClientTest {
             assertIs<Publish>(sentPublish)
             assertEquals("bytes/topic", sentPublish.topicName)
             assertTrue(sentPublish.payload.contentEquals(payload))
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Manual Disconnect Does Not Auto-Reconnect ---
+
+    @Test
+    fun manualDisconnectDoesNotAutoReconnect() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(autoReconnect = true)
+            val client = connectedClient(transport, config = config, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+
+            // Manual disconnect should NOT trigger reconnect even with autoReconnect=true
+            client.disconnect()
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+
+            // Give time for a reconnect to potentially trigger (it shouldn't)
+            advanceUntilIdle()
+            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+
+            client.close()
+        }
+
+    // --- Subscribe Only Records Successful SUBACK ---
+
+    @Test
+    fun subscribeIgnoresFailedSubAck() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(autoReconnect = false)
+            val client = connectedClient(transport, config = config, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // SUBACK with failure reason code
+            transport.enqueuePacket(
+                SubAck(
+                    packetIdentifier = 1,
+                    reasonCodes = listOf(ReasonCode.NOT_AUTHORIZED),
+                ),
+            )
+            client.subscribe("secret/topic", QoS.AT_LEAST_ONCE)
+            advanceUntilIdle()
+
+            // Verify the SUBSCRIBE was sent
+            val sentSubscribe =
+                transport.decodeSentPackets().filterIsInstance<Subscribe>().first()
+            assertEquals("secret/topic", sentSubscribe.subscriptions[0].topicFilter)
 
             client.disconnect()
             advanceUntilIdle()
