@@ -1,6 +1,3 @@
-import com.android.build.api.dsl.androidLibrary
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
@@ -17,29 +14,24 @@ version = "0.1.0"
 kotlin {
     applyDefaultHierarchyTemplate()
 
-    jvm()
+    // Compile to JVM 11 bytecode for maximum compatibility
+    jvm {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+        }
+    }
 
     androidLibrary {
         namespace = "org.meshtastic.mqtt"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
 
-        withJava()
-        withHostTestBuilder {}.configure {}
-
-        compilations.configureEach {
-            compileTaskProvider.configure {
-                compilerOptions {
-                    jvmTarget.set(JvmTarget.JVM_11)
-                }
-            }
-        }
+        withHostTestBuilder {}
     }
 
     iosArm64()
     iosSimulatorArm64()
     macosArm64()
-    macosX64()
     linuxX64()
     linuxArm64()
     mingwX64()
@@ -65,6 +57,9 @@ kotlin {
 
         jvmTest.get().dependsOn(nonWebTest)
         nativeTest.get().dependsOn(nonWebTest)
+
+        // Wire Android host test to nonWebTest for shared transport tests
+        findByName("androidHostTest")?.dependsOn(nonWebTest)
 
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)

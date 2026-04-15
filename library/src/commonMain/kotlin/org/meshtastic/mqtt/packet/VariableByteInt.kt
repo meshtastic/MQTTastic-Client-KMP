@@ -39,6 +39,8 @@ internal object VariableByteInt {
         bytes: ByteArray,
         offset: Int = 0,
     ): Pair<Int, Int> {
+        require(offset >= 0) { "Offset must be non-negative, got: $offset" }
+
         var multiplier = 1
         var value = 0
         var index = offset

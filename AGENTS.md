@@ -6,11 +6,11 @@ You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP,
 
 <context_and_memory>
 - **Project Goal:** A first-class, production-grade MQTT 5.0 client library for Kotlin Multiplatform — targeting JVM, Android, iOS, macOS, Linux, Windows (mingwX64), and wasmJs (browser). Published as `org.meshtastic:mqtt-client`.
-- **Language & Tech:** Kotlin 2.3+ (JDK 21), Gradle Kotlin DSL, Ktor (transport), kotlinx-coroutines. Zero dependencies beyond Ktor + coroutines.
+- **Language & Tech:** Kotlin 2.3.20, Gradle 9.3.0, Gradle Kotlin DSL, Ktor 3.4.2 (transport), kotlinx-coroutines 1.10.2. Zero dependencies beyond Ktor + coroutines.
 - **Core Architecture:**
   - `commonMain` is pure KMP — ALL protocol logic, packet encoding/decoding, client state machine, and connection management live here.
   - Platform source sets (`nonWebMain`, `wasmJsMain`) contain ONLY transport implementations.
-  - `MqttTransport` is the sole platform abstraction boundary.
+  - `MqttTransport` is the sole platform abstraction boundary (internal — not public API).
 - **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) — consult this for byte-level packet layouts, property definitions, and reason codes.
 </context_and_memory>
 
@@ -26,7 +26,7 @@ MqttClient (commonMain) — public API surface
             └─ WebSocketTransport (wasmJsMain) — ktor-client-websockets, binary frames
 ```
 
-`MqttTransport` is the only `expect`/`actual` boundary. Everything above it is pure common Kotlin.
+`MqttTransport` is an internal interface — not `expect`/`actual`. Everything above it is pure common Kotlin.
 
 ### Source set hierarchy (conceptual)
 
@@ -36,7 +36,7 @@ commonMain        ← ALL protocol logic: packets, encoder, decoder, client, con
 │   ├── jvmMain
 │   ├── androidMain
 │   ├── nativeMain (auto-created by default hierarchy template)
-│   │   ├── appleMain → iosMain, macosMain
+│   │   ├── appleMain → iosMain, macosMain (macosArm64 only — macosX64 deprecated in Kotlin 2.3.20)
 │   │   ├── linuxMain (linuxX64, linuxArm64)
 │   │   └── mingwMain (mingwX64)
 ├── wasmJsMain    ← WebSocketTransport (ktor-client-websockets)
@@ -57,19 +57,42 @@ commonMain        ← ALL protocol logic: packets, encoder, decoder, client, con
 > }
 > ```
 >
-> The `actual` transport declaration for TCP lives in `nonWebMain`, shared across all non-browser targets. Do NOT duplicate it into individual platform source sets.
+> The `MqttTransport` interface lives in `commonMain` — it is NOT `expect`/`actual`. Concrete implementations in `nonWebMain` and `wasmJsMain` are instantiated via factory functions.
 
-### Packet codec pipeline
+### Packet codec pipeline (planned)
 
 ```
 ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed class hierarchy)
 ```
 
-`MqttPacket` is a sealed class with subclasses for each of the 15 MQTT 5.0 packet types. Encode and decode are separate top-level functions, not methods on the packet classes. Properties are modeled as a dedicated `MqttProperties` class shared across packet types.
+`MqttPacket` will be a sealed class with subclasses for each of the 15 MQTT 5.0 packet types. Encode and decode are separate top-level functions, not methods on the packet classes. Properties are modeled as a dedicated `MqttProperties` class shared across packet types.
+
+### Current implementation status
+
+**Implemented:**
+- `QoS` — Quality of Service enum (public)
+- `ConnectionState` — connection lifecycle states (public)
+- `MqttMessage` — MQTT message with MQTT 5.0 publish properties, defensive ByteArray copy (public)
+- `PublishProperties` — MQTT 5.0 §3.3.2.3 publish properties (public)
+- `MqttEndpoint` — sealed class for TCP and WebSocket endpoints (public)
+- `MqttTransport` — internal transport interface
+- `PacketType` — packet type enum with fixed-header flag validation (internal)
+- `VariableByteInt` — Variable Byte Integer encoder/decoder per §1.5.5 (internal)
+
+**Not yet implemented (planned):**
+- `MqttPacket` sealed class hierarchy (15 packet types)
+- `MqttEncoder` / `MqttDecoder` — packet encode/decode functions
+- `MqttProperties` — full MQTT 5.0 property model
+- `ReasonCode` — MQTT 5.0 reason codes
+- `MqttClient` — public API surface
+- `MqttConnection` — lifecycle, keepalive, read loop
+- `MqttConfig` / `WillConfig` — configuration types
+- `TcpTransport` / `WebSocketTransport` — concrete transport implementations
+- Packet ID allocator, QoS state machines, flow control
 
 ## MQTT 5.0 Scope — Full Protocol
 
-All 15 packet types are implemented:
+All 15 packet types will be implemented:
 
 | Type | Code | Direction | QoS Flow |
 |------|------|-----------|----------|
@@ -143,7 +166,7 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 - **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.
-- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `QoS`, `ConnectionState`, `ReasonCode`, `MqttProperties`, and `WillConfig` are public. Everything else is `internal`.
+- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `MqttProperties`, and `WillConfig` are public. Everything else (including `MqttTransport`) is `internal`.
 - **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `atomicfu` for packet ID counters.
 - **Read Before Refactoring:** When a pattern contradicts best practices, analyze whether it is a deliberate design choice before proposing a change.
 </rules>
@@ -193,7 +216,7 @@ Honor the server's Receive Maximum property — do not exceed the allowed number
 
 - Group: `org.meshtastic`
 - Artifact: `mqtt-client`
-- Supported project targets: JVM, Android, iOS (iosArm64, iosSimulatorArm64), macOS (macosArm64, macosX64), Linux (linuxX64, linuxArm64), Windows (mingwX64), wasmJs
+- Supported project targets: JVM, Android, iOS (iosArm64, iosSimulatorArm64), macOS (macosArm64), Linux (linuxX64, linuxArm64), Windows (mingwX64), wasmJs
 - The `maven-publish` plugin auto-creates per-target publications (e.g., `mqtt-client-jvm`, `mqtt-client-iosarm64`) and a root `kotlinMultiplatform` publication that resolves to the correct platform artifact.
 - **Android publishing** requires the `androidLibrary {}` block in `build.gradle.kts` with the Android Gradle Library Plugin. Configure `namespace`, `compileSdk`, and `minSdk` inside this block. Without this, Android artifacts will not be published.
 - For Apple platforms, Maven publishes `.klib` artifacts. If XCFramework distribution is needed separately, that is a distinct build step (`assembleXCFramework`), not part of Maven publishing.
