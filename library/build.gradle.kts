@@ -23,6 +23,9 @@ plugins {
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.spotless)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.bcv)
+    alias(libs.plugins.dokka)
+    alias(libs.plugins.kover)
 }
 
 group = "org.meshtastic"
@@ -160,4 +163,14 @@ spotless {
 detekt {
     buildUponDefaultConfig = true
     config.setFrom(files("${rootProject.projectDir}/config/detekt/detekt.yml"))
+}
+
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(80)
+            }
+        }
+    }
 }

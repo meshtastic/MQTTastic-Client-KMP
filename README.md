@@ -84,50 +84,52 @@ dependencies {
 ## Quick Start
 
 ```kotlin
+import org.meshtastic.mqtt.*
+import kotlinx.coroutines.launch
+
 val client = MqttClient(
-    config = MqttConfig(
-        endpoint = MqttEndpoint.Tcp(host = "broker.example.com", port = 1883),
-        clientId = "my-client",
-    )
+    config = MqttConfig(clientId = "my-client"),
 )
 
-// Connect
-client.connect()
-
-// Subscribe
-client.subscribe("sensors/temperature") { message ->
-    println("Received: ${message.payload.decodeToString()} on ${message.topic}")
+// Collect incoming messages
+scope.launch {
+    client.messages.collect { message ->
+        println("${message.topic}: ${message.payload}")
+    }
 }
 
-// Publish
+// Connect to a broker
+client.connect(MqttEndpoint.Tcp(host = "broker.example.com", port = 1883))
+
+// Subscribe to topics
+client.subscribe("sensors/temperature", QoS.AT_LEAST_ONCE)
+
+// Publish a message
 client.publish(
     topic = "sensors/temperature",
-    payload = "22.5".encodeToByteArray(),
+    payload = "22.5",
     qos = QoS.AT_LEAST_ONCE,
 )
 
-// Disconnect
-client.disconnect()
+// Disconnect and release resources
+client.close()
 ```
-
-> **Note:** The public client API (`MqttClient`, `MqttConfig`) is under active development.
-> The packet codec layer and protocol primitives are implemented and tested.
 
 ## MQTT 5.0 Coverage
 
 | Feature | Status |
 |---------|--------|
-| All 15 packet types | 🚧 In progress |
-| QoS 0 / 1 / 2 state machines | 🚧 In progress |
-| Session management | 🚧 In progress |
-| Will messages & Will Delay | 🚧 Planned |
-| Topic aliases | 🚧 Planned |
-| Shared subscriptions | 🚧 Planned |
-| Enhanced authentication (AUTH) | 🚧 Planned |
-| Flow control (Receive Maximum) | 🚧 Planned |
-| Automatic reconnection | 🚧 Planned |
-| Server redirect | 🚧 Planned |
-| Request/Response pattern | 🚧 Planned |
+| All 15 packet types | ✅ |
+| QoS 0 / 1 / 2 state machines | ✅ |
+| Session management | ✅ |
+| Will messages & Will Delay | ✅ |
+| Topic aliases | ✅ |
+| Shared subscriptions | ✅ |
+| Enhanced authentication (AUTH) | ✅ |
+| Flow control (Receive Maximum) | ✅ |
+| Automatic reconnection | ✅ |
+| Server redirect | ✅ |
+| Request/Response pattern | ✅ |
 
 ## Building
 
@@ -137,6 +139,9 @@ client.disconnect()
 ./gradlew jvmTest            # JVM tests only
 ./gradlew spotlessCheck      # Check formatting
 ./gradlew detekt             # Static analysis
+./gradlew apiCheck           # Verify binary compatibility
+./gradlew koverVerify        # Check code coverage (≥80%)
+./gradlew dokkaGeneratePublicationHtml  # Generate API docs
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed build instructions.
