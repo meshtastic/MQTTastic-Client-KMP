@@ -74,6 +74,11 @@ import kotlinx.io.bytestring.ByteString
  *   Doubles after each failed attempt up to [reconnectMaxDelayMs]. Must be > 0.
  * @property reconnectMaxDelayMs Maximum delay between reconnection attempts in milliseconds.
  *   Must be ≥ [reconnectBaseDelayMs].
+ * @property logger Optional [MqttLogger] implementation that receives log messages from the
+ *   library. When `null` (default), no logging occurs and zero overhead is incurred.
+ * @property logLevel Minimum log level for messages delivered to [logger]. Messages below
+ *   this level are discarded without constructing the message string. Defaults to
+ *   [MqttLogLevel.NONE] (all logging disabled).
  */
 public data class MqttConfig(
     val clientId: String = "",
@@ -94,6 +99,8 @@ public data class MqttConfig(
     val autoReconnect: Boolean = true,
     val reconnectBaseDelayMs: Long = 1000,
     val reconnectMaxDelayMs: Long = 30000,
+    val logger: MqttLogger? = null,
+    val logLevel: MqttLogLevel = MqttLogLevel.NONE,
 ) {
     init {
         require(keepAliveSeconds in 0..65_535) {

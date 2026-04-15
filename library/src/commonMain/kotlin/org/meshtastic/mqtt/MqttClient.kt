@@ -94,6 +94,7 @@ public class MqttClient
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     ) {
         private val transportFactory: (MqttEndpoint) -> MqttTransport = { createPlatformTransport() }
+        private val log = MqttLoggerInternal(config.logger, config.logLevel)
 
         /** Internal constructor for testing with a pre-built transport and injected scope. */
         internal constructor(config: MqttConfig, transport: MqttTransport, scope: CoroutineScope) :
@@ -171,6 +172,7 @@ public class MqttClient
          */
         public suspend fun connect(endpoint: MqttEndpoint) {
             connectionMutex.withLock {
+                log.info(TAG) { "Connecting to $endpoint" }
                 intentionalDisconnect = false
                 currentEndpoint = endpoint
                 connectInternal(endpoint)
@@ -185,6 +187,7 @@ public class MqttClient
          */
         public suspend fun disconnect() {
             connectionMutex.withLock {
+                log.info(TAG) { "Disconnecting" }
                 intentionalDisconnect = true
                 reconnectJob?.cancel()
                 reconnectJob = null
@@ -194,6 +197,7 @@ public class MqttClient
                     stopForwardJobs()
                     connection = null
                     _connectionState.value = ConnectionState.DISCONNECTED
+                    log.info(TAG) { "Disconnected" }
                 }
             }
         }
@@ -205,6 +209,7 @@ public class MqttClient
          * @throws IllegalStateException if not connected.
          */
         public suspend fun publish(message: MqttMessage) {
+            log.debug(TAG) { "Publishing to '${message.topic}' qos=${message.qos} retain=${message.retain}" }
             requireConnection().publish(message)
         }
 
@@ -309,8 +314,10 @@ public class MqttClient
                     retainAsPublished = retainAsPublished,
                     retainHandling = retainHandling,
                 )
+            log.debug(TAG) { "Subscribing to '$topicFilter' qos=$qos" }
             val subAck = requireConnection().subscribe(listOf(sub), MqttProperties.EMPTY)
             recordSuccessfulSubscriptions(listOf(sub), subAck)
+            log.info(TAG) { "Subscribed to '$topicFilter'" }
         }
 
         /**
@@ -325,8 +332,10 @@ public class MqttClient
                 topicFilters.map { (filter, qos) ->
                     Subscription(topicFilter = filter, maxQos = qos)
                 }
+            log.debug(TAG) { "Subscribing to ${topicFilters.keys}" }
             val subAck = requireConnection().subscribe(subscriptions, MqttProperties.EMPTY)
             recordSuccessfulSubscriptions(subscriptions, subAck)
+            log.info(TAG) { "Subscribed to ${topicFilters.keys}" }
         }
 
         /**
@@ -335,10 +344,12 @@ public class MqttClient
          * @param topicFilters The topic filters to unsubscribe from.
          */
         public suspend fun unsubscribe(vararg topicFilters: String) {
+            log.debug(TAG) { "Unsubscribing from ${topicFilters.toList()}" }
             requireConnection().unsubscribe(topicFilters.toList(), MqttProperties.EMPTY)
             subscriptionsMutex.withLock {
                 topicFilters.forEach { activeSubscriptions.remove(it) }
             }
+            log.info(TAG) { "Unsubscribed from ${topicFilters.toList()}" }
         }
 
         /**
@@ -360,6 +371,7 @@ public class MqttClient
          * cannot be reused.
          */
         public suspend fun close() {
+            log.info(TAG) { "Closing client" }
             connectionMutex.withLock {
                 intentionalDisconnect = true
                 reconnectJob?.cancel()
@@ -376,16 +388,18 @@ public class MqttClient
                 _connectionState.value = ConnectionState.DISCONNECTED
             }
             scope.coroutineContext[Job]?.cancel()
+            log.info(TAG) { "Client closed" }
         }
 
         // --- Private helpers ---
 
         private suspend fun connectInternal(endpoint: MqttEndpoint) {
             val transport = effectiveTransportFactory(endpoint)
-            val conn = MqttConnection(transport, config, scope)
+            val conn = MqttConnection(transport, config, scope, log)
             conn.connect(endpoint)
             connection = conn
             startForwarding(conn)
+            log.info(TAG) { "Connected to $endpoint" }
         }
 
         private fun startForwarding(conn: MqttConnection) {
@@ -436,11 +450,15 @@ public class MqttClient
                     var delayMs = config.reconnectBaseDelayMs
                     val endpoint = currentEndpoint ?: return@launch
 
+                    log.warn(TAG) { "Connection lost, starting reconnect to $endpoint" }
+
                     while (isActive && !intentionalDisconnect) {
+                        log.debug(TAG) { "Reconnecting in ${delayMs}ms" }
                         delay(delayMs)
                         try {
                             connectInternal(endpoint)
                             resubscribe()
+                            log.info(TAG) { "Reconnected to $endpoint" }
                             reconnectJob = null
                             return@launch
                         } catch (
@@ -448,8 +466,9 @@ public class MqttClient
                         ) {
                             return@launch
                         } catch (
-                            @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                            @Suppress("TooGenericExceptionCaught") e: Exception,
                         ) {
+                            log.warn(TAG, throwable = e) { "Reconnect attempt failed" }
                             _connectionState.value = ConnectionState.RECONNECTING
                             delayMs = (delayMs * 2).coerceAtMost(config.reconnectMaxDelayMs)
                         }
@@ -491,5 +510,6 @@ public class MqttClient
         internal companion object {
             const val MESSAGE_BUFFER_CAPACITY = 64
             const val AUTH_BUFFER_CAPACITY = 8
+            private const val TAG = "MqttClient"
         }
     }

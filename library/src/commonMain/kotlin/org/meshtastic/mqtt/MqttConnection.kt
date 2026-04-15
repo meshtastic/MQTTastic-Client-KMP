@@ -115,6 +115,7 @@ internal class MqttConnection(
     private val transport: MqttTransport,
     private val config: MqttConfig,
     private val scope: CoroutineScope,
+    private val log: MqttLoggerInternal = MqttLoggerInternal.NOOP,
 ) {
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
 
@@ -169,16 +170,19 @@ internal class MqttConnection(
      */
     suspend fun connect(endpoint: MqttEndpoint): ConnAck {
         _connectionState.value = ConnectionState.CONNECTING
+        log.debug(TAG) { "Establishing transport connection to $endpoint" }
 
         try {
             transport.connect(endpoint)
             val connectPacket = buildConnectPacket()
+            log.debug(TAG) { "Sending CONNECT (clientId='${config.clientId}', cleanStart=${config.cleanStart})" }
             sendPacket(connectPacket)
 
             // Read responses until CONNACK; AUTH packets may interleave for enhanced auth (§4.12)
             val connAck = awaitConnAck()
 
             if (connAck.reasonCode != ReasonCode.SUCCESS) {
+                log.error(TAG) { "Connection refused: ${connAck.reasonCode}" }
                 transport.close()
                 _connectionState.value = ConnectionState.DISCONNECTED
                 val serverRef = connAck.properties.serverReference
@@ -188,6 +192,8 @@ internal class MqttConnection(
                     serverReference = serverRef,
                 )
             }
+
+            log.debug(TAG) { "Received CONNACK: reasonCode=${connAck.reasonCode}" }
 
             // Store server-assigned values from CONNACK properties
             connAck.properties.receiveMaximum?.let { serverReceiveMaximum = it }
@@ -201,6 +207,13 @@ internal class MqttConnection(
             // Initialize flow control semaphore based on server's Receive Maximum (§3.3.4)
             inflightSemaphore = Semaphore(serverReceiveMaximum)
 
+            log.debug(TAG) {
+                "Session established: keepAlive=${effectiveKeepAliveSeconds}s, " +
+                    "serverReceiveMax=$serverReceiveMaximum, " +
+                    "topicAliasMax=$serverTopicAliasMaximum" +
+                    (assignedClientId?.let { ", assignedClientId=$it" } ?: "")
+            }
+
             _connectionState.value = ConnectionState.CONNECTED
             startReadLoop()
             startKeepAlive()
@@ -211,6 +224,7 @@ internal class MqttConnection(
         } catch (
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {
+            log.error(TAG, throwable = e) { "Connection failed: ${e.message}" }
             _connectionState.value = ConnectionState.DISCONNECTED
             throw MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, "Connection failed: ${e.message}", e)
         }
@@ -257,6 +271,7 @@ internal class MqttConnection(
      * Stops keepalive and read loop, sends a DISCONNECT packet, then closes the transport.
      */
     suspend fun disconnect(reasonCode: ReasonCode = ReasonCode.SUCCESS) {
+        log.debug(TAG) { "Disconnecting with reasonCode=$reasonCode" }
         stopBackgroundJobs()
 
         try {
@@ -280,6 +295,7 @@ internal class MqttConnection(
             }
             inflightSemaphore = null
             awaitingPingResp = false
+            log.debug(TAG) { "Disconnect complete, state reset" }
         }
     }
 
@@ -301,6 +317,7 @@ internal class MqttConnection(
 
         return when (message.qos) {
             QoS.AT_MOST_ONCE -> {
+                log.debug(TAG) { "Sending PUBLISH QoS 0 to '${message.topic}'" }
                 sendPacket(
                     Publish(
                         topicName = resolvedTopic,
@@ -314,10 +331,12 @@ internal class MqttConnection(
             }
 
             QoS.AT_LEAST_ONCE -> {
+                log.debug(TAG) { "Sending PUBLISH QoS 1 to '${message.topic}'" }
                 publishQos1(message, resolvedTopic, resolvedProperties)
             }
 
             QoS.EXACTLY_ONCE -> {
+                log.debug(TAG) { "Sending PUBLISH QoS 2 to '${message.topic}'" }
                 publishQos2(message, resolvedTopic, resolvedProperties)
             }
         }
@@ -341,6 +360,9 @@ internal class MqttConnection(
         registerPendingAck(packetId, deferred)
 
         try {
+            log.debug(TAG) {
+                "Sending SUBSCRIBE packetId=$packetId filters=${subscriptions.map { it.topicFilter }}"
+            }
             sendPacket(
                 Subscribe(
                     packetIdentifier = packetId,
@@ -350,6 +372,7 @@ internal class MqttConnection(
             )
 
             val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as SubAck
+            log.debug(TAG) { "Received SUBACK packetId=$packetId reasonCodes=${ack.reasonCodes}" }
             return ack
         } finally {
             removePendingAck(packetId)
@@ -375,6 +398,7 @@ internal class MqttConnection(
         registerPendingAck(packetId, deferred)
 
         try {
+            log.debug(TAG) { "Sending UNSUBSCRIBE packetId=$packetId filters=$topicFilters" }
             sendPacket(
                 Unsubscribe(
                     packetIdentifier = packetId,
@@ -384,6 +408,7 @@ internal class MqttConnection(
             )
 
             val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as UnsubAck
+            log.debug(TAG) { "Received UNSUBACK packetId=$packetId" }
             return ack
         } finally {
             removePendingAck(packetId)
@@ -416,7 +441,9 @@ internal class MqttConnection(
     /** Send a packet over the transport, guarded by [sendMutex] for wire-level serialization. */
     private suspend fun sendPacket(packet: MqttPacket) {
         sendMutex.withLock {
-            transport.send(packet.encode())
+            val bytes = packet.encode()
+            log.trace(TAG) { "Sending ${packet.packetType} (${bytes.size} bytes)" }
+            transport.send(bytes)
             lastSendMark = TimeSource.Monotonic.markNow()
         }
     }
@@ -455,6 +482,7 @@ internal class MqttConnection(
         registerPendingAck(packetId, deferred)
 
         try {
+            log.debug(TAG) { "QoS 1 PUBLISH packetId=$packetId to '$resolvedTopic'" }
             sendPacket(
                 Publish(
                     topicName = resolvedTopic,
@@ -467,6 +495,7 @@ internal class MqttConnection(
             )
 
             val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as PubAck
+            log.debug(TAG) { "Received PUBACK packetId=$packetId reasonCode=${ack.reasonCode}" }
             return ack.reasonCode
         } finally {
             removePendingAck(packetId)
@@ -486,6 +515,7 @@ internal class MqttConnection(
         registerPendingAck(packetId, pubRecDeferred)
 
         try {
+            log.debug(TAG) { "QoS 2 PUBLISH packetId=$packetId to '$resolvedTopic'" }
             sendPacket(
                 Publish(
                     topicName = resolvedTopic,
@@ -499,14 +529,17 @@ internal class MqttConnection(
 
             // Step 1: Wait for PUBREC
             withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as PubRec
+            log.debug(TAG) { "QoS 2 received PUBREC packetId=$packetId" }
             removePendingAck(packetId)
 
             // Step 2: Send PUBREL and wait for PUBCOMP
             val pubCompDeferred = CompletableDeferred<MqttPacket>()
             registerPendingAck(packetId, pubCompDeferred)
+            log.debug(TAG) { "QoS 2 sending PUBREL packetId=$packetId" }
             sendPacket(PubRel(packetIdentifier = packetId))
 
             val pubComp = withTimeout(ACK_TIMEOUT_MS) { pubCompDeferred.await() } as PubComp
+            log.debug(TAG) { "QoS 2 received PUBCOMP packetId=$packetId reasonCode=${pubComp.reasonCode}" }
             return pubComp.reasonCode
         } finally {
             removePendingAck(packetId)
@@ -521,10 +554,13 @@ internal class MqttConnection(
     private fun startReadLoop() {
         readLoopJob =
             scope.launch {
+                log.debug(TAG) { "Read loop started" }
                 try {
                     while (isActive && transport.isConnected) {
                         val bytes = transport.receive()
+                        log.trace(TAG) { "Received ${bytes.size} bytes from transport" }
                         val packet = decodePacket(bytes)
+                        log.debug(TAG) { "Received ${packet.packetType}" }
                         handlePacket(packet)
                     }
                 } catch (
@@ -535,14 +571,17 @@ internal class MqttConnection(
                     @Suppress("TooGenericExceptionCaught") e: Exception,
                 ) {
                     if (isActive) {
+                        log.error(TAG, throwable = e) { "Read loop error: ${e.message}" }
                         handleFatalError()
                     }
                 }
+                log.debug(TAG) { "Read loop stopped" }
             }
     }
 
     /** Centralized fatal error handler: tear down resources and fail all pending waiters. */
     private suspend fun handleFatalError() {
+        log.error(TAG) { "Fatal error — tearing down connection" }
         stopBackgroundJobs()
         try {
             transport.close()
@@ -569,27 +608,32 @@ internal class MqttConnection(
     private suspend fun handlePacket(packet: MqttPacket) {
         when (packet) {
             is PubAck -> {
+                log.debug(TAG) { "Received PUBACK packetId=${packet.packetIdentifier}" }
                 completePendingAck(packet.packetIdentifier, packet)
             }
 
             is PubRec -> {
+                log.debug(TAG) { "Received PUBREC packetId=${packet.packetIdentifier}" }
                 completePendingAck(packet.packetIdentifier, packet)
             }
 
             is PubComp -> {
+                log.debug(TAG) { "Received PUBCOMP packetId=${packet.packetIdentifier}" }
                 completePendingAck(packet.packetIdentifier, packet)
             }
 
             is SubAck -> {
+                log.debug(TAG) { "Received SUBACK packetId=${packet.packetIdentifier}" }
                 completePendingAck(packet.packetIdentifier, packet)
             }
 
             is UnsubAck -> {
+                log.debug(TAG) { "Received UNSUBACK packetId=${packet.packetIdentifier}" }
                 completePendingAck(packet.packetIdentifier, packet)
             }
 
             is PubRel -> {
-                // Server-side QoS 2 completion: respond with PUBCOMP and release tracking
+                log.debug(TAG) { "Received PUBREL packetId=${packet.packetIdentifier}, sending PUBCOMP" }
                 acksMutex.withLock { inboundQos2PacketIds.remove(packet.packetIdentifier) }
                 sendPacket(PubComp(packetIdentifier = packet.packetIdentifier))
             }
@@ -599,20 +643,25 @@ internal class MqttConnection(
             }
 
             is Disconnect -> {
+                log.warn(TAG) { "Received DISCONNECT from broker: reasonCode=${packet.reasonCode}" }
                 _connectionState.value = ConnectionState.DISCONNECTED
                 stopBackgroundJobs()
                 transport.close()
             }
 
             is ConnAck, is Connect, is Subscribe, is Unsubscribe -> {
-                // Unexpected packets from server — protocol violation
+                log.warn(TAG) { "Unexpected ${packet.packetType} from broker — protocol violation" }
             }
 
             is PingReq, is PingResp -> {
-                if (packet is PingResp) awaitingPingResp = false
+                if (packet is PingResp) {
+                    log.trace(TAG) { "Received PINGRESP" }
+                    awaitingPingResp = false
+                }
             }
 
             is Auth -> {
+                log.debug(TAG) { "Received AUTH: reasonCode=${packet.reasonCode}" }
                 handleAuthPacket(packet)
             }
         }
@@ -627,13 +676,19 @@ internal class MqttConnection(
                     !inboundQos2PacketIds.add(packet.packetIdentifier)
                 }
             if (isDuplicate) {
-                // Retransmitted QoS 2 PUBLISH — send PUBREC again but do NOT deliver
+                log.debug(TAG) {
+                    "QoS 2 duplicate PUBLISH packetId=${packet.packetIdentifier}, resending PUBREC"
+                }
                 sendPacket(PubRec(packetIdentifier = packet.packetIdentifier))
                 return
             }
         }
 
         val resolvedTopic = resolveInboundTopicAlias(packet)
+        log.debug(TAG) {
+            "Incoming PUBLISH topic='$resolvedTopic' qos=${packet.qos} retain=${packet.retain}" +
+                (packet.packetIdentifier?.let { " packetId=$it" } ?: "")
+        }
 
         val message =
             MqttMessage(
@@ -672,6 +727,7 @@ internal class MqttConnection(
 
         val intervalMs = (effectiveKeepAliveSeconds * KEEPALIVE_FACTOR).toLong()
         val deadlineMs = effectiveKeepAliveSeconds * MILLIS_PER_SECOND.toLong()
+        log.debug(TAG) { "Keepalive started: interval=${intervalMs}ms, deadline=${deadlineMs}ms" }
         keepAliveJob =
             scope.launch {
                 while (isActive && transport.isConnected) {
@@ -679,12 +735,14 @@ internal class MqttConnection(
 
                     // Check for PINGRESP timeout — dead connection
                     if (awaitingPingResp) {
+                        log.warn(TAG) { "PINGRESP timeout — connection assumed dead" }
                         handleFatalError()
                         return@launch
                     }
 
                     val elapsedMs = lastSendMark.elapsedNow().inWholeMilliseconds
                     if (elapsedMs >= intervalMs) {
+                        log.trace(TAG) { "Sending PINGREQ (${elapsedMs}ms since last send)" }
                         awaitingPingResp = true
                         sendPacket(PingReq)
                     }
@@ -844,6 +902,8 @@ internal class MqttConnection(
     }
 
     internal companion object {
+        private const val TAG = "MqttConnection"
+
         /** Extra buffer capacity for incoming message flow. */
         const val INCOMING_BUFFER_CAPACITY = 64
 
