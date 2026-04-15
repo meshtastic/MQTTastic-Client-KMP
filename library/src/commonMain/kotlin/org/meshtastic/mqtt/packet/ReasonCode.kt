@@ -22,7 +22,12 @@ package org.meshtastic.mqtt.packet
  * Reason codes indicate the result of an operation. They appear in CONNACK, PUBACK,
  * PUBREC, PUBREL, PUBCOMP, SUBACK, UNSUBACK, DISCONNECT, and AUTH packets.
  *
+ * Success codes are in the range 0x00..0x1F. Error codes are 0x80 and above.
+ * The [SUCCESS] code (0x00) is overloaded — it also represents "Normal Disconnection"
+ * in DISCONNECT and "Granted QoS 0" in SUBACK.
+ *
  * @property value The single-byte reason code value as defined in the MQTT 5.0 specification.
+ * @see <a href="https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901031">§2.4 Reason Code</a>
  */
 public enum class ReasonCode(
     public val value: Int,

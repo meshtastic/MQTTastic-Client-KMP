@@ -22,44 +22,77 @@ import kotlinx.io.bytestring.ByteString
  * Configuration for an MQTT 5.0 client connection.
  *
  * Maps to the fields and properties of the CONNECT packet (§3.1).
- * All binary data uses [ByteString] for immutability.
+ * All binary data uses [ByteString] for immutability. Construct using
+ * named parameters and Kotlin's `copy()` for immutable configuration variants.
+ *
+ * ## Example
+ * ```kotlin
+ * val config = MqttConfig(
+ *     clientId = "sensor-hub-01",
+ *     keepAliveSeconds = 30,
+ *     cleanStart = false,
+ *     autoReconnect = true,
+ * )
+ * ```
+ *
+ * @property clientId Client identifier sent to the broker. An empty string requests the
+ *   broker to assign a unique identifier (returned in CONNACK via Assigned Client Identifier).
+ * @property keepAliveSeconds Maximum interval in seconds between control packets (§3.1.2.10).
+ *   The client sends PINGREQ if no other packet is sent within 75% of this interval.
+ *   Set to `0` to disable the keepalive mechanism. Range: 0..65,535.
+ * @property cleanStart If `true`, the broker discards any existing session state and starts
+ *   fresh. If `false`, the broker resumes the previous session (identified by [clientId])
+ *   including in-flight QoS 1/2 messages and active subscriptions (§3.1.2.4).
+ * @property username Optional username for simple password-based authentication (§3.1.3.5).
+ * @property password Optional password for authentication, stored as an immutable [ByteString] (§3.1.3.6).
+ * @property will Optional will message configuration. If set, the broker publishes this message
+ *   when the client disconnects unexpectedly (§3.1.3.2).
+ * @property sessionExpiryInterval How long the broker retains session state after disconnection,
+ *   in seconds. `0` = expire immediately on disconnect, `null` = use broker default.
+ *   Max value: 4,294,967,295 (§3.1.2.11.3).
+ * @property receiveMaximum Maximum number of concurrent in-flight QoS 1 and QoS 2 messages
+ *   the client is willing to process. The broker will not send more than this number of
+ *   unacknowledged publishes. Range: 1..65,535 (§3.1.2.11.4).
+ * @property maximumPacketSize Maximum MQTT packet size (in bytes) the client can accept.
+ *   `null` = no limit imposed. Range: 1..4,294,967,295 (§3.1.2.11.5).
+ * @property topicAliasMaximum Maximum number of topic aliases the client accepts from the broker.
+ *   `0` = topic aliases are not supported by this client. Range: 0..65,535 (§3.1.2.11.6).
+ * @property requestResponseInformation If `true`, requests the broker to include Response Information
+ *   in CONNACK, which can be used as a basis for response topics (§3.1.2.11.7).
+ * @property requestProblemInformation If `true` (default), the broker may include Reason String
+ *   and User Properties in packets where a reason code indicates failure (§3.1.2.11.8).
+ * @property userProperties Application-defined key-value string pairs sent with the CONNECT packet.
+ *   Keys may repeat. Forwarded to the broker but not to other clients.
+ * @property authenticationMethod Authentication method for MQTT 5.0 enhanced authentication (§4.12),
+ *   e.g. `"SCRAM-SHA-256"`. When set, enables the AUTH packet challenge/response flow.
+ * @property authenticationData Initial authentication data for enhanced auth (§3.1.2.11.10).
+ *   The format is defined by the [authenticationMethod].
+ * @property autoReconnect If `true` (default), the client automatically attempts to reconnect
+ *   with exponential backoff when the connection is lost unexpectedly. Subscriptions are
+ *   re-established on successful reconnection.
+ * @property reconnectBaseDelayMs Initial delay between reconnection attempts in milliseconds.
+ *   Doubles after each failed attempt up to [reconnectMaxDelayMs]. Must be > 0.
+ * @property reconnectMaxDelayMs Maximum delay between reconnection attempts in milliseconds.
+ *   Must be ≥ [reconnectBaseDelayMs].
  */
 public data class MqttConfig(
-    /** Client identifier. Empty string lets the broker assign one. */
     val clientId: String = "",
-    /** Keep alive interval in seconds (0 = disabled). Per §3.1.2.10. */
     val keepAliveSeconds: Int = 60,
-    /** If true, start a new session and discard any existing one. Per §3.1.2.4. */
     val cleanStart: Boolean = true,
-    /** Optional username for authentication. */
     val username: String? = null,
-    /** Optional password for authentication (immutable). */
     val password: ByteString? = null,
-    /** Optional will message configuration. */
     val will: WillConfig? = null,
-    /** Session expiry interval in seconds. 0 = expire on disconnect, null = use broker default. Per §3.1.2.11.3. */
     val sessionExpiryInterval: Long? = null,
-    /** Maximum number of in-flight QoS 1/2 messages the client will accept. Per §3.1.2.11.4. */
     val receiveMaximum: Int = 65535,
-    /** Maximum packet size the client can accept. Null = no limit. Per §3.1.2.11.5. */
     val maximumPacketSize: Long? = null,
-    /** Maximum topic alias value. 0 = no topic aliases. Per §3.1.2.11.6. */
     val topicAliasMaximum: Int = 0,
-    /** Request the server to return Response Information. Per §3.1.2.11.7. */
     val requestResponseInformation: Boolean = false,
-    /** Request the server to return Reason String and User Properties on failures. Per §3.1.2.11.8. */
     val requestProblemInformation: Boolean = true,
-    /** User-defined key-value properties to send with CONNECT. */
     val userProperties: List<Pair<String, String>> = emptyList(),
-    /** Authentication method for enhanced auth (e.g. "SCRAM-SHA-256"). Per §3.1.2.11.9. */
     val authenticationMethod: String? = null,
-    /** Authentication data for enhanced auth. Per §3.1.2.11.10. */
     val authenticationData: ByteString? = null,
-    /** Enable automatic reconnection with exponential backoff. */
     val autoReconnect: Boolean = true,
-    /** Base delay for reconnection backoff in milliseconds. */
     val reconnectBaseDelayMs: Long = 1000,
-    /** Maximum delay for reconnection backoff in milliseconds. */
     val reconnectMaxDelayMs: Long = 30000,
 ) {
     init {
@@ -94,31 +127,40 @@ public data class MqttConfig(
 /**
  * Configuration for an MQTT 5.0 Will Message (§3.1.3.2).
  *
- * The will message is published by the broker if the client disconnects unexpectedly.
+ * The will message is published by the broker when the client disconnects unexpectedly
+ * (e.g. network failure, keepalive timeout). If the client disconnects gracefully via
+ * [MqttClient.disconnect], the will message is discarded unless DISCONNECT is sent with
+ * reason code [org.meshtastic.mqtt.packet.ReasonCode.DISCONNECT_WITH_WILL].
+ *
  * All binary data uses [ByteString] for immutability.
+ *
+ * @property topic Topic the will message will be published to. Must not be blank.
+ * @property payload Payload of the will message as an immutable [ByteString].
+ * @property qos QoS level for the will message delivery.
+ * @property retain If `true`, the broker retains the will message as the last known good
+ *   value for [topic], delivering it to future subscribers.
+ * @property willDelayInterval Delay in seconds between the server detecting an unexpected
+ *   disconnect and publishing the will message. Allows time for the client to reconnect
+ *   and cancel the will. Range: 0..4,294,967,295. `null` = publish immediately (§3.1.3.2).
+ * @property messageExpiryInterval Lifetime of the will message in seconds after publication.
+ *   Range: 0..4,294,967,295. `null` = no expiry.
+ * @property contentType MIME content type of the will payload (e.g. `"application/json"`).
+ * @property responseTopic Topic for request/response pattern in the will message.
+ * @property correlationData Correlation data for request/response pattern in the will message.
+ * @property payloadFormatIndicator If `true`, the will payload is UTF-8 encoded text.
+ * @property userProperties Application-defined key-value pairs sent with the will message.
  */
 public data class WillConfig(
-    /** Topic for the will message. */
     val topic: String,
-    /** Payload for the will message (immutable). */
     val payload: ByteString = ByteString(),
-    /** QoS level for the will message. */
     val qos: QoS = QoS.AT_MOST_ONCE,
-    /** Whether the will message should be retained. */
     val retain: Boolean = false,
-    /** Delay before publishing the will in seconds. Per §3.1.3.2. */
     val willDelayInterval: Long? = null,
-    /** Message expiry interval for the will in seconds. */
     val messageExpiryInterval: Long? = null,
-    /** MIME content type of the will payload. */
     val contentType: String? = null,
-    /** Response topic for the will message. */
     val responseTopic: String? = null,
-    /** Correlation data for the will message (immutable). */
     val correlationData: ByteString? = null,
-    /** Whether the will payload is UTF-8 encoded. */
     val payloadFormatIndicator: Boolean = false,
-    /** User properties for the will message. */
     val userProperties: List<Pair<String, String>> = emptyList(),
 ) {
     init {

@@ -45,9 +45,36 @@ internal interface MqttTransport {
 
 /**
  * Describes how to reach an MQTT broker.
+ *
+ * Used as the argument to [MqttClient.connect] to specify the broker's address and transport.
+ * Two transport types are supported, each as a sealed subclass:
+ * - [Tcp] — raw TCP socket (optionally with TLS), used by JVM, Android, iOS, macOS, Linux, Windows.
+ * - [WebSocket] — binary WebSocket frames, used by browser/wasmJs targets.
+ *
+ * ## Example
+ * ```kotlin
+ * // Plain TCP
+ * val tcp = MqttEndpoint.Tcp(host = "broker.example.com", port = 1883)
+ *
+ * // TCP with TLS
+ * val tls = MqttEndpoint.Tcp(host = "broker.example.com", port = 8883, tls = true)
+ *
+ * // WebSocket (browser)
+ * val ws = MqttEndpoint.WebSocket(url = "wss://broker.example.com/mqtt")
+ * ```
  */
 public sealed interface MqttEndpoint {
-    /** TCP socket connection (used by all non-browser targets). */
+    /**
+     * TCP socket connection, used by all non-browser targets.
+     *
+     * Connects via raw TCP (or TLS when [tls] is `true`) using ktor-network.
+     * The standard MQTT ports are 1883 (plain) and 8883 (TLS).
+     *
+     * @property host Broker hostname or IP address. Must not be blank.
+     * @property port TCP port number. Range: 1..65,535. Default: 1883.
+     * @property tls If `true`, the connection is wrapped in TLS for encryption.
+     *   Certificate validation uses the platform's default trust store.
+     */
     public data class Tcp(
         val host: String,
         val port: Int = 1883,
@@ -59,7 +86,17 @@ public sealed interface MqttEndpoint {
         }
     }
 
-    /** WebSocket connection (used by browser/wasmJs targets). */
+    /**
+     * WebSocket connection, used by browser/wasmJs targets.
+     *
+     * Connects via binary WebSocket frames using ktor-client-websockets.
+     * Each WebSocket frame carries exactly one complete MQTT packet.
+     *
+     * @property url The WebSocket URL (e.g. `"wss://broker.example.com/mqtt"`).
+     *   Must not be blank. Use `ws://` for unencrypted or `wss://` for TLS.
+     * @property protocols WebSocket sub-protocols to negotiate. Default: `["mqtt"]`
+     *   per the MQTT specification (§6.0).
+     */
     public data class WebSocket(
         val url: String,
         val protocols: List<String> = listOf("mqtt"),

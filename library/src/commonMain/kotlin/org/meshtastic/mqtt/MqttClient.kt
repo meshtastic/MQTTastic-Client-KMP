@@ -40,13 +40,52 @@ import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscription
 
 /**
- * Public API surface for the MQTT 5.0 client library.
+ * Public API surface for the MQTTtastic MQTT 5.0 client library.
  *
- * Wraps [MqttConnection] with transport factory, automatic reconnection with
- * exponential backoff, and a coroutine-friendly API. This is the only public
- * entry point — all protocol logic is internal.
+ * This is the primary entry point for interacting with an MQTT broker. It wraps the
+ * internal [MqttConnection] state machine with a coroutine-friendly API, providing:
+ *
+ * - **Connection management** — [connect], [disconnect], and [close] with lifecycle tracking
+ *   via the [connectionState] flow.
+ * - **Publishing** — [publish] messages with QoS 0/1/2, optional retain, and full MQTT 5.0
+ *   properties. Convenience overloads accept [String], [ByteArray], or [MqttMessage].
+ * - **Subscribing** — [subscribe] to topic filters with per-subscription QoS, No Local,
+ *   Retain As Published, and Retain Handling options.
+ * - **Automatic reconnection** — configurable exponential backoff with subscription
+ *   re-establishment on reconnect (when [MqttConfig.autoReconnect] is `true`).
+ * - **Enhanced authentication** — AUTH packet challenge/response via [authChallenges] flow
+ *   and [sendAuthResponse] (§4.12).
+ * - **Request/Response** — [publishWithResponse] sets Response Topic and Correlation Data
+ *   for the MQTT 5.0 request/response pattern (§4.10).
+ *
+ * ## Example
+ * ```kotlin
+ * val client = MqttClient(MqttConfig(clientId = "my-client"))
+ *
+ * // Observe connection state
+ * scope.launch { client.connectionState.collect { println("State: $it") } }
+ *
+ * // Collect messages
+ * scope.launch { client.messages.collect { println("${it.topic}: ${it.payload}") } }
+ *
+ * // Connect, subscribe, publish
+ * client.connect(MqttEndpoint.Tcp("broker.example.com"))
+ * client.subscribe("sensors/#", QoS.AT_LEAST_ONCE)
+ * client.publish("sensors/temp", "22.5", QoS.AT_LEAST_ONCE)
+ *
+ * // Cleanup
+ * client.close()
+ * ```
+ *
+ * ## Thread Safety
+ * All public methods are `suspend` functions safe to call from any coroutine.
+ * Internal state is protected by mutexes — concurrent calls to [publish], [subscribe],
+ * and [disconnect] are serialized correctly.
  *
  * @param config Client configuration mapping to CONNECT packet fields (§3.1).
+ * @param scope Coroutine scope for background jobs. Defaults to a new [SupervisorJob]
+ *   on [Dispatchers.Default]. The client creates a child scope, so cancelling the
+ *   provided scope also cancels all client operations.
  */
 @Suppress("TooManyFunctions")
 public class MqttClient
@@ -71,17 +110,42 @@ public class MqttClient
 
         private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
 
-        /** Observable connection state. */
+        /**
+         * Observable connection lifecycle state.
+         *
+         * Emits [ConnectionState] transitions as the client connects, disconnects,
+         * and reconnects. Starts as [ConnectionState.DISCONNECTED].
+         *
+         * @see ConnectionState
+         */
         public val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
         private val _messages = MutableSharedFlow<MqttMessage>(extraBufferCapacity = MESSAGE_BUFFER_CAPACITY)
 
-        /** Flow of incoming messages from subscribed topics. */
+        /**
+         * Flow of incoming MQTT messages from subscribed topics.
+         *
+         * Messages are emitted as they arrive from the broker. Each message includes
+         * the topic, payload, QoS level, retain flag, and any MQTT 5.0 properties.
+         * The flow uses a buffer of [MESSAGE_BUFFER_CAPACITY] messages; if the collector
+         * is too slow, the oldest undelivered messages are dropped.
+         *
+         * Start collecting **before** calling [subscribe] to avoid missing messages.
+         */
         public val messages: SharedFlow<MqttMessage> = _messages.asSharedFlow()
 
         private val _authChallenges = MutableSharedFlow<AuthChallenge>(extraBufferCapacity = AUTH_BUFFER_CAPACITY)
 
-        /** Flow of authentication challenges from the broker during enhanced auth (§4.12). */
+        /**
+         * Flow of authentication challenges from the broker during enhanced auth (§4.12).
+         *
+         * When [MqttConfig.authenticationMethod] is set, the broker may send AUTH packets
+         * during the CONNECT handshake or at any point during the session. Each challenge
+         * is emitted here. Respond by calling [sendAuthResponse] with the appropriate data.
+         *
+         * @see sendAuthResponse
+         * @see AuthChallenge
+         */
         public val authChallenges: SharedFlow<AuthChallenge> = _authChallenges.asSharedFlow()
 
         private var connection: MqttConnection? = null
