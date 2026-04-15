@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.bytestring.ByteString
@@ -57,10 +58,51 @@ import org.meshtastic.mqtt.packet.encode
 import kotlin.time.TimeSource
 
 /**
+ * Represents an authentication challenge received from the broker during enhanced authentication (§4.12).
+ *
+ * @property reasonCode The reason code from the AUTH packet.
+ * @property authenticationMethod The authentication method in use.
+ * @property authenticationData The challenge data from the broker.
+ */
+internal data class AuthChallenge(
+    val reasonCode: ReasonCode,
+    val authenticationMethod: String?,
+    val authenticationData: ByteArray?,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is AuthChallenge) return false
+        return reasonCode == other.reasonCode &&
+            authenticationMethod == other.authenticationMethod &&
+            authenticationData.contentEqualsNullable(other.authenticationData)
+    }
+
+    override fun hashCode(): Int {
+        var result = reasonCode.hashCode()
+        result = 31 * result + (authenticationMethod?.hashCode() ?: 0)
+        result = 31 * result + (authenticationData?.contentHashCode() ?: 0)
+        return result
+    }
+}
+
+private fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean =
+    when {
+        this === other -> true
+        this == null || other == null -> false
+        else -> this.contentEquals(other)
+    }
+
+/**
  * Internal connection manager implementing the MQTT 5.0 client state machine.
  *
  * Manages the full connection lifecycle: CONNECT/CONNACK handshake, keepalive via PINGREQ/PINGRESP,
  * background read loop, QoS 0/1/2 publish flows, subscribe/unsubscribe, and graceful disconnect.
+ *
+ * Supports advanced MQTT 5.0 features:
+ * - **Topic Aliases** — bidirectional client↔server alias mapping (§3.3.2.3.4)
+ * - **Flow Control** — semaphore-based Receive Maximum enforcement (§3.3.4)
+ * - **Enhanced Authentication** — AUTH packet challenge/response flow (§4.12)
+ * - **Server Redirect** — Server Reference handling in CONNACK/DISCONNECT (§4.13)
  *
  * Not part of the public API — consumers use [MqttClient] instead.
  *
@@ -84,6 +126,11 @@ internal class MqttConnection(
     /** Flow of incoming PUBLISH messages received from the broker. */
     val incomingMessages: SharedFlow<MqttMessage> = _incomingMessages.asSharedFlow()
 
+    private val _authChallenges = MutableSharedFlow<AuthChallenge>(extraBufferCapacity = AUTH_BUFFER_CAPACITY)
+
+    /** Flow of authentication challenges from the broker during enhanced auth (§4.12). */
+    val authChallenges: SharedFlow<AuthChallenge> = _authChallenges.asSharedFlow()
+
     private val packetIdAllocator = PacketIdAllocator()
     private val sendMutex = Mutex()
     private val pendingAcks = mutableMapOf<Int, CompletableDeferred<MqttPacket>>()
@@ -95,6 +142,15 @@ internal class MqttConnection(
     // Server-assigned values from CONNACK
     private var serverReceiveMaximum: Int = DEFAULT_RECEIVE_MAXIMUM
     private var assignedClientId: String? = null
+
+    // Topic alias state (§3.3.2.3.4)
+    private val outboundTopicAliases = mutableMapOf<String, Int>()
+    private val inboundTopicAliases = mutableMapOf<Int, String>()
+    private var nextOutboundAlias = 1
+    private var serverTopicAliasMaximum = 0
+
+    // Flow control — limits concurrent in-flight QoS 1/2 publishes (§3.3.4)
+    private var inflightSemaphore: Semaphore? = null
 
     /**
      * Establish an MQTT 5.0 connection to the broker.
@@ -127,12 +183,21 @@ internal class MqttConnection(
             if (connAck.reasonCode != ReasonCode.SUCCESS) {
                 transport.close()
                 _connectionState.value = ConnectionState.DISCONNECTED
-                throw MqttConnectionException(connAck.reasonCode, "Connection refused: ${connAck.reasonCode}")
+                val serverRef = connAck.properties.serverReference
+                throw MqttConnectionException(
+                    connAck.reasonCode,
+                    "Connection refused: ${connAck.reasonCode}",
+                    serverReference = serverRef,
+                )
             }
 
             // Store server-assigned values from CONNACK properties
             connAck.properties.receiveMaximum?.let { serverReceiveMaximum = it }
             connAck.properties.assignedClientIdentifier?.let { assignedClientId = it }
+            connAck.properties.topicAliasMaximum?.let { serverTopicAliasMaximum = it }
+
+            // Initialize flow control semaphore based on server's Receive Maximum (§3.3.4)
+            inflightSemaphore = Semaphore(serverReceiveMaximum)
 
             _connectionState.value = ConnectionState.CONNECTED
             startReadLoop()
@@ -167,6 +232,11 @@ internal class MqttConnection(
             if (config.cleanStart) {
                 packetIdAllocator.reset()
             }
+            outboundTopicAliases.clear()
+            inboundTopicAliases.clear()
+            nextOutboundAlias = 1
+            serverTopicAliasMaximum = 0
+            inflightSemaphore = null
         }
     }
 
@@ -184,27 +254,28 @@ internal class MqttConnection(
         check(_connectionState.value == ConnectionState.CONNECTED) { "Not connected" }
 
         val publishProperties = buildPublishProperties(message.properties)
+        val (resolvedTopic, resolvedProperties) = applyOutboundTopicAlias(message.topic, publishProperties)
 
         return when (message.qos) {
             QoS.AT_MOST_ONCE -> {
                 sendPacket(
                     Publish(
-                        topicName = message.topic,
+                        topicName = resolvedTopic,
                         payload = message.payload.toByteArray(),
                         qos = QoS.AT_MOST_ONCE,
                         retain = message.retain,
-                        properties = publishProperties,
+                        properties = resolvedProperties,
                     ),
                 )
                 null
             }
 
             QoS.AT_LEAST_ONCE -> {
-                publishQos1(message, publishProperties)
+                publishQos1(message, resolvedTopic, resolvedProperties)
             }
 
             QoS.EXACTLY_ONCE -> {
-                publishQos2(message, publishProperties)
+                publishQos2(message, resolvedTopic, resolvedProperties)
             }
         }
     }
@@ -277,6 +348,26 @@ internal class MqttConnection(
         }
     }
 
+    /**
+     * Send an AUTH response to the broker during enhanced authentication (§4.12).
+     *
+     * Called by the application when it receives an [AuthChallenge] and needs to respond.
+     *
+     * @param data The authentication response data to send.
+     */
+    suspend fun sendAuthResponse(data: ByteArray) {
+        sendPacket(
+            Auth(
+                reasonCode = ReasonCode.CONTINUE_AUTHENTICATION,
+                properties =
+                    MqttProperties(
+                        authenticationMethod = config.authenticationMethod,
+                        authenticationData = data,
+                    ),
+            ),
+        )
+    }
+
     // --- Private: Packet sending ---
 
     /** Send a packet over the transport, guarded by [sendMutex] for wire-level serialization. */
@@ -291,8 +382,10 @@ internal class MqttConnection(
 
     private suspend fun publishQos1(
         message: MqttMessage,
+        resolvedTopic: String,
         publishProperties: MqttProperties,
     ): ReasonCode {
+        inflightSemaphore?.acquire()
         val packetId = packetIdAllocator.allocate()
         val deferred = CompletableDeferred<MqttPacket>()
         pendingAcks[packetId] = deferred
@@ -300,7 +393,7 @@ internal class MqttConnection(
         try {
             sendPacket(
                 Publish(
-                    topicName = message.topic,
+                    topicName = resolvedTopic,
                     payload = message.payload.toByteArray(),
                     qos = QoS.AT_LEAST_ONCE,
                     retain = message.retain,
@@ -314,13 +407,16 @@ internal class MqttConnection(
         } finally {
             pendingAcks.remove(packetId)
             packetIdAllocator.release(packetId)
+            inflightSemaphore?.release()
         }
     }
 
     private suspend fun publishQos2(
         message: MqttMessage,
+        resolvedTopic: String,
         publishProperties: MqttProperties,
     ): ReasonCode {
+        inflightSemaphore?.acquire()
         val packetId = packetIdAllocator.allocate()
         val pubRecDeferred = CompletableDeferred<MqttPacket>()
         pendingAcks[packetId] = pubRecDeferred
@@ -328,7 +424,7 @@ internal class MqttConnection(
         try {
             sendPacket(
                 Publish(
-                    topicName = message.topic,
+                    topicName = resolvedTopic,
                     payload = message.payload.toByteArray(),
                     qos = QoS.EXACTLY_ONCE,
                     retain = message.retain,
@@ -351,6 +447,7 @@ internal class MqttConnection(
         } finally {
             pendingAcks.remove(packetId)
             packetIdAllocator.release(packetId)
+            inflightSemaphore?.release()
         }
     }
 
@@ -423,17 +520,23 @@ internal class MqttConnection(
                 // Unexpected packets from server — protocol violation
             }
 
-            is PingReq, is PingResp, is Auth -> {
-                // PingResp absorbed, PingReq/Auth ignored for now
+            is PingReq, is PingResp -> {
+                // PingResp absorbed, PingReq unexpected but harmless
+            }
+
+            is Auth -> {
+                handleAuthPacket(packet)
             }
         }
     }
 
-    /** Handle an incoming PUBLISH packet: emit the message and send QoS acknowledgements. */
+    /** Handle an incoming PUBLISH packet: resolve topic aliases, emit the message, and send QoS acks. */
     private suspend fun handleIncomingPublish(packet: Publish) {
+        val resolvedTopic = resolveInboundTopicAlias(packet)
+
         val message =
             MqttMessage(
-                topic = packet.topicName,
+                topic = resolvedTopic,
                 payload = ByteString(packet.payload),
                 qos = packet.qos,
                 retain = packet.retain,
@@ -557,9 +660,83 @@ internal class MqttConnection(
             subscriptionIdentifiers = props.subscriptionIdentifier,
         )
 
+    // --- Private: Topic Alias (§3.3.2.3.4) ---
+
+    /**
+     * Apply outbound topic alias mapping for the given [topic].
+     *
+     * - First publish to a topic: assigns a new alias, sends both topic name and alias.
+     * - Subsequent publishes: sends empty topic name with alias only.
+     * - Respects [serverTopicAliasMaximum] from CONNACK.
+     *
+     * @return Pair of (resolved topic name, updated properties).
+     */
+    private fun applyOutboundTopicAlias(
+        topic: String,
+        properties: MqttProperties,
+    ): Pair<String, MqttProperties> {
+        if (serverTopicAliasMaximum <= 0) return topic to properties
+
+        val existingAlias = outboundTopicAliases[topic]
+        if (existingAlias != null) {
+            // Topic already has an alias — send empty topic + alias
+            return "" to properties.copy(topicAlias = existingAlias)
+        }
+
+        // Assign a new alias if we haven't exceeded the server's limit
+        if (nextOutboundAlias <= serverTopicAliasMaximum) {
+            val alias = nextOutboundAlias++
+            outboundTopicAliases[topic] = alias
+            return topic to properties.copy(topicAlias = alias)
+        }
+
+        // No more aliases available — send topic without alias
+        return topic to properties
+    }
+
+    /**
+     * Resolve inbound topic alias from a received PUBLISH packet (§3.3.2.3.4).
+     *
+     * - If the packet has a topic alias with a non-empty topic: store the mapping, return the topic.
+     * - If the packet has a topic alias with an empty topic: resolve from stored mapping.
+     * - If the packet has no topic alias: return the topic as-is.
+     */
+    private fun resolveInboundTopicAlias(packet: Publish): String {
+        val alias = packet.properties.topicAlias
+        return if (alias != null) {
+            if (packet.topicName.isNotEmpty()) {
+                // New mapping: store topic for this alias
+                inboundTopicAliases[alias] = packet.topicName
+                packet.topicName
+            } else {
+                // Resolve from stored mapping
+                inboundTopicAliases[alias]
+                    ?: throw IllegalStateException("Unknown inbound topic alias: $alias")
+            }
+        } else {
+            packet.topicName
+        }
+    }
+
+    // --- Private: Enhanced Auth (§4.12) ---
+
+    /** Emit an authentication challenge to the [authChallenges] flow. */
+    private suspend fun handleAuthPacket(packet: Auth) {
+        _authChallenges.emit(
+            AuthChallenge(
+                reasonCode = packet.reasonCode,
+                authenticationMethod = packet.properties.authenticationMethod,
+                authenticationData = packet.properties.authenticationData,
+            ),
+        )
+    }
+
     internal companion object {
         /** Extra buffer capacity for incoming message flow. */
         const val INCOMING_BUFFER_CAPACITY = 64
+
+        /** Extra buffer capacity for auth challenge flow. */
+        const val AUTH_BUFFER_CAPACITY = 8
 
         /** Default server Receive Maximum per §3.2.2.3.2. */
         const val DEFAULT_RECEIVE_MAXIMUM = 65_535
@@ -576,9 +753,11 @@ internal class MqttConnection(
  * Exception thrown when an MQTT connection fails.
  *
  * @property reasonCode The MQTT 5.0 reason code from the broker.
+ * @property serverReference Server reference from CONNACK/DISCONNECT for redirect handling (§4.13).
  */
 internal class MqttConnectionException(
     val reasonCode: ReasonCode,
     message: String,
     cause: Throwable? = null,
+    val serverReference: String? = null,
 ) : Exception(message, cause)
