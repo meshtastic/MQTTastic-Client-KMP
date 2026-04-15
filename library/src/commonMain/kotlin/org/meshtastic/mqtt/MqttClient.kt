@@ -170,6 +170,7 @@ public class MqttClient
          * @param endpoint Broker endpoint (TCP or WebSocket).
          * @throws MqttConnectionException if the broker rejects the connection.
          */
+        @Throws(MqttConnectionException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun connect(endpoint: MqttEndpoint) {
             connectionMutex.withLock {
                 log.info(TAG) { "Connecting to $endpoint" }
@@ -207,8 +208,17 @@ public class MqttClient
          *
          * @param message The message to publish, including topic, payload, QoS, and properties.
          * @throws IllegalStateException if not connected.
+         * @throws IllegalArgumentException if the topic name is invalid.
+         * @throws MqttConnectionException on publish failure (QoS 1/2 only).
          */
+        @Throws(
+            IllegalStateException::class,
+            IllegalArgumentException::class,
+            MqttConnectionException::class,
+            kotlin.coroutines.cancellation.CancellationException::class,
+        )
         public suspend fun publish(message: MqttMessage) {
+            TopicValidator.validateTopicName(message.topic)
             log.debug(TAG) { "Publishing to '${message.topic}' qos=${message.qos} retain=${message.retain}" }
             requireConnection().publish(message)
         }
@@ -223,6 +233,12 @@ public class MqttClient
          * @param qos Quality of service level (default: [QoS.AT_MOST_ONCE]).
          * @param retain Whether the message should be retained (default: false).
          */
+        @Throws(
+            IllegalStateException::class,
+            IllegalArgumentException::class,
+            MqttConnectionException::class,
+            kotlin.coroutines.cancellation.CancellationException::class,
+        )
         public suspend fun publish(
             topic: String,
             payload: ByteArray,
@@ -242,6 +258,12 @@ public class MqttClient
          * @param qos Quality of service level (default: [QoS.AT_MOST_ONCE]).
          * @param retain Whether the message should be retained (default: false).
          */
+        @Throws(
+            IllegalStateException::class,
+            IllegalArgumentException::class,
+            MqttConnectionException::class,
+            kotlin.coroutines.cancellation.CancellationException::class,
+        )
         public suspend fun publish(
             topic: String,
             payload: String,
@@ -264,6 +286,12 @@ public class MqttClient
          * @param qos Quality of service level (default: [QoS.AT_LEAST_ONCE]).
          * @param retain Whether the message should be retained (default: false).
          */
+        @Throws(
+            IllegalStateException::class,
+            IllegalArgumentException::class,
+            MqttConnectionException::class,
+            kotlin.coroutines.cancellation.CancellationException::class,
+        )
         public suspend fun publishWithResponse(
             topic: String,
             payload: ByteArray,
@@ -298,7 +326,15 @@ public class MqttClient
          * @param noLocal If true, the server will not forward messages published by this client (§3.8.3.1).
          * @param retainAsPublished If true, retain flag from original publish is preserved (§3.8.3.1).
          * @param retainHandling Controls when retained messages are sent (§3.8.3.1).
+         * @throws IllegalArgumentException if the topic filter is invalid (§4.7).
+         * @throws IllegalStateException if not connected.
          */
+        @Throws(
+            IllegalArgumentException::class,
+            IllegalStateException::class,
+            MqttConnectionException::class,
+            kotlin.coroutines.cancellation.CancellationException::class,
+        )
         public suspend fun subscribe(
             topicFilter: String,
             qos: QoS = QoS.AT_MOST_ONCE,
@@ -306,6 +342,7 @@ public class MqttClient
             retainAsPublished: Boolean = false,
             retainHandling: RetainHandling = RetainHandling.SEND_AT_SUBSCRIBE,
         ) {
+            TopicValidator.validateTopicFilter(topicFilter)
             val sub =
                 Subscription(
                     topicFilter = topicFilter,
@@ -326,8 +363,17 @@ public class MqttClient
          * Only records subscriptions whose SUBACK reason code indicates success.
          *
          * @param topicFilters Map of topic filter to maximum QoS level.
+         * @throws IllegalArgumentException if any topic filter is invalid (§4.7).
+         * @throws IllegalStateException if not connected.
          */
+        @Throws(
+            IllegalArgumentException::class,
+            IllegalStateException::class,
+            MqttConnectionException::class,
+            kotlin.coroutines.cancellation.CancellationException::class,
+        )
         public suspend fun subscribe(topicFilters: Map<String, QoS>) {
+            topicFilters.keys.forEach { TopicValidator.validateTopicFilter(it) }
             val subscriptions =
                 topicFilters.map { (filter, qos) ->
                     Subscription(topicFilter = filter, maxQos = qos)
@@ -342,7 +388,9 @@ public class MqttClient
          * Unsubscribe from one or more topic filters.
          *
          * @param topicFilters The topic filters to unsubscribe from.
+         * @throws IllegalStateException if not connected.
          */
+        @Throws(IllegalStateException::class, MqttConnectionException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun unsubscribe(vararg topicFilters: String) {
             log.debug(TAG) { "Unsubscribing from ${topicFilters.toList()}" }
             requireConnection().unsubscribe(topicFilters.toList(), MqttProperties.EMPTY)
@@ -358,7 +406,9 @@ public class MqttClient
          * Collect [authChallenges] to receive challenges and call this method to respond.
          *
          * @param data The authentication response data to send.
+         * @throws IllegalStateException if not connected.
          */
+        @Throws(IllegalStateException::class, MqttConnectionException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun sendAuthResponse(data: ByteArray) {
             requireConnection().sendAuthResponse(data)
         }

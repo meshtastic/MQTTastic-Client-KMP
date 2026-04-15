@@ -129,6 +129,80 @@ public data class MqttConfig(
             "reconnectMaxDelayMs must be >= reconnectBaseDelayMs ($reconnectBaseDelayMs), got: $reconnectMaxDelayMs"
         }
     }
+
+    public companion object {
+        /**
+         * Build an [MqttConfig] using a lambda with named property assignments.
+         *
+         * ## Example
+         * ```kotlin
+         * val config = MqttConfig.build {
+         *     clientId = "sensor-hub-01"
+         *     keepAliveSeconds = 30
+         *     cleanStart = false
+         *     autoReconnect = true
+         *     logger = MqttLogger.println()
+         *     logLevel = MqttLogLevel.DEBUG
+         * }
+         * ```
+         */
+        public fun build(block: Builder.() -> Unit): MqttConfig = Builder().apply(block).build()
+    }
+
+    /**
+     * Mutable builder for [MqttConfig].
+     *
+     * All properties default to the same values as the [MqttConfig] data class constructor.
+     * Set only the properties you want to customize.
+     */
+    @Suppress("TooManyFunctions")
+    public class Builder {
+        public var clientId: String = ""
+        public var keepAliveSeconds: Int = 60
+        public var cleanStart: Boolean = true
+        public var username: String? = null
+        public var password: ByteString? = null
+        public var will: WillConfig? = null
+        public var sessionExpiryInterval: Long? = null
+        public var receiveMaximum: Int = 65535
+        public var maximumPacketSize: Long? = null
+        public var topicAliasMaximum: Int = 0
+        public var requestResponseInformation: Boolean = false
+        public var requestProblemInformation: Boolean = true
+        public var userProperties: List<Pair<String, String>> = emptyList()
+        public var authenticationMethod: String? = null
+        public var authenticationData: ByteString? = null
+        public var autoReconnect: Boolean = true
+        public var reconnectBaseDelayMs: Long = 1000
+        public var reconnectMaxDelayMs: Long = 30000
+        public var logger: MqttLogger? = null
+        public var logLevel: MqttLogLevel = MqttLogLevel.NONE
+
+        /** Build the immutable [MqttConfig] from the current builder state. */
+        public fun build(): MqttConfig =
+            MqttConfig(
+                clientId = clientId,
+                keepAliveSeconds = keepAliveSeconds,
+                cleanStart = cleanStart,
+                username = username,
+                password = password,
+                will = will,
+                sessionExpiryInterval = sessionExpiryInterval,
+                receiveMaximum = receiveMaximum,
+                maximumPacketSize = maximumPacketSize,
+                topicAliasMaximum = topicAliasMaximum,
+                requestResponseInformation = requestResponseInformation,
+                requestProblemInformation = requestProblemInformation,
+                userProperties = userProperties,
+                authenticationMethod = authenticationMethod,
+                authenticationData = authenticationData,
+                autoReconnect = autoReconnect,
+                reconnectBaseDelayMs = reconnectBaseDelayMs,
+                reconnectMaxDelayMs = reconnectMaxDelayMs,
+                logger = logger,
+                logLevel = logLevel,
+            )
+    }
 }
 
 /**

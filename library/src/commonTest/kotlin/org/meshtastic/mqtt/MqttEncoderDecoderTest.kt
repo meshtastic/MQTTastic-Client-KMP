@@ -742,6 +742,55 @@ class MqttEncoderDecoderTest {
         assertEquals(MqttProperties.EMPTY, decoded.properties)
     }
 
+    // ===== Reserved Bits Validation (§3.1.2.3, §3.2.2.1, §3.8.3.1) =====
+
+    @Test
+    fun connectFlagsBit0MustBeZero() {
+        // Build a valid CONNECT, then corrupt bit 0 of the Connect Flags byte
+        val validConnect = Connect(clientId = "test")
+        val bytes = validConnect.encode().copyOf()
+        // Connect Flags byte is at: fixed header (2 bytes) + protocol name (6) + protocol level (1) = offset 9
+        val flagsOffset = 9
+        bytes[flagsOffset] = (bytes[flagsOffset].toInt() or 0x01).toByte()
+        assertFailsWith<IllegalArgumentException>("Bit 0 of Connect Flags") {
+            decodePacket(bytes)
+        }
+    }
+
+    @Test
+    fun connackReservedBitsMustBeZero() {
+        // Build a CONNACK with reserved bits set in the acknowledge flags byte
+        // CONNACK fixed header: 0x20, remaining length, then ack flags, reason code, properties
+        val bytes =
+            byteArrayOf(
+                0x20, // CONNACK type
+                0x03, // remaining length: 3
+                0x02, // acknowledge flags: bit 1 set (reserved - should be rejected)
+                0x00, // reason code: SUCCESS
+                0x00, // properties length: 0
+            )
+        assertFailsWith<IllegalArgumentException>("Reserved bits in Connect Acknowledge Flags") {
+            decodePacket(bytes)
+        }
+    }
+
+    @Test
+    fun subscriptionOptionsReservedBitsMustBeZero() {
+        // Build a SUBSCRIBE with reserved bits 6-7 set in subscription options
+        val validSub =
+            Subscribe(
+                packetIdentifier = 1,
+                subscriptions = listOf(Subscription(topicFilter = "test")),
+            )
+        val bytes = validSub.encode().copyOf()
+        // The options byte is the last byte before properties end — find it
+        // Set bits 6-7 on the last byte (the subscription options byte)
+        bytes[bytes.size - 1] = (bytes[bytes.size - 1].toInt() or 0xC0).toByte()
+        assertFailsWith<IllegalArgumentException>("Reserved bits 6-7") {
+            decodePacket(bytes)
+        }
+    }
+
     // ===== Utility =====
 
     private fun roundTrip(packet: org.meshtastic.mqtt.packet.MqttPacket): org.meshtastic.mqtt.packet.MqttPacket {

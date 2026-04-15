@@ -880,7 +880,10 @@ internal class MqttConnection(
                     packet.topicName
                 } else {
                     inboundTopicAliases[alias]
-                        ?: throw IllegalStateException("Unknown inbound topic alias: $alias")
+                        ?: throw MqttConnectionException(
+                            ReasonCode.TOPIC_ALIAS_INVALID,
+                            "Unknown inbound topic alias: $alias (§3.3.2.3.4)",
+                        )
                 }
             }
         } else {

@@ -84,8 +84,9 @@ private fun decodeConnect(body: ByteArray): Connect {
     val protocolLevel = body[pos].toInt() and 0xFF
     pos++
 
-    // Connect Flags
+    // Connect Flags — bit 0 is reserved and MUST be 0 (§3.1.2.3)
     val connectFlags = body[pos].toInt() and 0xFF
+    require((connectFlags and 0x01) == 0) { "Bit 0 of Connect Flags must be 0 (§3.1.2.3)" }
     pos++
     val cleanStart = (connectFlags and 0x02) != 0
     val willFlag = (connectFlags and 0x04) != 0
@@ -161,6 +162,10 @@ private fun decodeConnect(body: ByteArray): Connect {
 
 private fun decodeConnAck(body: ByteArray): ConnAck {
     require(body.size >= 3) { "CONNACK body too short" }
+    // Connect Acknowledge Flags — bits 7-1 are reserved and MUST be 0 (§3.2.2.1)
+    require((body[0].toInt() and 0xFE) == 0) {
+        "Reserved bits in Connect Acknowledge Flags must be 0 (§3.2.2.1)"
+    }
     val sessionPresent = (body[0].toInt() and 0x01) != 0
     val reasonCode = ReasonCode.fromValue(body[1].toInt() and 0xFF)
 
@@ -252,6 +257,11 @@ private fun decodeSubscribe(body: ByteArray): Subscribe {
 
         val options = body[pos].toInt() and 0xFF
         pos++
+
+        // Subscription Options bits 6-7 are reserved and MUST be 0 (§3.8.3.1)
+        require((options and 0xC0) == 0) {
+            "Reserved bits 6-7 in Subscription Options must be 0 (§3.8.3.1)"
+        }
 
         subscriptions +=
             Subscription(

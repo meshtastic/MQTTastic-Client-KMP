@@ -49,6 +49,7 @@ public final class org/meshtastic/mqtt/MqttClient {
 }
 
 public final class org/meshtastic/mqtt/MqttConfig {
+	public static final field Companion Lorg/meshtastic/mqtt/MqttConfig$Companion;
 	public fun <init> ()V
 	public fun <init> (Ljava/lang/String;IZLjava/lang/String;Lkotlinx/io/bytestring/ByteString;Lorg/meshtastic/mqtt/WillConfig;Ljava/lang/Long;ILjava/lang/Long;IZZLjava/util/List;Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;ZJJLorg/meshtastic/mqtt/MqttLogger;Lorg/meshtastic/mqtt/MqttLogLevel;)V
 	public synthetic fun <init> (Ljava/lang/String;IZLjava/lang/String;Lkotlinx/io/bytestring/ByteString;Lorg/meshtastic/mqtt/WillConfig;Ljava/lang/Long;ILjava/lang/Long;IZZLjava/util/List;Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;ZJJLorg/meshtastic/mqtt/MqttLogger;Lorg/meshtastic/mqtt/MqttLogLevel;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -97,6 +98,55 @@ public final class org/meshtastic/mqtt/MqttConfig {
 	public final fun getWill ()Lorg/meshtastic/mqtt/WillConfig;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/MqttConfig$Builder {
+	public fun <init> ()V
+	public final fun build ()Lorg/meshtastic/mqtt/MqttConfig;
+	public final fun getAuthenticationData ()Lkotlinx/io/bytestring/ByteString;
+	public final fun getAuthenticationMethod ()Ljava/lang/String;
+	public final fun getAutoReconnect ()Z
+	public final fun getCleanStart ()Z
+	public final fun getClientId ()Ljava/lang/String;
+	public final fun getKeepAliveSeconds ()I
+	public final fun getLogLevel ()Lorg/meshtastic/mqtt/MqttLogLevel;
+	public final fun getLogger ()Lorg/meshtastic/mqtt/MqttLogger;
+	public final fun getMaximumPacketSize ()Ljava/lang/Long;
+	public final fun getPassword ()Lkotlinx/io/bytestring/ByteString;
+	public final fun getReceiveMaximum ()I
+	public final fun getReconnectBaseDelayMs ()J
+	public final fun getReconnectMaxDelayMs ()J
+	public final fun getRequestProblemInformation ()Z
+	public final fun getRequestResponseInformation ()Z
+	public final fun getSessionExpiryInterval ()Ljava/lang/Long;
+	public final fun getTopicAliasMaximum ()I
+	public final fun getUserProperties ()Ljava/util/List;
+	public final fun getUsername ()Ljava/lang/String;
+	public final fun getWill ()Lorg/meshtastic/mqtt/WillConfig;
+	public final fun setAuthenticationData (Lkotlinx/io/bytestring/ByteString;)V
+	public final fun setAuthenticationMethod (Ljava/lang/String;)V
+	public final fun setAutoReconnect (Z)V
+	public final fun setCleanStart (Z)V
+	public final fun setClientId (Ljava/lang/String;)V
+	public final fun setKeepAliveSeconds (I)V
+	public final fun setLogLevel (Lorg/meshtastic/mqtt/MqttLogLevel;)V
+	public final fun setLogger (Lorg/meshtastic/mqtt/MqttLogger;)V
+	public final fun setMaximumPacketSize (Ljava/lang/Long;)V
+	public final fun setPassword (Lkotlinx/io/bytestring/ByteString;)V
+	public final fun setReceiveMaximum (I)V
+	public final fun setReconnectBaseDelayMs (J)V
+	public final fun setReconnectMaxDelayMs (J)V
+	public final fun setRequestProblemInformation (Z)V
+	public final fun setRequestResponseInformation (Z)V
+	public final fun setSessionExpiryInterval (Ljava/lang/Long;)V
+	public final fun setTopicAliasMaximum (I)V
+	public final fun setUserProperties (Ljava/util/List;)V
+	public final fun setUsername (Ljava/lang/String;)V
+	public final fun setWill (Lorg/meshtastic/mqtt/WillConfig;)V
+}
+
+public final class org/meshtastic/mqtt/MqttConfig$Companion {
+	public final fun build (Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/mqtt/MqttConfig;
 }
 
 public abstract interface class org/meshtastic/mqtt/MqttEndpoint {

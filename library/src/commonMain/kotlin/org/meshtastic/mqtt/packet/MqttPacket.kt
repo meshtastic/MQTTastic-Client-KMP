@@ -19,16 +19,16 @@ package org.meshtastic.mqtt.packet
 import org.meshtastic.mqtt.QoS
 
 /**
- * Sealed base class for all 15 MQTT 5.0 packet types.
+ * Sealed base type for all 15 MQTT 5.0 packet types.
  *
- * Each subclass is a pure data container — encode/decode logic lives in separate functions.
+ * Each implementation is a pure data container — encode/decode logic lives in separate functions.
  */
-internal sealed class MqttPacket {
+internal sealed interface MqttPacket {
     /** The MQTT 5.0 control packet type. */
-    abstract val packetType: PacketType
+    val packetType: PacketType
 
     /** MQTT 5.0 properties associated with this packet. */
-    abstract val properties: MqttProperties
+    val properties: MqttProperties
 }
 
 // --- §3.1 CONNECT ---
@@ -49,7 +49,7 @@ internal data class Connect(
     val username: String? = null,
     val password: ByteArray? = null,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.CONNECT
 
     init {
@@ -100,7 +100,7 @@ internal data class ConnAck(
     val sessionPresent: Boolean = false,
     val reasonCode: ReasonCode = ReasonCode.SUCCESS,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.CONNACK
 }
 
@@ -115,7 +115,7 @@ internal data class Publish(
     val packetIdentifier: Int? = null,
     val payload: ByteArray = byteArrayOf(),
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.PUBLISH
 
     init {
@@ -160,7 +160,7 @@ internal data class PubAck(
     val packetIdentifier: Int,
     val reasonCode: ReasonCode = ReasonCode.SUCCESS,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.PUBACK
 
     init {
@@ -175,7 +175,7 @@ internal data class PubRec(
     val packetIdentifier: Int,
     val reasonCode: ReasonCode = ReasonCode.SUCCESS,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.PUBREC
 
     init {
@@ -190,7 +190,7 @@ internal data class PubRel(
     val packetIdentifier: Int,
     val reasonCode: ReasonCode = ReasonCode.SUCCESS,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.PUBREL
 
     init {
@@ -205,7 +205,7 @@ internal data class PubComp(
     val packetIdentifier: Int,
     val reasonCode: ReasonCode = ReasonCode.SUCCESS,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.PUBCOMP
 
     init {
@@ -279,7 +279,7 @@ internal data class Subscribe(
     val packetIdentifier: Int,
     val subscriptions: List<Subscription>,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.SUBSCRIBE
 
     init {
@@ -295,7 +295,7 @@ internal data class SubAck(
     val packetIdentifier: Int,
     val reasonCodes: List<ReasonCode>,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.SUBACK
 
     init {
@@ -311,7 +311,7 @@ internal data class Unsubscribe(
     val packetIdentifier: Int,
     val topicFilters: List<String>,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.UNSUBSCRIBE
 
     init {
@@ -327,7 +327,7 @@ internal data class UnsubAck(
     val packetIdentifier: Int,
     val reasonCodes: List<ReasonCode>,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.UNSUBACK
 
     init {
@@ -339,7 +339,7 @@ internal data class UnsubAck(
 // --- §3.12 PINGREQ ---
 
 /** PINGREQ packet — client keepalive ping (§3.12). No variable header or payload. */
-internal data object PingReq : MqttPacket() {
+internal data object PingReq : MqttPacket {
     override val packetType: PacketType get() = PacketType.PINGREQ
     override val properties: MqttProperties get() = MqttProperties.EMPTY
 }
@@ -347,7 +347,7 @@ internal data object PingReq : MqttPacket() {
 // --- §3.13 PINGRESP ---
 
 /** PINGRESP packet — server keepalive ping response (§3.13). No variable header or payload. */
-internal data object PingResp : MqttPacket() {
+internal data object PingResp : MqttPacket {
     override val packetType: PacketType get() = PacketType.PINGRESP
     override val properties: MqttProperties get() = MqttProperties.EMPTY
 }
@@ -358,7 +358,7 @@ internal data object PingResp : MqttPacket() {
 internal data class Disconnect(
     val reasonCode: ReasonCode = ReasonCode.SUCCESS,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.DISCONNECT
 }
 
@@ -368,7 +368,7 @@ internal data class Disconnect(
 internal data class Auth(
     val reasonCode: ReasonCode = ReasonCode.SUCCESS,
     override val properties: MqttProperties = MqttProperties.EMPTY,
-) : MqttPacket() {
+) : MqttPacket {
     override val packetType: PacketType get() = PacketType.AUTH
 }
 
