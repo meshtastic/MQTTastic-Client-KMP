@@ -1,6 +1,17 @@
 package org.meshtastic.mqtt.packet
 
 /**
+ * Result of decoding a Variable Byte Integer.
+ *
+ * @property value The decoded integer value.
+ * @property bytesConsumed Number of bytes consumed from the input.
+ */
+internal data class VbiResult(
+    val value: Int,
+    val bytesConsumed: Int,
+)
+
+/**
  * Variable Byte Integer encoding/decoding per MQTT 5.0 §1.5.5.
  *
  * Each byte encodes 7 data bits (bits 0-6) plus a continuation bit (bit 7).
@@ -16,29 +27,28 @@ internal object VariableByteInt {
     fun encode(value: Int): ByteArray {
         require(value in 0..MAX_VALUE) { "Value $value out of VBI range 0..$MAX_VALUE" }
 
-        val bytes = mutableListOf<Byte>()
+        val buf = ByteArray(4)
         var remaining = value
+        var pos = 0
         do {
-            var encodedByte = remaining % 128
-            remaining /= 128
-            if (remaining > 0) {
-                encodedByte = encodedByte or 0x80
-            }
-            bytes.add(encodedByte.toByte())
+            var encodedByte = remaining and 0x7F
+            remaining = remaining ushr 7
+            if (remaining > 0) encodedByte = encodedByte or 0x80
+            buf[pos++] = encodedByte.toByte()
         } while (remaining > 0)
 
-        return bytes.toByteArray()
+        return buf.copyOf(pos)
     }
 
     /**
      * Decode a Variable Byte Integer from the given bytes starting at [offset].
-     * @return Pair of (decoded value, number of bytes consumed).
+     * @return A [VbiResult] containing the decoded value and number of bytes consumed.
      * @throws IllegalArgumentException if the encoding is malformed.
      */
     fun decode(
         bytes: ByteArray,
         offset: Int = 0,
-    ): Pair<Int, Int> {
+    ): VbiResult {
         require(offset >= 0) { "Offset must be non-negative, got: $offset" }
 
         var multiplier = 1
@@ -55,6 +65,6 @@ internal object VariableByteInt {
             index++
         } while (encodedByte and 0x80 != 0)
 
-        return Pair(value, index - offset)
+        return VbiResult(value, index - offset)
     }
 }

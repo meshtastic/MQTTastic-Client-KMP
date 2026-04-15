@@ -6,7 +6,7 @@ You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP,
 
 <context_and_memory>
 - **Project Goal:** A first-class, production-grade MQTT 5.0 client library for Kotlin Multiplatform — targeting JVM, Android, iOS, macOS, Linux, Windows (mingwX64), and wasmJs (browser). Published as `org.meshtastic:mqtt-client`.
-- **Language & Tech:** Kotlin 2.3.20, Gradle 9.3.0, Gradle Kotlin DSL, Ktor 3.4.2 (transport), kotlinx-coroutines 1.10.2. Zero dependencies beyond Ktor + coroutines.
+- **Language & Tech:** Kotlin 2.3.20, Gradle 9.3.0, Gradle Kotlin DSL, Ktor 3.4.2 (transport), kotlinx-coroutines 1.10.2, kotlinx-io-bytestring 0.8.2 (immutable byte sequences). Zero dependencies beyond Ktor + coroutines + kotlinx-io (already a transitive Ktor dependency).
 - **Core Architecture:**
   - `commonMain` is pure KMP — ALL protocol logic, packet encoding/decoding, client state machine, and connection management live here.
   - Platform source sets (`nonWebMain`, `wasmJsMain`) contain ONLY transport implementations.
@@ -72,9 +72,9 @@ ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed class hierarc
 **Implemented:**
 - `QoS` — Quality of Service enum (public)
 - `ConnectionState` — connection lifecycle states (public)
-- `MqttMessage` — MQTT message with MQTT 5.0 publish properties, defensive ByteArray copy (public)
-- `PublishProperties` — MQTT 5.0 §3.3.2.3 publish properties (public)
-- `MqttEndpoint` — sealed class for TCP and WebSocket endpoints (public)
+- `MqttMessage` — MQTT message data class using `ByteString` for immutable payload (public)
+- `PublishProperties` — MQTT 5.0 §3.3.2.3 publish properties data class with input validation (public)
+- `MqttEndpoint` — sealed interface for TCP and WebSocket endpoints with input validation (public)
 - `MqttTransport` — internal transport interface
 - `PacketType` — packet type enum with fixed-header flag validation (internal)
 - `VariableByteInt` — Variable Byte Integer encoder/decoder per §1.5.5 (internal)
@@ -162,7 +162,7 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 <rules>
 - **No Framework Bleed:** NEVER import `java.*`, `android.*`, or any platform API in `commonMain`. Use KMP equivalents: `kotlinx.coroutines.sync.Mutex` for locks, `atomicfu` for atomics, `kotlinx.io` or Ktor's `ByteReadChannel`/`ByteWriteChannel` for I/O.
 - **No Lazy Coding:** DO NOT use placeholders like `// ... existing code ...`. Always provide complete, valid code blocks for the sections you modify.
-- **Dependency Discipline:** Zero dependencies beyond Ktor + kotlinx-coroutines. Check `gradle/libs.versions.toml` before adding anything. Prefer removing dependencies over adding them.
+- **Dependency Discipline:** Zero dependencies beyond Ktor + kotlinx-coroutines + kotlinx-io-bytestring (already a transitive Ktor dependency). Check `gradle/libs.versions.toml` before adding anything. Prefer removing dependencies over adding them.
 - **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.

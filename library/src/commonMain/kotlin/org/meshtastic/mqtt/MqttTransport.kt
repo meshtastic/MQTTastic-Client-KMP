@@ -30,17 +30,26 @@ internal interface MqttTransport {
 /**
  * Describes how to reach an MQTT broker.
  */
-public sealed class MqttEndpoint {
+public sealed interface MqttEndpoint {
     /** TCP socket connection (used by all non-browser targets). */
     public data class Tcp(
         val host: String,
         val port: Int = 1883,
         val tls: Boolean = false,
-    ) : MqttEndpoint()
+    ) : MqttEndpoint {
+        init {
+            require(host.isNotBlank()) { "host must not be blank" }
+            require(port in 1..65_535) { "port must be 1..65535, got: $port" }
+        }
+    }
 
     /** WebSocket connection (used by browser/wasmJs targets). */
     public data class WebSocket(
         val url: String,
         val protocols: List<String> = listOf("mqtt"),
-    ) : MqttEndpoint()
+    ) : MqttEndpoint {
+        init {
+            require(url.isNotBlank()) { "url must not be blank" }
+        }
+    }
 }

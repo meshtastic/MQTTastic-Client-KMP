@@ -63,6 +63,7 @@ kotlin {
 
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.io.bytestring)
         }
 
         commonTest.dependencies {

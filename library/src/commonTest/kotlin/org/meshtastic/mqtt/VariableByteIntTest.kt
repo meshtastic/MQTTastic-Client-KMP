@@ -68,9 +68,9 @@ class VariableByteIntTest {
         for (v in listOf(0, 1, 127)) {
             val encoded = VariableByteInt.encode(v)
             assertEquals(1, encoded.size, "VBI($v) should be 1 byte")
-            val (decoded, consumed) = VariableByteInt.decode(encoded)
-            assertEquals(v, decoded)
-            assertEquals(1, consumed)
+            val result = VariableByteInt.decode(encoded)
+            assertEquals(v, result.value)
+            assertEquals(1, result.bytesConsumed)
         }
     }
 
@@ -79,9 +79,9 @@ class VariableByteIntTest {
         for (v in listOf(128, 16383)) {
             val encoded = VariableByteInt.encode(v)
             assertEquals(2, encoded.size, "VBI($v) should be 2 bytes")
-            val (decoded, consumed) = VariableByteInt.decode(encoded)
-            assertEquals(v, decoded)
-            assertEquals(2, consumed)
+            val result = VariableByteInt.decode(encoded)
+            assertEquals(v, result.value)
+            assertEquals(2, result.bytesConsumed)
         }
     }
 
@@ -90,9 +90,9 @@ class VariableByteIntTest {
         for (v in listOf(16384, 2097151)) {
             val encoded = VariableByteInt.encode(v)
             assertEquals(3, encoded.size, "VBI($v) should be 3 bytes")
-            val (decoded, consumed) = VariableByteInt.decode(encoded)
-            assertEquals(v, decoded)
-            assertEquals(3, consumed)
+            val result = VariableByteInt.decode(encoded)
+            assertEquals(v, result.value)
+            assertEquals(3, result.bytesConsumed)
         }
     }
 
@@ -101,9 +101,9 @@ class VariableByteIntTest {
         for (v in listOf(2097152, 268435455)) {
             val encoded = VariableByteInt.encode(v)
             assertEquals(4, encoded.size, "VBI($v) should be 4 bytes")
-            val (decoded, consumed) = VariableByteInt.decode(encoded)
-            assertEquals(v, decoded)
-            assertEquals(4, consumed)
+            val result = VariableByteInt.decode(encoded)
+            assertEquals(v, result.value)
+            assertEquals(4, result.bytesConsumed)
         }
     }
 
@@ -128,7 +128,6 @@ class VariableByteIntTest {
 
     @Test
     fun decodeRejectsTruncatedInput() {
-        // Continuation bit set but no next byte
         assertFailsWith<IllegalArgumentException> {
             VariableByteInt.decode(byteArrayOf(0x80.toByte()))
         }
@@ -136,7 +135,6 @@ class VariableByteIntTest {
 
     @Test
     fun decodeRejectsFiveByteTooLong() {
-        // 5-byte encoding with continuation bits — exceeds 4-byte limit
         assertFailsWith<IllegalArgumentException> {
             VariableByteInt.decode(
                 byteArrayOf(
@@ -164,8 +162,8 @@ class VariableByteIntTest {
         val prefix = byteArrayOf(0x00, 0x00)
         val vbi = VariableByteInt.encode(300)
         val combined = prefix + vbi
-        val (decoded, consumed) = VariableByteInt.decode(combined, offset = 2)
-        assertEquals(300, decoded)
-        assertEquals(vbi.size, consumed)
+        val result = VariableByteInt.decode(combined, offset = 2)
+        assertEquals(300, result.value)
+        assertEquals(vbi.size, result.bytesConsumed)
     }
 }
