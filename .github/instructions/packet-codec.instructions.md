@@ -6,7 +6,7 @@ applyTo: "**/packet/**/*.kt,**/codec/**/*.kt"
 
 - Every encoder/decoder MUST match the byte-level layout in the OASIS MQTT 5.0 specification exactly.
 - When implementing or modifying a packet codec, cite the relevant spec section (e.g., §3.1 CONNECT, §3.3 PUBLISH).
-- `MqttPacket` is a sealed class hierarchy — one subclass per packet type (15 total).
+- `MqttPacket` is a sealed interface hierarchy — one data class implementation per packet type (15 total).
 - Encode and decode are separate top-level functions, not methods on packet classes.
 - Properties are modeled as a dedicated `MqttProperties` class, not scattered across packet subclasses.
 - **UTF-8 strings:** 2-byte big-endian length prefix + UTF-8 bytes.

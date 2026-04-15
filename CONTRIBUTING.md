@@ -27,7 +27,7 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ## Code Style
 
-This project uses [ktlint](https://pinterest.github.io/ktlint/) (via [Spotless](https://github.com/diffplug/spotless)) and [detekt](https://detekt.dev/) for formatting and static analysis.
+This project uses [ktlint](https://pinterest.github.io/ktlint/) (via [Spotless](https://github.com/diffplug/spotless)) and [detekt](https://detekt.dev/) for formatting and static analysis, plus [BCV](https://github.com/Kotlin/binary-compatibility-validator) for API compatibility tracking and [Kover](https://github.com/Kotlin/kotlinx-kover) for code coverage.
 
 ```bash
 # Check formatting
@@ -38,12 +38,27 @@ This project uses [ktlint](https://pinterest.github.io/ktlint/) (via [Spotless](
 
 # Run static analysis
 ./gradlew detekt
+
+# Check binary API compatibility
+./gradlew apiCheck
+
+# Regenerate API baseline after intentional API changes
+./gradlew apiDump
+
+# Check code coverage (≥80% enforced)
+./gradlew koverVerify
+
+# Generate HTML coverage report
+./gradlew koverHtmlReport
+
+# Generate API documentation
+./gradlew dokkaGeneratePublicationHtml
 ```
 
 **Before submitting a PR, ensure all checks pass:**
 
 ```bash
-./gradlew spotlessApply detekt allTests build
+./gradlew spotlessApply detekt allTests apiCheck koverVerify
 ```
 
 ## Architecture Rules

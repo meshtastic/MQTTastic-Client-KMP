@@ -59,36 +59,40 @@ commonMain        ← ALL protocol logic: packets, encoder, decoder, client, con
 >
 > The `MqttTransport` interface lives in `commonMain` — it is NOT `expect`/`actual`. Concrete implementations in `nonWebMain` and `wasmJsMain` are instantiated via factory functions.
 
-### Packet codec pipeline (planned)
+### Packet codec pipeline
 
 ```
-ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed class hierarchy)
+ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed interface hierarchy)
 ```
 
-`MqttPacket` will be a sealed class with subclasses for each of the 15 MQTT 5.0 packet types. Encode and decode are separate top-level functions, not methods on the packet classes. Properties are modeled as a dedicated `MqttProperties` class shared across packet types.
+`MqttPacket` is a sealed interface with data class implementations for each of the 15 MQTT 5.0 packet types. Encode and decode are separate top-level/extension functions, not methods on the packet classes. Properties are modeled as a dedicated `MqttProperties` class shared across packet types.
 
 ### Current implementation status
 
-**Implemented:**
-- `QoS` — Quality of Service enum (public)
-- `ConnectionState` — connection lifecycle states (public)
+**Fully implemented:**
+- `MqttClient` — public API surface: connect, disconnect, publish, subscribe, unsubscribe, close, enhanced auth, request/response (public)
+- `MqttConfig` — client configuration with `MqttConfig.build {}` DSL (public)
+- `WillConfig` — will message configuration (public)
+- `MqttConnection` — internal connection manager: QoS 0/1/2 state machines, keepalive, read loop, topic aliases, flow control, enhanced auth, auto-reconnect
+- `MqttPacket` — sealed interface with 15 packet type data classes (internal)
+- `MqttEncoder` — `MqttPacket.encode()` extension for all 15 types (internal)
+- `MqttDecoder` — `decodePacket(ByteArray)` for all 15 types with reserved bits validation (internal)
+- `MqttProperties` — 28-property model with encode/decode, duplicate singleton detection (internal, re-exported publicly)
 - `MqttMessage` — MQTT message data class using `ByteString` for immutable payload (public)
 - `PublishProperties` — MQTT 5.0 §3.3.2.3 publish properties data class with input validation (public)
 - `MqttEndpoint` — sealed interface for TCP and WebSocket endpoints with input validation (public)
 - `MqttTransport` — internal transport interface
+- `TcpTransport` — TCP/TLS transport via ktor-network (nonWebMain, internal)
+- `WebSocketTransport` — binary WebSocket transport via ktor-client (wasmJsMain, internal)
+- `MqttLogger` / `MqttLogLevel` — configurable logging interface with zero-cost filtering (public)
+- `TopicValidator` — topic name and filter validation per §4.7 (internal)
+- `QoS` — Quality of Service enum (public)
+- `ConnectionState` — connection lifecycle states (public)
+- `ReasonCode` — 43 MQTT 5.0 reason codes (public)
+- `RetainHandling` — subscription retain handling options (public)
 - `PacketType` — packet type enum with fixed-header flag validation (internal)
 - `VariableByteInt` — Variable Byte Integer encoder/decoder per §1.5.5 (internal)
-
-**Not yet implemented (planned):**
-- `MqttPacket` sealed class hierarchy (15 packet types)
-- `MqttEncoder` / `MqttDecoder` — packet encode/decode functions
-- `MqttProperties` — full MQTT 5.0 property model
-- `ReasonCode` — MQTT 5.0 reason codes
-- `MqttClient` — public API surface
-- `MqttConnection` — lifecycle, keepalive, read loop
-- `MqttConfig` / `WillConfig` — configuration types
-- `TcpTransport` / `WebSocketTransport` — concrete transport implementations
-- Packet ID allocator, QoS state machines, flow control
+- `PacketIdAllocator` — Mutex-guarded 16-bit packet ID counter (internal)
 
 ## MQTT 5.0 Scope — Full Protocol
 
@@ -138,18 +142,27 @@ All 15 packet types will be implemented:
 ./gradlew wasmJsTest               # wasmJs tests only
 
 # Single test class:
-./gradlew jvmTest --tests "org.meshtastic.mqtt.MqttEncoderTest"
+./gradlew jvmTest --tests "org.meshtastic.mqtt.MqttEncoderDecoderTest"
 
 # Single test method:
-./gradlew jvmTest --tests "org.meshtastic.mqtt.MqttEncoderTest.encodeConnectPacket"
+./gradlew jvmTest --tests "org.meshtastic.mqtt.MqttEncoderDecoderTest.encodeConnectPacket"
 
 # Formatting & linting:
 ./gradlew spotlessCheck            # check formatting
 ./gradlew spotlessApply            # auto-fix formatting
 ./gradlew detekt                   # static analysis
 
+# Binary compatibility & coverage:
+./gradlew apiCheck                 # verify public API hasn't changed
+./gradlew apiDump                  # regenerate API baseline after intentional changes
+./gradlew koverVerify              # check code coverage (≥80% enforced)
+./gradlew koverHtmlReport          # generate HTML coverage report
+
+# Documentation:
+./gradlew dokkaGeneratePublicationHtml  # generate API docs to library/build/dokka/html/
+
 # Full baseline verification:
-./gradlew spotlessCheck detekt allTests build
+./gradlew spotlessCheck detekt allTests apiCheck koverVerify
 
 # Publish locally:
 ./gradlew publishToMavenLocal
@@ -166,8 +179,8 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 - **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.
-- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `MqttProperties`, and `WillConfig` are public. Everything else (including `MqttTransport`) is `internal`.
-- **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `atomicfu` for packet ID counters.
+- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `MqttProperties`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, and `AuthChallenge` are public. Everything else (including `MqttTransport`) is `internal`.
+- **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `Mutex`-guarded counters for packet ID allocation (atomicfu is blocked by Android plugin incompatibility).
 - **Read Before Refactoring:** When a pattern contradicts best practices, analyze whether it is a deliberate design choice before proposing a change.
 </rules>
 
@@ -196,7 +209,7 @@ Track each packet ID through: PUBLISH → PUBREC → PUBREL → PUBCOMP. Persist
 
 ### Packet ID management
 
-Monotonically increasing 16-bit counter wrapping at 65535 using `atomicfu`. Track in-flight packets in a map keyed by packet ID for PUBACK/PUBREC/PUBREL/PUBCOMP correlation.
+Monotonically increasing 16-bit counter wrapping at 65535 using `Mutex`-guarded state. Track in-flight packets in a map keyed by packet ID for PUBACK/PUBREC/PUBREL/PUBCOMP correlation.
 
 ### Flow control
 

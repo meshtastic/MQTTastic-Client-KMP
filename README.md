@@ -16,6 +16,8 @@ A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — co
 - ⚡ **Coroutines-first** — `suspend` functions and `Flow`-based message delivery
 - 🪶 **Minimal dependencies** — only Ktor (transport) + kotlinx-coroutines + kotlinx-io
 - 🛡️ **Immutable by design** — `ByteString` payloads, validated inputs, data class models
+- 📝 **Configurable logging** — zero-overhead `MqttLogger` interface with level filtering
+- ✅ **Spec-validated** — topic filter wildcards, reserved bits, and packet structure per MQTT 5.0
 
 ## Platform Support
 
@@ -115,6 +117,47 @@ client.publish(
 client.close()
 ```
 
+### Builder DSL
+
+Use the builder DSL for complex configurations:
+
+```kotlin
+val config = MqttConfig.build {
+    clientId = "sensor-hub-01"
+    keepAliveSeconds = 30
+    cleanStart = false
+    autoReconnect = true
+    logger = MqttLogger.println()
+    logLevel = MqttLogLevel.DEBUG
+}
+```
+
+### Logging
+
+The library provides a zero-overhead logging interface. When no logger is configured (the default), message lambdas are never evaluated:
+
+```kotlin
+// Built-in println logger for quick debugging
+val config = MqttConfig(
+    clientId = "debug-client",
+    logger = MqttLogger.println(),
+    logLevel = MqttLogLevel.DEBUG,
+)
+
+// Custom logger (e.g., forwarding to your app's logging framework)
+val config = MqttConfig(
+    clientId = "production-client",
+    logger = object : MqttLogger {
+        override fun log(level: MqttLogLevel, tag: String, message: String, throwable: Throwable?) {
+            myAppLogger.log(level.name, "[$tag] $message", throwable)
+        }
+    },
+    logLevel = MqttLogLevel.INFO,
+)
+```
+
+Log levels from most to least verbose: `TRACE` → `DEBUG` → `INFO` → `WARN` → `ERROR` → `NONE`.
+
 ## MQTT 5.0 Coverage
 
 | Feature | Status |
@@ -124,12 +167,14 @@ client.close()
 | Session management | ✅ |
 | Will messages & Will Delay | ✅ |
 | Topic aliases | ✅ |
-| Shared subscriptions | ✅ |
+| Topic filter validation (§4.7) | ✅ |
 | Enhanced authentication (AUTH) | ✅ |
 | Flow control (Receive Maximum) | ✅ |
 | Automatic reconnection | ✅ |
-| Server redirect | ✅ |
 | Request/Response pattern | ✅ |
+| Configurable logging | ✅ |
+| Shared subscriptions | 🚧 Partial |
+| Server redirect | 🚧 Partial |
 
 ## Building
 
