@@ -18,6 +18,7 @@ plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     // TODO: Re-enable when atomicfu is compatible with android.kotlin.multiplatform.library
+    // Task 'androidMainClasses' not found - atomicfu plugin expects legacy Android library structure
     // alias(libs.plugins.kotlinx.atomicfu)
     alias(libs.plugins.vanniktech.mavenPublish)
     alias(libs.plugins.spotless)

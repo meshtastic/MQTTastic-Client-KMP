@@ -1,0 +1,338 @@
+/*
+ * Copyright (c) 2026 Meshtastic LLC
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+package org.meshtastic.mqtt
+
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlinx.io.bytestring.ByteString
+import org.meshtastic.mqtt.packet.ConnAck
+import org.meshtastic.mqtt.packet.Connect
+import org.meshtastic.mqtt.packet.Disconnect
+import org.meshtastic.mqtt.packet.MqttProperties
+import org.meshtastic.mqtt.packet.Publish
+import org.meshtastic.mqtt.packet.ReasonCode
+import org.meshtastic.mqtt.packet.SubAck
+import org.meshtastic.mqtt.packet.Subscribe
+import org.meshtastic.mqtt.packet.UnsubAck
+import org.meshtastic.mqtt.packet.Unsubscribe
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class MqttClientTest {
+    private val endpoint = MqttEndpoint.Tcp("localhost", 1883)
+
+    private fun defaultConfig(autoReconnect: Boolean = false): MqttConfig =
+        MqttConfig(
+            clientId = "test-client",
+            keepAliveSeconds = 0,
+            cleanStart = true,
+            autoReconnect = autoReconnect,
+            reconnectBaseDelayMs = 100,
+            reconnectMaxDelayMs = 500,
+        )
+
+    private fun connectedClient(
+        transport: FakeTransport,
+        config: MqttConfig = defaultConfig(),
+        scope: kotlinx.coroutines.CoroutineScope,
+    ): MqttClient {
+        transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+        return MqttClient(config, transport, scope)
+    }
+
+    // --- Connect and Disconnect ---
+
+    @Test
+    fun connectAndDisconnect() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+
+            val sentConnect = transport.decodeSentPackets().first()
+            assertIs<Connect>(sentConnect)
+            assertEquals("test-client", sentConnect.clientId)
+
+            client.disconnect()
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+
+            val sentDisconnect = transport.decodeSentPackets().last()
+            assertIs<Disconnect>(sentDisconnect)
+
+            client.close()
+        }
+
+    // --- Publish QoS 0 ---
+
+    @Test
+    fun publishQos0() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            val message =
+                MqttMessage(
+                    topic = "test/topic",
+                    payload = ByteString(byteArrayOf(1, 2, 3)),
+                    qos = QoS.AT_MOST_ONCE,
+                )
+            client.publish(message)
+            advanceUntilIdle()
+
+            val sentPublish = transport.decodeSentPackets().last()
+            assertIs<Publish>(sentPublish)
+            assertEquals("test/topic", sentPublish.topicName)
+            assertEquals(QoS.AT_MOST_ONCE, sentPublish.qos)
+            assertTrue(sentPublish.payload.contentEquals(byteArrayOf(1, 2, 3)))
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Publish String Convenience ---
+
+    @Test
+    fun publishStringConvenience() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            client.publish("greet/topic", "hello")
+            advanceUntilIdle()
+
+            val sentPublish = transport.decodeSentPackets().last()
+            assertIs<Publish>(sentPublish)
+            assertEquals("greet/topic", sentPublish.topicName)
+            assertTrue(sentPublish.payload.contentEquals("hello".encodeToByteArray()))
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Subscribe Single Topic ---
+
+    @Test
+    fun subscribeSingleTopic() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // Enqueue SubAck before subscribe call
+            transport.enqueuePacket(
+                SubAck(packetIdentifier = 1, reasonCodes = listOf(ReasonCode.SUCCESS)),
+            )
+
+            client.subscribe("sensors/#", QoS.AT_LEAST_ONCE)
+            advanceUntilIdle()
+
+            val sentSubscribe =
+                transport.decodeSentPackets().filterIsInstance<Subscribe>().first()
+            assertEquals(1, sentSubscribe.subscriptions.size)
+            assertEquals("sensors/#", sentSubscribe.subscriptions[0].topicFilter)
+            assertEquals(QoS.AT_LEAST_ONCE, sentSubscribe.subscriptions[0].maxQos)
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Subscribe Multiple Topics ---
+
+    @Test
+    fun subscribeMultipleTopics() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            transport.enqueuePacket(
+                SubAck(
+                    packetIdentifier = 1,
+                    reasonCodes = listOf(ReasonCode.SUCCESS, ReasonCode.GRANTED_QOS_1),
+                ),
+            )
+
+            client.subscribe(
+                mapOf(
+                    "topic/a" to QoS.AT_MOST_ONCE,
+                    "topic/b" to QoS.AT_LEAST_ONCE,
+                ),
+            )
+            advanceUntilIdle()
+
+            val sentSubscribe =
+                transport.decodeSentPackets().filterIsInstance<Subscribe>().first()
+            assertEquals(2, sentSubscribe.subscriptions.size)
+
+            val filters = sentSubscribe.subscriptions.map { it.topicFilter }.toSet()
+            assertTrue(filters.contains("topic/a"))
+            assertTrue(filters.contains("topic/b"))
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Unsubscribe ---
+
+    @Test
+    fun unsubscribe() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // Subscribe first
+            transport.enqueuePacket(
+                SubAck(packetIdentifier = 1, reasonCodes = listOf(ReasonCode.SUCCESS)),
+            )
+            client.subscribe("topic/remove", QoS.AT_MOST_ONCE)
+            advanceUntilIdle()
+
+            // Unsubscribe
+            transport.enqueuePacket(
+                UnsubAck(packetIdentifier = 2, reasonCodes = listOf(ReasonCode.SUCCESS)),
+            )
+            client.unsubscribe("topic/remove")
+            advanceUntilIdle()
+
+            val sentUnsub =
+                transport.decodeSentPackets().filterIsInstance<Unsubscribe>().first()
+            assertEquals(listOf("topic/remove"), sentUnsub.topicFilters)
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Receive Messages ---
+
+    @Test
+    fun receiveMessages() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // Subscribe
+            transport.enqueuePacket(
+                SubAck(packetIdentifier = 1, reasonCodes = listOf(ReasonCode.SUCCESS)),
+            )
+            client.subscribe("data/#")
+            advanceUntilIdle()
+
+            // Simulate incoming publish from broker
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "data/temp",
+                    payload = "25.5".encodeToByteArray(),
+                    qos = QoS.AT_MOST_ONCE,
+                    properties = MqttProperties.EMPTY,
+                ),
+            )
+
+            val received =
+                withTimeout(5_000) {
+                    val msg = kotlinx.coroutines.CompletableDeferred<MqttMessage>()
+                    val job =
+                        launch {
+                            client.messages.collect {
+                                msg.complete(it)
+                            }
+                        }
+                    advanceUntilIdle()
+                    val result = msg.await()
+                    job.cancel()
+                    result
+                }
+
+            assertEquals("data/temp", received.topic)
+            assertEquals(
+                "25.5",
+                received.payload.toByteArray().decodeToString(),
+            )
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Close Releases Resources ---
+
+    @Test
+    fun closeReleasesResources() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+
+            client.close()
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+        }
+
+    // --- Publish ByteArray Convenience ---
+
+    @Test
+    fun publishByteArrayConvenience() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            val payload = byteArrayOf(0xCA.toByte(), 0xFE.toByte())
+            client.publish("bytes/topic", payload)
+            advanceUntilIdle()
+
+            val sentPublish = transport.decodeSentPackets().last()
+            assertIs<Publish>(sentPublish)
+            assertEquals("bytes/topic", sentPublish.topicName)
+            assertTrue(sentPublish.payload.contentEquals(payload))
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+}

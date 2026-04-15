@@ -133,6 +133,7 @@ internal class MqttConnection(
 
     private val packetIdAllocator = PacketIdAllocator()
     private val sendMutex = Mutex()
+    private val acksMutex = Mutex()
     private val pendingAcks = mutableMapOf<Int, CompletableDeferred<MqttPacket>>()
 
     private var readLoopJob: Job? = null
@@ -144,6 +145,7 @@ internal class MqttConnection(
     private var assignedClientId: String? = null
 
     // Topic alias state (§3.3.2.3.4)
+    private val aliasMutex = Mutex()
     private val outboundTopicAliases = mutableMapOf<String, Int>()
     private val inboundTopicAliases = mutableMapOf<Int, String>()
     private var nextOutboundAlias = 1
@@ -295,7 +297,7 @@ internal class MqttConnection(
 
         val packetId = packetIdAllocator.allocate()
         val deferred = CompletableDeferred<MqttPacket>()
-        pendingAcks[packetId] = deferred
+        registerPendingAck(packetId, deferred)
 
         try {
             sendPacket(
@@ -309,7 +311,7 @@ internal class MqttConnection(
             val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as SubAck
             return ack
         } finally {
-            pendingAcks.remove(packetId)
+            removePendingAck(packetId)
             packetIdAllocator.release(packetId)
         }
     }
@@ -329,7 +331,7 @@ internal class MqttConnection(
 
         val packetId = packetIdAllocator.allocate()
         val deferred = CompletableDeferred<MqttPacket>()
-        pendingAcks[packetId] = deferred
+        registerPendingAck(packetId, deferred)
 
         try {
             sendPacket(
@@ -343,7 +345,7 @@ internal class MqttConnection(
             val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as UnsubAck
             return ack
         } finally {
-            pendingAcks.remove(packetId)
+            removePendingAck(packetId)
             packetIdAllocator.release(packetId)
         }
     }
@@ -378,6 +380,27 @@ internal class MqttConnection(
         }
     }
 
+    /** Register a pending ack deferred for the given packet ID, guarded by [acksMutex]. */
+    private suspend fun registerPendingAck(
+        packetId: Int,
+        deferred: CompletableDeferred<MqttPacket>,
+    ) {
+        acksMutex.withLock { pendingAcks[packetId] = deferred }
+    }
+
+    /** Remove a pending ack for the given packet ID, guarded by [acksMutex]. */
+    private suspend fun removePendingAck(packetId: Int) {
+        acksMutex.withLock { pendingAcks.remove(packetId) }
+    }
+
+    /** Complete a pending ack if one exists for the given packet ID, guarded by [acksMutex]. */
+    private suspend fun completePendingAck(
+        packetId: Int,
+        packet: MqttPacket,
+    ) {
+        acksMutex.withLock { pendingAcks[packetId]?.complete(packet) }
+    }
+
     // --- Private: QoS flows ---
 
     private suspend fun publishQos1(
@@ -388,7 +411,7 @@ internal class MqttConnection(
         inflightSemaphore?.acquire()
         val packetId = packetIdAllocator.allocate()
         val deferred = CompletableDeferred<MqttPacket>()
-        pendingAcks[packetId] = deferred
+        registerPendingAck(packetId, deferred)
 
         try {
             sendPacket(
@@ -405,7 +428,7 @@ internal class MqttConnection(
             val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as PubAck
             return ack.reasonCode
         } finally {
-            pendingAcks.remove(packetId)
+            removePendingAck(packetId)
             packetIdAllocator.release(packetId)
             inflightSemaphore?.release()
         }
@@ -419,7 +442,7 @@ internal class MqttConnection(
         inflightSemaphore?.acquire()
         val packetId = packetIdAllocator.allocate()
         val pubRecDeferred = CompletableDeferred<MqttPacket>()
-        pendingAcks[packetId] = pubRecDeferred
+        registerPendingAck(packetId, pubRecDeferred)
 
         try {
             sendPacket(
@@ -435,17 +458,17 @@ internal class MqttConnection(
 
             // Step 1: Wait for PUBREC
             withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as PubRec
-            pendingAcks.remove(packetId)
+            removePendingAck(packetId)
 
             // Step 2: Send PUBREL and wait for PUBCOMP
             val pubCompDeferred = CompletableDeferred<MqttPacket>()
-            pendingAcks[packetId] = pubCompDeferred
+            registerPendingAck(packetId, pubCompDeferred)
             sendPacket(PubRel(packetIdentifier = packetId))
 
             val pubComp = withTimeout(ACK_TIMEOUT_MS) { pubCompDeferred.await() } as PubComp
             return pubComp.reasonCode
         } finally {
-            pendingAcks.remove(packetId)
+            removePendingAck(packetId)
             packetIdAllocator.release(packetId)
             inflightSemaphore?.release()
         }
@@ -482,23 +505,23 @@ internal class MqttConnection(
     private suspend fun handlePacket(packet: MqttPacket) {
         when (packet) {
             is PubAck -> {
-                pendingAcks[packet.packetIdentifier]?.complete(packet)
+                completePendingAck(packet.packetIdentifier, packet)
             }
 
             is PubRec -> {
-                pendingAcks[packet.packetIdentifier]?.complete(packet)
+                completePendingAck(packet.packetIdentifier, packet)
             }
 
             is PubComp -> {
-                pendingAcks[packet.packetIdentifier]?.complete(packet)
+                completePendingAck(packet.packetIdentifier, packet)
             }
 
             is SubAck -> {
-                pendingAcks[packet.packetIdentifier]?.complete(packet)
+                completePendingAck(packet.packetIdentifier, packet)
             }
 
             is UnsubAck -> {
-                pendingAcks[packet.packetIdentifier]?.complete(packet)
+                completePendingAck(packet.packetIdentifier, packet)
             }
 
             is PubRel -> {
@@ -671,28 +694,29 @@ internal class MqttConnection(
      *
      * @return Pair of (resolved topic name, updated properties).
      */
-    private fun applyOutboundTopicAlias(
+    private suspend fun applyOutboundTopicAlias(
         topic: String,
         properties: MqttProperties,
-    ): Pair<String, MqttProperties> {
-        if (serverTopicAliasMaximum <= 0) return topic to properties
+    ): Pair<String, MqttProperties> =
+        aliasMutex.withLock {
+            if (serverTopicAliasMaximum <= 0) return@withLock topic to properties
 
-        val existingAlias = outboundTopicAliases[topic]
-        if (existingAlias != null) {
-            // Topic already has an alias — send empty topic + alias
-            return "" to properties.copy(topicAlias = existingAlias)
+            val existingAlias = outboundTopicAliases[topic]
+            if (existingAlias != null) {
+                // Topic already has an alias — send empty topic + alias
+                return@withLock "" to properties.copy(topicAlias = existingAlias)
+            }
+
+            // Assign a new alias if we haven't exceeded the server's limit
+            if (nextOutboundAlias <= serverTopicAliasMaximum) {
+                val alias = nextOutboundAlias++
+                outboundTopicAliases[topic] = alias
+                return@withLock topic to properties.copy(topicAlias = alias)
+            }
+
+            // No more aliases available — send topic without alias
+            topic to properties
         }
-
-        // Assign a new alias if we haven't exceeded the server's limit
-        if (nextOutboundAlias <= serverTopicAliasMaximum) {
-            val alias = nextOutboundAlias++
-            outboundTopicAliases[topic] = alias
-            return topic to properties.copy(topicAlias = alias)
-        }
-
-        // No more aliases available — send topic without alias
-        return topic to properties
-    }
 
     /**
      * Resolve inbound topic alias from a received PUBLISH packet (§3.3.2.3.4).
