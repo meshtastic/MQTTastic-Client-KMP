@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 Meshtastic LLC
+ * Copyright (c) $YEAR Meshtastic LLC
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -14,21 +14,3 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package org.meshtastic.mqtt
-
-/**
- * Observable connection states for [MqttClient].
- */
-public enum class ConnectionState {
-    /** Connection attempt in progress. */
-    CONNECTING,
-
-    /** Successfully connected to the broker. */
-    CONNECTED,
-
-    /** Disconnected from the broker. */
-    DISCONNECTED,
-
-    /** Reconnection attempt in progress after a connection loss. */
-    RECONNECTING,
-}
