@@ -87,34 +87,87 @@ dependencies {
 
 ```kotlin
 import org.meshtastic.mqtt.*
-import kotlinx.coroutines.launch
 
-val client = MqttClient(
-    config = MqttConfig(clientId = "my-client"),
-)
-
-// Collect incoming messages
-scope.launch {
-    client.messages.collect { message ->
-        println("${message.topic}: ${message.payload}")
-    }
+// Create a client with the factory DSL
+val client = MqttClient("my-client") {
+    keepAliveSeconds = 30
+    autoReconnect = true
 }
 
-// Connect to a broker
+// Connect, work, and auto-close
+client.use(MqttEndpoint.parse("tcp://broker.example.com:1883")) { c ->
+    // Subscribe
+    c.subscribe("sensors/temperature", QoS.AT_LEAST_ONCE)
+
+    // Publish
+    c.publish("sensors/temperature", "22.5", QoS.AT_LEAST_ONCE)
+
+    // Collect messages
+    c.messagesForTopic("sensors/temperature").collect { msg ->
+        println("Received: ${msg.payloadAsString()}")
+    }
+}
+```
+
+<details>
+<summary>Verbose equivalent (without convenience APIs)</summary>
+
+```kotlin
+val config = MqttConfig(clientId = "my-client", keepAliveSeconds = 30, autoReconnect = true)
+val client = MqttClient(config)
+
 client.connect(MqttEndpoint.Tcp(host = "broker.example.com", port = 1883))
-
-// Subscribe to topics
 client.subscribe("sensors/temperature", QoS.AT_LEAST_ONCE)
-
-// Publish a message
 client.publish(
-    topic = "sensors/temperature",
-    payload = "22.5",
-    qos = QoS.AT_LEAST_ONCE,
+    MqttMessage(
+        topic = "sensors/temperature",
+        payload = ByteString("22.5".encodeToByteArray()),
+        qos = QoS.AT_LEAST_ONCE,
+    ),
 )
-
-// Disconnect and release resources
+client.messages.collect { msg ->
+    if (msg.topic == "sensors/temperature") {
+        println("Received: ${msg.payload.toByteArray().decodeToString()}")
+    }
+}
 client.close()
+```
+</details>
+
+### Convenience APIs
+
+The library ships several ergonomic extensions to reduce boilerplate:
+
+| API | What it replaces |
+|-----|-----------------|
+| `MqttClient("id") { ... }` | `MqttClient(MqttConfig(clientId = "id", ...))` |
+| `MqttEndpoint.parse("tcp://host:1883")` | `MqttEndpoint.Tcp(host, port, tls)` |
+| `client.use(endpoint) { ... }` | Manual `connect` + `try/finally { close() }` |
+| `msg.payloadAsString()` | `msg.payload.toByteArray().decodeToString()` |
+| `client.messagesForTopic("x")` | `client.messages.filter { it.topic == "x" }` |
+| `client.messagesMatching("x/+/y")` | Manual wildcard matching on `messages` flow |
+| `client.subscribe(qos, "a", "b")` | `client.subscribe(mapOf("a" to qos, "b" to qos))` |
+| `client.publish(topic, payload, qos, properties)` | Constructing `MqttMessage` + `PublishProperties` manually |
+
+#### Endpoint Parsing
+
+Parse broker URIs instead of constructing endpoints manually:
+
+```kotlin
+MqttEndpoint.parse("tcp://broker:1883")       // Plain TCP
+MqttEndpoint.parse("ssl://broker:8883")       // TCP + TLS
+MqttEndpoint.parse("mqtts://broker")          // TLS, default port 8883
+MqttEndpoint.parse("wss://broker/mqtt")       // Secure WebSocket
+```
+
+#### Topic-Filtered Message Flows
+
+```kotlin
+// Exact topic match
+client.messagesForTopic("sensors/temperature").collect { ... }
+
+// Wildcard filter (supports + and #)
+client.messagesMatching("sensors/+/temperature").collect { ... }
 ```
 
 ### Builder DSL

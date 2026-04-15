@@ -43,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Spec-compliant validation** — reserved bits in CONNECT/CONNACK/SUBSCRIBE decoded packets (§3.1.2.3, §3.2.2.1, §3.8.3.1)
 - **Build tooling** — Binary Compatibility Validator, Dokka, Kover (≥80% line coverage)
 - Input validation on all public types (port range, topic alias, subscription identifiers, etc.)
-- 303 tests across 13 test classes covering encode/decode, client state machine, QoS flows, properties, logging
-- Integration test suite (Docker-based Mosquitto broker)
 - KDoc on all public API types with spec references, examples, and parameter documentation
+- **Consumer convenience APIs:**
+  - `MqttMessage.payloadAsString()` — decode UTF-8 payload without boilerplate
+  - `MqttEndpoint.parse(uri)` — parse `tcp://`, `ssl://`, `mqtts://`, `tls://`, `ws://`, `wss://` URIs
+  - `MqttClient(clientId) { ... }` — factory function combining client ID with config DSL
+  - `client.messagesForTopic(topic)` — exact-match filtered message flow
+  - `client.messagesMatching(filter)` — wildcard-aware message flow (`+`, `#`)
+  - `client.subscribe(qos, vararg topics)` — multi-topic subscribe at same QoS
+  - `client.publish(topic, payload, qos, properties)` — string publish with properties
+  - `client.use(endpoint) { ... }` — structured connect/close lifecycle
+- 328 tests across 14 test classes covering encode/decode, client state machine, QoS flows, properties, logging, convenience APIs
+- Integration test suite (Docker-based Mosquitto broker)
