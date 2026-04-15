@@ -70,6 +70,20 @@ public data class MqttMessage(
     ) : this(topic, ByteString(payload), qos, retain, properties)
 
     override fun toString(): String = "MqttMessage(topic='$topic', payload=${payload.size}B, qos=$qos, retain=$retain)"
+
+    /**
+     * Returns the payload decoded as a UTF-8 string.
+     *
+     * Convenience accessor for the very common case of text-based MQTT payloads.
+     *
+     * ## Example
+     * ```kotlin
+     * client.messages.collect { msg ->
+     *     println("${msg.topic}: ${msg.payloadAsString()}")
+     * }
+     * ```
+     */
+    public fun payloadAsString(): String = payload.toByteArray().decodeToString()
 }
 
 /**

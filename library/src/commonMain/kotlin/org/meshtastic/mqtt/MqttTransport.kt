@@ -105,4 +105,66 @@ public sealed interface MqttEndpoint {
             require(url.isNotBlank()) { "url must not be blank" }
         }
     }
+
+    public companion object {
+        /**
+         * Parse an MQTT endpoint from a URI string.
+         *
+         * Supported schemes:
+         * - `tcp://host:port` or `mqtt://host:port` — plain TCP (default port: 1883)
+         * - `ssl://host:port` or `mqtts://host:port` or `tls://host:port` — TCP with TLS (default port: 8883)
+         * - `ws://host:port/path` — plain WebSocket
+         * - `wss://host:port/path` — WebSocket with TLS
+         *
+         * ## Example
+         * ```kotlin
+         * val tcp = MqttEndpoint.parse("tcp://broker.example.com:1883")
+         * val tls = MqttEndpoint.parse("ssl://broker.example.com:8883")
+         * val ws  = MqttEndpoint.parse("wss://broker.example.com/mqtt")
+         * ```
+         *
+         * @param uri The URI to parse.
+         * @throws IllegalArgumentException if the URI scheme is unsupported or the format is invalid.
+         */
+        public fun parse(uri: String): MqttEndpoint {
+            val colonSlashSlash = uri.indexOf("://")
+            require(colonSlashSlash > 0) { "Invalid MQTT URI — missing scheme: $uri" }
+
+            val scheme = uri.substring(0, colonSlashSlash).lowercase()
+            val rest = uri.substring(colonSlashSlash + 3)
+
+            return when (scheme) {
+                "tcp", "mqtt" -> parseTcp(rest, tls = false, defaultPort = 1883)
+
+                "ssl", "mqtts", "tls" -> parseTcp(rest, tls = true, defaultPort = 8883)
+
+                "ws" -> WebSocket(url = uri)
+
+                "wss" -> WebSocket(url = uri)
+
+                else -> throw IllegalArgumentException(
+                    "Unsupported MQTT URI scheme '$scheme'. Use tcp://, ssl://, ws://, or wss://",
+                )
+            }
+        }
+
+        private fun parseTcp(
+            hostPort: String,
+            tls: Boolean,
+            defaultPort: Int,
+        ): Tcp {
+            // Strip any trailing path (e.g., "host:1883/mqtt" → "host:1883")
+            val withoutPath = hostPort.substringBefore('/')
+            val colonIdx = withoutPath.lastIndexOf(':')
+            return if (colonIdx > 0) {
+                val host = withoutPath.substring(0, colonIdx)
+                val port =
+                    withoutPath.substring(colonIdx + 1).toIntOrNull()
+                        ?: throw IllegalArgumentException("Invalid port in URI: $withoutPath")
+                Tcp(host = host, port = port, tls = tls)
+            } else {
+                Tcp(host = withoutPath, port = defaultPort, tls = tls)
+            }
+        }
+    }
 }

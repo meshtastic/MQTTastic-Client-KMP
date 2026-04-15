@@ -22,12 +22,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -563,3 +565,200 @@ public class MqttClient
             private const val TAG = "MqttClient"
         }
     }
+
+/**
+ * Creates an [MqttClient] with the given [clientId] and optional configuration.
+ *
+ * Shorthand factory that combines client ID with the [MqttConfig.Builder] DSL:
+ *
+ * ```kotlin
+ * val client = MqttClient("sensor-hub") {
+ *     keepAliveSeconds = 30
+ *     autoReconnect = true
+ *     logger = MqttLogger.println()
+ *     logLevel = MqttLogLevel.DEBUG
+ * }
+ * ```
+ *
+ * @param clientId Client identifier sent to the broker.
+ * @param scope Coroutine scope for background jobs.
+ * @param configure Optional configuration block.
+ */
+public fun MqttClient(
+    clientId: String,
+    scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    configure: MqttConfig.Builder.() -> Unit = {},
+): MqttClient {
+    val config =
+        MqttConfig
+            .Builder()
+            .apply {
+                this.clientId = clientId
+                configure()
+            }.build()
+    return MqttClient(config, scope)
+}
+
+// --- Extension functions for consumer convenience ---
+
+/**
+ * Returns a [Flow] of messages filtered to a specific [topic].
+ *
+ * Performs an exact match on [MqttMessage.topic]. For wildcard filtering,
+ * use [messagesMatching] instead.
+ *
+ * ## Example
+ * ```kotlin
+ * client.messagesForTopic("sensors/temperature").collect { msg ->
+ *     println("Temp: ${msg.payloadAsString()}")
+ * }
+ * ```
+ */
+public fun MqttClient.messagesForTopic(topic: String): Flow<MqttMessage> = messages.filter { it.topic == topic }
+
+/**
+ * Returns a [Flow] of messages whose topic matches the given MQTT [topicFilter].
+ *
+ * Supports MQTT wildcard patterns:
+ * - `+` matches a single topic level
+ * - `#` matches any number of remaining levels (must be last)
+ *
+ * ## Example
+ * ```kotlin
+ * client.messagesMatching("sensors/+/temperature").collect { msg ->
+ *     println("${msg.topic}: ${msg.payloadAsString()}")
+ * }
+ * ```
+ */
+public fun MqttClient.messagesMatching(topicFilter: String): Flow<MqttMessage> =
+    messages.filter { topicMatchesFilter(it.topic, topicFilter) }
+
+/**
+ * Subscribe to multiple topic filters at the same QoS level.
+ *
+ * Convenience for the common case of subscribing to several topics with identical QoS:
+ *
+ * ```kotlin
+ * client.subscribe(QoS.AT_LEAST_ONCE, "sensors/temp", "sensors/humidity", "sensors/pressure")
+ * ```
+ *
+ * @param qos QoS level applied to all topic filters.
+ * @param topicFilters One or more topic filters to subscribe to.
+ */
+public suspend fun MqttClient.subscribe(
+    qos: QoS,
+    vararg topicFilters: String,
+) {
+    subscribe(topicFilters.associateWith { qos })
+}
+
+/**
+ * Publish a message with MQTT 5.0 [PublishProperties].
+ *
+ * Use when you need to set content type, message expiry, user properties, or other
+ * MQTT 5.0 publish properties alongside a simple string payload:
+ *
+ * ```kotlin
+ * client.publish(
+ *     topic = "sensors/data",
+ *     payload = """{"temp": 22.5}""",
+ *     qos = QoS.AT_LEAST_ONCE,
+ *     properties = PublishProperties(contentType = "application/json"),
+ * )
+ * ```
+ */
+public suspend fun MqttClient.publish(
+    topic: String,
+    payload: String,
+    qos: QoS = QoS.AT_MOST_ONCE,
+    retain: Boolean = false,
+    properties: PublishProperties = PublishProperties(),
+) {
+    publish(
+        MqttMessage(
+            topic = topic,
+            payload = ByteString(payload.encodeToByteArray()),
+            qos = qos,
+            retain = retain,
+            properties = properties,
+        ),
+    )
+}
+
+/**
+ * Connect, execute [block], then close — structured resource management.
+ *
+ * Ensures [MqttClient.close] is called even if [block] throws, similar to
+ * `java.io.Closeable.use {}` or Ktor's `HttpClient.use {}`.
+ *
+ * ```kotlin
+ * MqttClient("sensor").use(MqttEndpoint.parse("tcp://broker:1883")) { client ->
+ *     client.subscribe("sensors/#", QoS.AT_LEAST_ONCE)
+ *     client.publish("sensors/temp", "22.5")
+ *     delay(10_000)
+ * }
+ * ```
+ *
+ * @param endpoint Broker endpoint to connect to.
+ * @param block Suspend lambda receiving the connected client.
+ * @return The result of [block].
+ */
+public suspend fun <T> MqttClient.use(
+    endpoint: MqttEndpoint,
+    block: suspend (MqttClient) -> T,
+): T {
+    try {
+        connect(endpoint)
+        return block(this)
+    } finally {
+        close()
+    }
+}
+
+/**
+ * Check whether a topic name matches an MQTT topic filter (§4.7).
+ *
+ * - `+` matches exactly one topic level
+ * - `#` matches zero or more remaining levels (must be last segment)
+ */
+internal fun topicMatchesFilter(
+    topic: String,
+    filter: String,
+): Boolean {
+    val topicLevels = topic.split('/')
+    val filterLevels = filter.split('/')
+
+    var ti = 0
+    var fi = 0
+    while (fi < filterLevels.size) {
+        val filterLevel = filterLevels[fi]
+        when {
+            filterLevel == "#" -> {
+                return true
+            }
+
+            // Matches everything remaining
+            ti >= topicLevels.size -> {
+                return false
+            }
+
+            // Filter has more levels than topic
+            filterLevel == "+" -> {
+                ti++
+                fi++
+            }
+
+            // Matches one level
+            filterLevel == topicLevels[ti] -> {
+                ti++
+                fi++
+            }
+
+            // Exact match
+            else -> {
+                return false
+            }
+        }
+    }
+    return ti == topicLevels.size
+}

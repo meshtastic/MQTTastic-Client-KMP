@@ -48,6 +48,17 @@ public final class org/meshtastic/mqtt/MqttClient {
 	public final fun unsubscribe ([Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class org/meshtastic/mqtt/MqttClientKt {
+	public static final fun MqttClient (Ljava/lang/String;Lkotlinx/coroutines/CoroutineScope;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/mqtt/MqttClient;
+	public static synthetic fun MqttClient$default (Ljava/lang/String;Lkotlinx/coroutines/CoroutineScope;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/mqtt/MqttClient;
+	public static final fun messagesForTopic (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun messagesMatching (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun publish (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun publish$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun subscribe (Lorg/meshtastic/mqtt/MqttClient;Lorg/meshtastic/mqtt/QoS;[Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun use (Lorg/meshtastic/mqtt/MqttClient;Lorg/meshtastic/mqtt/MqttEndpoint;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public final class org/meshtastic/mqtt/MqttConfig {
 	public static final field Companion Lorg/meshtastic/mqtt/MqttConfig$Companion;
 	public fun <init> ()V
@@ -150,6 +161,11 @@ public final class org/meshtastic/mqtt/MqttConfig$Companion {
 }
 
 public abstract interface class org/meshtastic/mqtt/MqttEndpoint {
+	public static final field Companion Lorg/meshtastic/mqtt/MqttEndpoint$Companion;
+}
+
+public final class org/meshtastic/mqtt/MqttEndpoint$Companion {
+	public final fun parse (Ljava/lang/String;)Lorg/meshtastic/mqtt/MqttEndpoint;
 }
 
 public final class org/meshtastic/mqtt/MqttEndpoint$Tcp : org/meshtastic/mqtt/MqttEndpoint {
@@ -228,6 +244,7 @@ public final class org/meshtastic/mqtt/MqttMessage {
 	public final fun getRetain ()Z
 	public final fun getTopic ()Ljava/lang/String;
 	public fun hashCode ()I
+	public final fun payloadAsString ()Ljava/lang/String;
 	public fun toString ()Ljava/lang/String;
 }
 
