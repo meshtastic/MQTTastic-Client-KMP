@@ -8,36 +8,38 @@
     {
       "description": "Group Kotlin ecosystem dependencies",
       "groupName": "Kotlin ecosystem",
-      "matchPackagePatterns": [
-        "^org\\.jetbrains\\.kotlin:",
-        "^org\\.jetbrains\\.kotlinx:kotlinx-coroutines",
-        "^org\\.jetbrains\\.kotlinx:kotlinx-io"
+      "matchPackageNames": [
+        "/^org\\.jetbrains\\.kotlin:/",
+        "/^org\\.jetbrains\\.kotlinx:kotlinx-coroutines/",
+        "/^org\\.jetbrains\\.kotlinx:kotlinx-io/"
       ]
     },
     {
       "description": "Group Ktor ecosystem dependencies",
       "groupName": "Ktor ecosystem",
-      "matchPackagePatterns": ["^io\\.ktor:"]
+      "matchPackageNames": [
+        "/^io\\.ktor:/"
+      ]
     },
     {
       "description": "Group Compose ecosystem dependencies",
       "groupName": "Compose ecosystem",
-      "matchPackagePatterns": [
-        "^org\\.jetbrains\\.compose",
-        "^androidx\\."
+      "matchPackageNames": [
+        "/^org\\.jetbrains\\.compose/",
+        "/^androidx\\./"
       ]
     },
     {
       "description": "Group build tool dependencies",
       "groupName": "Build tools",
-      "matchPackagePatterns": [
-        "^com\\.diffplug\\.spotless",
-        "^io\\.gitlab\\.arturbosch\\.detekt",
-        "^org\\.jetbrains\\.kotlinx\\.binary-compatibility-validator",
-        "^org\\.jetbrains\\.kotlinx:binary-compatibility-validator",
-        "^org\\.jetbrains\\.dokka",
-        "^org\\.jetbrains\\.kotlinx\\.kover",
-        "^org\\.jetbrains\\.kotlinx:kover"
+      "matchPackageNames": [
+        "/^com\\.diffplug\\.spotless/",
+        "/^io\\.gitlab\\.arturbosch\\.detekt/",
+        "/^org\\.jetbrains\\.kotlinx\\.binary-compatibility-validator/",
+        "/^org\\.jetbrains\\.kotlinx:binary-compatibility-validator/",
+        "/^org\\.jetbrains\\.dokka/",
+        "/^org\\.jetbrains\\.kotlinx\\.kover/",
+        "/^org\\.jetbrains\\.kotlinx:kover/"
       ]
     },
     {
