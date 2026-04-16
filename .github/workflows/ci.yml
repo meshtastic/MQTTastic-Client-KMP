@@ -12,19 +12,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048M"
+  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
 
 jobs:
-  validate-wrapper:
-    name: Validate Gradle Wrapper
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: gradle/actions/wrapper-validation@v6
-
   lint:
-    needs: [validate-wrapper]
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -32,58 +25,31 @@ jobs:
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run spotlessCheck and detekt
-        run: ./gradlew spotlessCheck detekt --no-daemon --stacktrace
+        run: ./gradlew spotlessCheck detekt --stacktrace
 
   test-jvm:
     name: Test JVM
-    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run JVM tests and verify coverage
-        run: ./gradlew jvmTest koverVerify --no-daemon --stacktrace
+        run: ./gradlew jvmTest koverVerify --stacktrace
 
       - name: Generate coverage report
         if: always()
-        run: ./gradlew koverXmlReport --no-daemon --stacktrace
+        run: ./gradlew koverXmlReport --stacktrace
 
       - name: Upload coverage to Codecov
         if: always()
@@ -96,145 +62,79 @@ jobs:
 
   test-native-linux:
     name: Test Native Linux
-    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run Linux native tests
-        run: ./gradlew :library:linuxX64Test --no-daemon --stacktrace
+        run: ./gradlew :library:linuxX64Test --stacktrace
 
   test-native-macos:
     name: Test Native macOS
-    needs: [validate-wrapper]
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run macOS and iOS simulator tests
-        run: ./gradlew :library:macosArm64Test :library:iosSimulatorArm64Test --no-daemon --stacktrace
+        run: ./gradlew :library:macosArm64Test :library:iosSimulatorArm64Test --stacktrace
 
   test-wasm:
     name: Test wasmJs
-    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run wasmJs browser tests
-        run: ./gradlew wasmJsBrowserTest --no-daemon --stacktrace
+        run: ./gradlew wasmJsBrowserTest --stacktrace
 
   test-windows:
     name: Test Windows
-    needs: [validate-wrapper]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run Windows native tests
-        run: .\gradlew.bat :library:mingwX64Test --no-daemon --stacktrace
+        shell: bash
+        run: ./gradlew :library:mingwX64Test --stacktrace
 
   api-check:
     name: API Check
-    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run API compatibility check
-        run: ./gradlew apiCheck --no-daemon --stacktrace
+        run: ./gradlew apiCheck --stacktrace
 
   build:
     name: Build
@@ -245,22 +145,9 @@ jobs:
         with:
           submodules: true
 
-      - uses: actions/setup-java@v4
+      - uses: ./.github/actions/gradle-setup
         with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Build
-        run: ./gradlew build --no-daemon --stacktrace
+        run: ./gradlew build --stacktrace
