@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -151,7 +152,7 @@ private val MeshDarkColorScheme = darkColorScheme(
     outlineVariant = Color(0xFF353739),
 )
 
-private val TwoPaneBreakpoint = 840.dp
+private val TwoPaneBreakpoint = 960.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -523,27 +524,23 @@ private fun SubscribeSection(
             shape = MaterialTheme.shapes.medium,
         )
         Spacer(Modifier.height(8.dp))
-        Row(
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            QoS.entries.forEach { q ->
+                FilterChip(
+                    selected = qos == q,
+                    onClick = { onQosChange(q) },
+                    label = { Text("QoS ${q.ordinal}") },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        FilledTonalButton(
+            onClick = onSubscribe,
+            enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+            shape = MaterialTheme.shapes.medium,
         ) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                QoS.entries.forEach { q ->
-                    FilterChip(
-                        selected = qos == q,
-                        onClick = { onQosChange(q) },
-                        label = { Text("QoS ${q.ordinal}") },
-                    )
-                }
-            }
-            FilledTonalButton(
-                onClick = onSubscribe,
-                enabled = enabled,
-                shape = MaterialTheme.shapes.medium,
-            ) {
-                Text("Subscribe")
-            }
+            Text("Subscribe", fontWeight = FontWeight.SemiBold)
         }
 
         AnimatedVisibility(visible = activeSubscriptions.isNotEmpty()) {
@@ -763,17 +760,23 @@ private fun MessagesFeed(
                 } else {
                     Box(modifier = Modifier.fillMaxSize()) {
                         val listState = rememberLazyListState()
+                        // Jetchat pattern: newest-first list + reverseLayout renders the
+                        // newest at the visual bottom. We always animate to item 0 on new
+                        // messages; the user can scroll up into history freely because the
+                        // "Jump to latest" button returns them.
                         val userScrolledAway by remember {
-                            derivedStateOf { listState.firstVisibleItemIndex > 2 }
+                            derivedStateOf { listState.firstVisibleItemIndex > 0 }
                         }
 
                         LaunchedEffect(messages.size) {
-                            if (!userScrolledAway) listState.scrollToItem(0)
+                            if (!userScrolledAway) listState.animateScrollToItem(0)
                         }
 
                         LazyColumn(
                             state = listState,
+                            reverseLayout = true,
                             modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(vertical = 8.dp),
                         ) {
                             items(
                                 items = messages,
@@ -796,7 +799,7 @@ private fun MessagesFeed(
                                 shape = MaterialTheme.shapes.large,
                             ) {
                                 Text(
-                                    "↑ New messages",
+                                    "↓ Jump to latest",
                                     style = MaterialTheme.typography.labelMedium,
                                 )
                             }
