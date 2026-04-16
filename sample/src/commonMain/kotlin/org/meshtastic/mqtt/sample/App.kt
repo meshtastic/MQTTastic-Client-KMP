@@ -18,14 +18,20 @@
  */
 package org.meshtastic.mqtt.sample
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,139 +42,368 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.meshtastic.mqtt.ConnectionState
 import org.meshtastic.mqtt.QoS
 
-@OptIn(ExperimentalLayoutApi::class)
+// -- Meshtastic-inspired dark theme --
+
+private val MeshGreen = Color(0xFF67EA94)
+private val MeshGreenDark = Color(0xFF2E7D4A)
+private val MeshSurface = Color(0xFF1A1C1E)
+private val MeshSurfaceContainer = Color(0xFF212325)
+private val MeshSurfaceContainerHigh = Color(0xFF2C2E30)
+private val MeshOnSurface = Color(0xFFE2E2E5)
+private val MeshOnSurfaceVariant = Color(0xFF9CA3AF)
+private val MeshError = Color(0xFFFF6B6B)
+private val MeshWarning = Color(0xFFFFB74D)
+
+private val MeshDarkColorScheme = darkColorScheme(
+    primary = MeshGreen,
+    onPrimary = Color(0xFF003919),
+    primaryContainer = MeshGreenDark,
+    onPrimaryContainer = MeshGreen,
+    secondary = Color(0xFF86D5A0),
+    onSecondary = Color(0xFF003919),
+    secondaryContainer = Color(0xFF2E4F3A),
+    onSecondaryContainer = Color(0xFFA8F0C0),
+    tertiary = Color(0xFF7DD0E0),
+    onTertiary = Color(0xFF003640),
+    tertiaryContainer = Color(0xFF1E4D58),
+    onTertiaryContainer = Color(0xFFB8E8F4),
+    error = MeshError,
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF4D1515),
+    onErrorContainer = Color(0xFFFFDAD6),
+    background = Color(0xFF111315),
+    onBackground = MeshOnSurface,
+    surface = MeshSurface,
+    onSurface = MeshOnSurface,
+    surfaceVariant = MeshSurfaceContainer,
+    onSurfaceVariant = MeshOnSurfaceVariant,
+    surfaceContainerLowest = Color(0xFF0E1011),
+    surfaceContainerLow = Color(0xFF171919),
+    surfaceContainer = MeshSurfaceContainer,
+    surfaceContainerHigh = MeshSurfaceContainerHigh,
+    surfaceContainerHighest = Color(0xFF363839),
+    outline = Color(0xFF454749),
+    outlineVariant = Color(0xFF353739),
+)
+
+private val TwoPaneBreakpoint = 840.dp
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun App() {
     val viewModel = remember { MqttSampleViewModel() }
     DisposableEffect(Unit) { onDispose { viewModel.dispose() } }
     val state by viewModel.state.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // -- Error Banner --
-                state.error?.let { errorMessage ->
-                    ErrorBanner(
-                        message = errorMessage,
-                        onDismiss = { viewModel.dismissError() },
+    // Show errors via Snackbar
+    LaunchedEffect(state.error) {
+        state.error?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.dismissError()
+        }
+    }
+
+    MaterialTheme(colorScheme = MeshDarkColorScheme) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "⛰",
+                                fontSize = 20.sp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "MQTTtastic",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    },
+                    actions = {
+                        ConnectionStatusChip(state.connectionState)
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    ),
+                )
+            },
+            snackbarHost = {
+                SnackbarHost(snackbarHostState) { data ->
+                    Snackbar(
+                        snackbarData = data,
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = RoundedCornerShape(16.dp),
                     )
                 }
-
-                // -- Connection Card --
-                ConnectionCard(
-                    brokerUri = state.brokerUri,
-                    clientId = state.clientId,
-                    username = state.username,
-                    password = state.password,
-                    connectionState = state.connectionState,
-                    onBrokerUriChange = viewModel::updateBrokerUri,
-                    onClientIdChange = viewModel::updateClientId,
-                    onUsernameChange = viewModel::updateUsername,
-                    onPasswordChange = viewModel::updatePassword,
-                    onConnect = viewModel::connect,
-                    onDisconnect = viewModel::disconnect,
-                )
-
-                // -- Publish Card --
-                PublishCard(
-                    topic = state.publishTopic,
-                    message = state.publishMessage,
-                    qos = state.publishQos,
-                    retain = state.publishRetain,
-                    enabled = state.connectionState == ConnectionState.CONNECTED,
-                    onTopicChange = viewModel::updatePublishTopic,
-                    onMessageChange = viewModel::updatePublishMessage,
-                    onQosChange = viewModel::updatePublishQos,
-                    onRetainChange = viewModel::updatePublishRetain,
-                    onPublish = viewModel::publish,
-                )
-
-                // -- Subscribe Card --
-                SubscribeCard(
-                    topicFilter = state.subscribeTopic,
-                    qos = state.subscribeQos,
-                    activeSubscriptions = state.activeSubscriptions,
-                    enabled = state.connectionState == ConnectionState.CONNECTED,
-                    onTopicFilterChange = viewModel::updateSubscribeTopic,
-                    onQosChange = viewModel::updateSubscribeQos,
-                    onSubscribe = viewModel::subscribe,
-                    onUnsubscribe = viewModel::unsubscribe,
-                )
-
-                // -- Messages Card --
-                MessagesCard(
-                    messages = state.receivedMessages,
-                    onClear = viewModel::clearMessages,
-                )
+            },
+            containerColor = MaterialTheme.colorScheme.background,
+        ) { innerPadding ->
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            ) {
+                if (maxWidth >= TwoPaneBreakpoint) {
+                    TwoPaneLayout(state, viewModel)
+                } else {
+                    SinglePaneLayout(state, viewModel)
+                }
             }
         }
     }
 }
 
-// -- Composable sections --
+// -- Adaptive Layouts --
 
 @Composable
-private fun ErrorBanner(
-    message: String,
-    onDismiss: () -> Unit,
+private fun TwoPaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel) {
+    Row(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        // Left pane — controls
+        Column(
+            modifier = Modifier
+                .weight(0.4f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ControlsContent(state, viewModel)
+        }
+        // Right pane — messages (full height)
+        MessagesFeed(
+            messages = state.receivedMessages,
+            onClear = viewModel::clearMessages,
+            modifier = Modifier.weight(0.6f).fillMaxHeight(),
+        )
+    }
+}
+
+@Composable
+private fun SinglePaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 12.dp),
+    ) {
+        // Collapsible controls at top (compact)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Spacer(Modifier.height(8.dp))
+            ControlsContent(state, viewModel, defaultExpanded = false)
+            Spacer(Modifier.height(4.dp))
+        }
+        // Messages feed takes remaining space
+        MessagesFeed(
+            messages = state.receivedMessages,
+            onClear = viewModel::clearMessages,
+            modifier = Modifier.fillMaxWidth().weight(1f),
+        )
+    }
+}
+
+// -- Controls Content --
+
+@Composable
+private fun ControlsContent(
+    state: MqttSampleState,
+    viewModel: MqttSampleViewModel,
+    defaultExpanded: Boolean = true,
 ) {
+    ConnectionSection(
+        brokerUri = state.brokerUri,
+        clientId = state.clientId,
+        username = state.username,
+        password = state.password,
+        connectionState = state.connectionState,
+        onBrokerUriChange = viewModel::updateBrokerUri,
+        onClientIdChange = viewModel::updateClientId,
+        onUsernameChange = viewModel::updateUsername,
+        onPasswordChange = viewModel::updatePassword,
+        onConnect = viewModel::connect,
+        onDisconnect = viewModel::disconnect,
+        defaultExpanded = defaultExpanded,
+    )
+
+    SubscribeSection(
+        topicFilter = state.subscribeTopic,
+        qos = state.subscribeQos,
+        activeSubscriptions = state.activeSubscriptions,
+        enabled = state.connectionState == ConnectionState.CONNECTED,
+        onTopicFilterChange = viewModel::updateSubscribeTopic,
+        onQosChange = viewModel::updateSubscribeQos,
+        onSubscribe = viewModel::subscribe,
+        onUnsubscribe = viewModel::unsubscribe,
+        defaultExpanded = defaultExpanded,
+    )
+
+    PublishSection(
+        topic = state.publishTopic,
+        message = state.publishMessage,
+        qos = state.publishQos,
+        retain = state.publishRetain,
+        enabled = state.connectionState == ConnectionState.CONNECTED,
+        onTopicChange = viewModel::updatePublishTopic,
+        onMessageChange = viewModel::updatePublishMessage,
+        onQosChange = viewModel::updatePublishQos,
+        onRetainChange = viewModel::updatePublishRetain,
+        onPublish = viewModel::publish,
+        defaultExpanded = defaultExpanded,
+    )
+}
+
+// -- Connection Status Chip (in top bar) --
+
+@Composable
+private fun ConnectionStatusChip(connectionState: ConnectionState) {
+    val (color, label) = when (connectionState) {
+        ConnectionState.CONNECTED -> MeshGreen to "Connected"
+        ConnectionState.CONNECTING -> MeshWarning to "Connecting…"
+        ConnectionState.RECONNECTING -> MeshWarning to "Reconnecting…"
+        ConnectionState.DISCONNECTED -> MeshError to "Disconnected"
+    }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.errorContainer,
-        shape = MaterialTheme.shapes.small,
+        shape = RoundedCornerShape(20.dp),
+        color = color.copy(alpha = 0.15f),
+        modifier = Modifier.padding(end = 8.dp),
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = message,
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                style = MaterialTheme.typography.bodyMedium,
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(color),
             )
-            TextButton(onClick = onDismiss) {
-                Text("Dismiss")
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = color,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+// -- Collapsible Section Card --
+
+@Composable
+private fun SectionCard(
+    title: String,
+    defaultExpanded: Boolean = true,
+    trailing: @Composable (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(defaultExpanded) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (expanded) "▾" else "▸",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                trailing?.invoke()
+            }
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(),
+                exit = shrinkVertically(),
+            ) {
+                Column(modifier = Modifier.padding(top = 12.dp)) {
+                    content()
+                }
             }
         }
     }
 }
 
+// -- Connection Section --
+
 @Composable
-private fun ConnectionCard(
+private fun ConnectionSection(
     brokerUri: String,
     clientId: String,
     username: String,
@@ -180,86 +415,194 @@ private fun ConnectionCard(
     onPasswordChange: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
+    defaultExpanded: Boolean,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "Connection",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
+    val isConnected = connectionState == ConnectionState.CONNECTED
+    val isConnecting = connectionState == ConnectionState.CONNECTING ||
+        connectionState == ConnectionState.RECONNECTING
+
+    SectionCard(
+        title = "Connection",
+        defaultExpanded = defaultExpanded,
+    ) {
+        OutlinedTextField(
+            value = brokerUri,
+            onValueChange = onBrokerUriChange,
+            label = { Text("Broker URI") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = clientId,
+            onValueChange = onClientIdChange,
+            label = { Text("Client ID") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             OutlinedTextField(
-                value = brokerUri,
-                onValueChange = onBrokerUriChange,
-                label = { Text("Broker URI") },
+                value = username,
+                onValueChange = onUsernameChange,
+                label = { Text("Username") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp),
             )
-            Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value = clientId,
-                onValueChange = onClientIdChange,
-                label = { Text("Client ID") },
+                value = password,
+                onValueChange = onPasswordChange,
+                label = { Text("Password") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(14.dp),
             )
-            Spacer(Modifier.height(8.dp))
-            Row(
+        }
+        Spacer(Modifier.height(12.dp))
+        if (isConnected) {
+            OutlinedButton(
+                onClick = onDisconnect,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                shape = RoundedCornerShape(14.dp),
             ) {
-                OutlinedTextField(
-                    value = username,
-                    onValueChange = onUsernameChange,
-                    label = { Text("Username") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = password,
-                    onValueChange = onPasswordChange,
-                    label = { Text("Password") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
+                Text("Disconnect")
+            }
+        } else {
+            Button(
+                onClick = onConnect,
+                enabled = !isConnecting,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MeshGreen,
+                    contentColor = Color(0xFF003919),
+                ),
+            ) {
+                Text(
+                    text = if (isConnecting) "Connecting…" else "Connect",
+                    fontWeight = FontWeight.Bold,
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .clip(CircleShape)
-                            .background(connectionState.indicatorColor()),
-                    )
-                    Spacer(Modifier.width(8.dp))
+        }
+    }
+}
+
+// -- Subscribe Section --
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SubscribeSection(
+    topicFilter: String,
+    qos: QoS,
+    activeSubscriptions: Set<String>,
+    enabled: Boolean,
+    onTopicFilterChange: (String) -> Unit,
+    onQosChange: (QoS) -> Unit,
+    onSubscribe: () -> Unit,
+    onUnsubscribe: (String) -> Unit,
+    defaultExpanded: Boolean,
+) {
+    SectionCard(
+        title = "Subscribe",
+        defaultExpanded = defaultExpanded,
+        trailing = {
+            if (activeSubscriptions.isNotEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MeshGreen.copy(alpha = 0.15f),
+                ) {
                     Text(
-                        text = connectionState.displayText(),
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = "${activeSubscriptions.size} active",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MeshGreen,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
-                val isConnected = connectionState == ConnectionState.CONNECTED
-                val isConnecting = connectionState == ConnectionState.CONNECTING ||
-                    connectionState == ConnectionState.RECONNECTING
-                Button(
-                    onClick = if (isConnected) onDisconnect else onConnect,
-                    enabled = !isConnecting,
+            }
+        },
+    ) {
+        OutlinedTextField(
+            value = topicFilter,
+            onValueChange = onTopicFilterChange,
+            label = { Text("Topic Filter") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                QoS.entries.forEach { q ->
+                    FilterChip(
+                        selected = qos == q,
+                        onClick = { onQosChange(q) },
+                        label = { Text("QoS ${q.ordinal}") },
+                    )
+                }
+            }
+            FilledTonalButton(
+                onClick = onSubscribe,
+                enabled = enabled,
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text("Subscribe")
+            }
+        }
+
+        if (activeSubscriptions.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            activeSubscriptions.forEach { topic ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
-                    Text(if (isConnected) "Disconnect" else "Connect")
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = topic,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        IconButton(
+                            onClick = { onUnsubscribe(topic) },
+                            modifier = Modifier.size(28.dp),
+                        ) {
+                            Text(
+                                "✕",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+// -- Publish Section --
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PublishCard(
+private fun PublishSection(
     topic: String,
     message: String,
     qos: QoS,
@@ -270,287 +613,318 @@ private fun PublishCard(
     onQosChange: (QoS) -> Unit,
     onRetainChange: (Boolean) -> Unit,
     onPublish: () -> Unit,
+    defaultExpanded: Boolean,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "Publish",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = topic,
-                onValueChange = onTopicChange,
-                label = { Text("Topic") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = message,
-                onValueChange = onMessageChange,
-                label = { Text("Message") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QoS.entries.forEach { q ->
-                        FilterChip(
-                            selected = qos == q,
-                            onClick = { onQosChange(q) },
-                            label = { Text("QoS ${q.ordinal}") },
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = retain, onCheckedChange = onRetainChange)
-                    Text("Retain", style = MaterialTheme.typography.bodySmall)
+    SectionCard(title = "Publish", defaultExpanded = defaultExpanded) {
+        OutlinedTextField(
+            value = topic,
+            onValueChange = onTopicChange,
+            label = { Text("Topic") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = message,
+            onValueChange = onMessageChange,
+            label = { Text("Payload") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                QoS.entries.forEach { q ->
+                    FilterChip(
+                        selected = qos == q,
+                        onClick = { onQosChange(q) },
+                        label = { Text("QoS ${q.ordinal}") },
+                    )
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = onPublish,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Publish")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = retain, onCheckedChange = onRetainChange)
+                Text(
+                    "Retain",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        FilledTonalButton(
+            onClick = onPublish,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Text("Send", fontWeight = FontWeight.SemiBold)
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+// -- Messages Feed --
+
 @Composable
-private fun SubscribeCard(
-    topicFilter: String,
-    qos: QoS,
-    activeSubscriptions: Set<String>,
-    enabled: Boolean,
-    onTopicFilterChange: (String) -> Unit,
-    onQosChange: (QoS) -> Unit,
-    onSubscribe: () -> Unit,
-    onUnsubscribe: (String) -> Unit,
+private fun MessagesFeed(
+    messages: List<DisplayMessage>,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "Subscribe",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = topicFilter,
-                onValueChange = onTopicFilterChange,
-                label = { Text("Topic Filter") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(8.dp))
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    QoS.entries.forEach { q ->
-                        FilterChip(
-                            selected = qos == q,
-                            onClick = { onQosChange(q) },
-                            label = { Text("QoS ${q.ordinal}") },
-                        )
-                    }
-                }
-                Button(onClick = onSubscribe, enabled = enabled) {
-                    Text("Subscribe")
-                }
-            }
-
-            if (activeSubscriptions.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "Active Subscriptions",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-                activeSubscriptions.forEach { topic ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = topic,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        IconButton(onClick = { onUnsubscribe(topic) }) {
-                            Text("✕", fontWeight = FontWeight.Bold)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "Messages",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (messages.isNotEmpty()) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        ) {
+                            Text(
+                                text = "${messages.size}",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                            )
                         }
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun MessagesCard(
-    messages: List<DisplayMessage>,
-    onClear: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = "Messages (${messages.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                TextButton(onClick = onClear) {
-                    Text("Clear")
+                if (messages.isNotEmpty()) {
+                    TextButton(onClick = onClear) {
+                        Text("Clear", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
             }
 
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant,
+                thickness = 0.5.dp,
+            )
+
             if (messages.isEmpty()) {
-                Text(
-                    text = "No messages received yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 8.dp),
-                )
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "📡",
+                            fontSize = 32.sp,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "No messages yet",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = "Connect and subscribe to start receiving",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        )
+                    }
+                }
             } else {
-                LazyColumn(modifier = Modifier.height(300.dp)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                ) {
                     items(messages) { msg ->
                         MessageRow(msg)
-                        HorizontalDivider()
                     }
                 }
             }
         }
     }
 }
+
+// -- Message Row --
 
 @Composable
 private fun MessageRow(msg: DisplayMessage) {
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        val meshInfo = msg.meshtastic
-        if (meshInfo != null) {
-            // Meshtastic-decoded message
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "${meshInfo.from} → ${meshInfo.to}",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (meshInfo.isEncrypted) {
-                        Badge(text = "🔒", color = MaterialTheme.colorScheme.tertiary)
-                    }
-                    meshInfo.portnum?.let { port ->
-                        Badge(text = port.replace("_APP", ""))
+    val meshInfo = msg.meshtastic
+    val accentColor = meshInfo?.let { portnumColor(it) }
+        ?: MaterialTheme.colorScheme.outline
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 0.dp, end = 12.dp, top = 0.dp, bottom = 0.dp),
+    ) {
+        // Color accent bar on the left edge
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(64.dp)
+                .background(accentColor),
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            if (meshInfo != null) {
+                // -- Meshtastic decoded --
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "${meshInfo.from} → ${meshInfo.to}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (meshInfo.isEncrypted) {
+                            MeshBadge(
+                                text = "ENCRYPTED",
+                                color = MaterialTheme.colorScheme.outline,
+                            )
+                        }
+                        meshInfo.portnum?.let { port ->
+                            MeshBadge(
+                                text = port.replace("_APP", ""),
+                                color = accentColor,
+                            )
+                        }
                     }
                 }
-            }
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = msg.payload,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "ch: ${meshInfo.channelId} | gw: ${meshInfo.gatewayId}" +
-                    " | hops: ${meshInfo.hopLimit}" +
-                    if (meshInfo.rxRssi != 0) " | rssi: ${meshInfo.rxRssi}" else "",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        } else {
-            // Generic MQTT message
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+
+                // Payload text for decoded messages
+                if (meshInfo.payloadText != null) {
+                    Text(
+                        text = meshInfo.payloadText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+
+                // Metadata row
                 Text(
-                    text = msg.topic,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
+                    text = buildString {
+                        append("via ${meshInfo.gatewayId}")
+                        if (meshInfo.hopLimit > 0) append(" · ${meshInfo.hopLimit} hops")
+                        if (meshInfo.rxRssi != 0) append(" · ${meshInfo.rxRssi} dBm")
+                        if (meshInfo.rxSnr != 0f) append(" · ${meshInfo.rxSnr} SNR")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                    fontSize = 10.sp,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Badge(text = "QoS ${msg.qos.ordinal}")
-                    if (msg.retained) {
-                        Badge(text = "RET", color = MaterialTheme.colorScheme.tertiary)
+            } else {
+                // -- Generic MQTT --
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = msg.topic,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        MeshBadge(text = "QoS ${msg.qos.ordinal}")
+                        if (msg.retained) {
+                            MeshBadge(text = "RET", color = MeshWarning)
+                        }
                     }
                 }
+                Text(
+                    text = msg.payload,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
-            Text(
-                text = msg.payload,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
     }
+
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+        thickness = 0.5.dp,
+    )
 }
 
+// -- Badge --
+
 @Composable
-private fun Badge(
+private fun MeshBadge(
     text: String,
-    color: Color = MaterialTheme.colorScheme.secondary,
+    color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Surface(
-        color = color,
-        shape = MaterialTheme.shapes.extraSmall,
+        shape = RoundedCornerShape(6.dp),
+        color = color.copy(alpha = 0.12f),
     ) {
         Text(
             text = text,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSecondary,
+            color = color,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 9.sp,
         )
     }
 }
 
 // -- Helpers --
 
-private fun ConnectionState.indicatorColor(): Color =
-    when (this) {
-        ConnectionState.CONNECTED -> Color(0xFF4CAF50)
-        ConnectionState.CONNECTING -> Color(0xFFFFC107)
-        ConnectionState.RECONNECTING -> Color(0xFFFF9800)
-        ConnectionState.DISCONNECTED -> Color(0xFFF44336)
+private fun portnumColor(info: MeshtasticInfo): Color {
+    if (info.isEncrypted) return Color(0xFF6B7280)
+    return when (info.portnum) {
+        "TEXT_MESSAGE" -> Color(0xFF60A5FA)        // blue
+        "POSITION" -> Color(0xFF34D399)            // green
+        "NODEINFO" -> Color(0xFFA78BFA)            // purple
+        "TELEMETRY" -> Color(0xFFFBBF24)           // amber
+        "ROUTING" -> Color(0xFF9CA3AF)             // gray
+        "ADMIN" -> Color(0xFFF87171)               // red
+        "TRACEROUTE" -> Color(0xFF2DD4BF)          // teal
+        "NEIGHBORINFO" -> Color(0xFFC084FC)        // light purple
+        "MAP_REPORT" -> Color(0xFF4ADE80)          // lime
+        "STORE_FORWARD" -> Color(0xFFFB923C)       // orange
+        else -> Color(0xFF9CA3AF)                  // gray fallback
     }
-
-private fun ConnectionState.displayText(): String =
-    when (this) {
-        ConnectionState.CONNECTED -> "Connected"
-        ConnectionState.CONNECTING -> "Connecting…"
-        ConnectionState.RECONNECTING -> "Reconnecting…"
-        ConnectionState.DISCONNECTED -> "Disconnected"
-    }
+}
