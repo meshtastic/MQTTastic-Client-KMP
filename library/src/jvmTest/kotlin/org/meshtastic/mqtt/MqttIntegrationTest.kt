@@ -388,8 +388,8 @@ class MqttIntegrationTest {
                             delay(50)
                         }
                     }
-                    // Abrupt close without DISCONNECT — broker should publish the will
-                    willClient.close()
+                    // Abort without DISCONNECT — broker publishes the will (§3.1.2.5)
+                    willClient.abortConnection()
                 } catch (_: Exception) {
                     // Expected — we're forcefully closing
                 }

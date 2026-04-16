@@ -317,6 +317,8 @@ class MqttLoggerTest {
 
             // Verify disconnect-related log messages
             assertTrue(messages.any { it.first == MqttLogLevel.INFO && it.third.contains("Disconnect") })
+
+            client.close()
         }
 
     // --- NOOP companion ---
