@@ -221,6 +221,10 @@ private fun Disconnect.encodeDisconnect(): Pair<Int, ByteArray> {
 // --- §3.15 AUTH ---
 
 private fun Auth.encodeAuth(): Pair<Int, ByteArray> {
+    // §3.15.1: Short form — if reason code is SUCCESS and no properties, Remaining Length is 0
+    if (reasonCode == ReasonCode.SUCCESS && properties == MqttProperties.EMPTY) {
+        return 0b0000 to byteArrayOf()
+    }
     val parts = mutableListOf<ByteArray>()
     parts += byteArrayOf(reasonCode.value.toByte())
     parts += properties.encode()

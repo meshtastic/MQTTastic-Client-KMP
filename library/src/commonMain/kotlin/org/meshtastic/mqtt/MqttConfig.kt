@@ -94,6 +94,8 @@ import kotlinx.io.bytestring.ByteString
  *   Doubles after each failed attempt up to [reconnectMaxDelayMs]. Must be > 0.
  * @property reconnectMaxDelayMs Maximum delay between reconnection attempts in milliseconds.
  *   Must be ≥ [reconnectBaseDelayMs].
+ * @property maxReconnectAttempts Maximum number of consecutive reconnection attempts before
+ *   giving up. `0` = unlimited attempts. Defaults to `0` (unlimited).
  * @property defaultQos Default [QoS] level applied to convenience [MqttClient.publish] calls
  *   when no explicit QoS is specified. Similar to Ktor's `defaultRequest {}` pattern.
  *   Defaults to [QoS.AT_MOST_ONCE].
@@ -124,6 +126,7 @@ public data class MqttConfig(
     val autoReconnect: Boolean = true,
     val reconnectBaseDelayMs: Long = 1000,
     val reconnectMaxDelayMs: Long = 30000,
+    val maxReconnectAttempts: Int = 0,
     val defaultQos: QoS = QoS.AT_MOST_ONCE,
     val defaultRetain: Boolean = false,
     val logger: MqttLogger? = null,
@@ -154,6 +157,9 @@ public data class MqttConfig(
         }
         require(reconnectMaxDelayMs >= reconnectBaseDelayMs) {
             "reconnectMaxDelayMs must be >= reconnectBaseDelayMs ($reconnectBaseDelayMs), got: $reconnectMaxDelayMs"
+        }
+        require(maxReconnectAttempts >= 0) {
+            "maxReconnectAttempts must be >= 0, got: $maxReconnectAttempts"
         }
     }
 
@@ -244,6 +250,9 @@ public data class MqttConfig(
         /** Maximum delay in milliseconds between reconnection attempts. */
         public var reconnectMaxDelayMs: Long = 30000
 
+        /** Maximum consecutive reconnect attempts. `0` = unlimited. */
+        public var maxReconnectAttempts: Int = 0
+
         /** Default [QoS] level for convenience [MqttClient.publish] calls. */
         public var defaultQos: QoS = QoS.AT_MOST_ONCE
 
@@ -318,6 +327,7 @@ public data class MqttConfig(
                 autoReconnect = autoReconnect,
                 reconnectBaseDelayMs = reconnectBaseDelayMs,
                 reconnectMaxDelayMs = reconnectMaxDelayMs,
+                maxReconnectAttempts = maxReconnectAttempts,
                 defaultQos = defaultQos,
                 defaultRetain = defaultRetain,
                 logger = logger,
@@ -332,7 +342,7 @@ public data class MqttConfig(
  * The will message is published by the broker when the client disconnects unexpectedly
  * (e.g. network failure, keepalive timeout). If the client disconnects gracefully via
  * [MqttClient.disconnect], the will message is discarded unless DISCONNECT is sent with
- * reason code [org.meshtastic.mqtt.packet.ReasonCode.DISCONNECT_WITH_WILL].
+ * reason code [org.meshtastic.mqtt.ReasonCode.DISCONNECT_WITH_WILL].
  *
  * All binary data uses [ByteString] for immutability.
  *
@@ -366,7 +376,8 @@ public data class WillConfig(
     val userProperties: List<Pair<String, String>> = emptyList(),
 ) {
     init {
-        require(topic.isNotBlank()) { "topic must not be blank" }
+        require(topic.isNotBlank()) { "Will topic must not be blank" }
+        TopicValidator.validateTopicName(topic)
         willDelayInterval?.let {
             require(it in 0..4_294_967_295L) {
                 "willDelayInterval must be 0..4294967295, got: $it"
