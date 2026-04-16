@@ -40,6 +40,7 @@ import org.meshtastic.proto.ServiceEnvelope
 data class DisplayMessage(
     val topic: String,
     val payload: String,
+    val rawPayload: String,
     val qos: QoS,
     val retained: Boolean,
     /** Decoded Meshtastic metadata, if this was a ServiceEnvelope. */
@@ -80,6 +81,7 @@ data class MqttSampleState(
     // messages
     val receivedMessages: List<DisplayMessage> = emptyList(),
     val totalMessageCount: Int = 0,
+    val showRawPayload: Boolean = false,
     // error
     val error: String? = null,
 )
@@ -142,6 +144,10 @@ class MqttSampleViewModel {
 
     fun clearMessages() {
         _state.update { it.copy(receivedMessages = emptyList(), totalMessageCount = 0) }
+    }
+
+    fun toggleRawPayload() {
+        _state.update { it.copy(showRawPayload = !it.showRawPayload) }
     }
 
     // -- MQTT operations --
@@ -272,6 +278,10 @@ class MqttSampleViewModel {
 
     @Suppress("TooGenericExceptionCaught")
     private fun decodeMessage(msg: MqttMessage): DisplayMessage {
+        val rawBytes = msg.payload.toByteArray()
+        val rawPayload = rawBytes.joinToString(" ") { byte ->
+            (byte.toInt() and 0xFF).toString(radix = 16).padStart(2, '0').uppercase()
+        }
         val meshtastic = try {
             decodeMeshtastic(msg)
         } catch (_: Exception) {
@@ -280,6 +290,7 @@ class MqttSampleViewModel {
         return DisplayMessage(
             topic = msg.topic,
             payload = meshtastic?.let { formatMeshtastic(it) } ?: msg.payloadAsString(),
+            rawPayload = rawPayload,
             qos = msg.qos,
             retained = msg.retain,
             meshtastic = meshtastic,

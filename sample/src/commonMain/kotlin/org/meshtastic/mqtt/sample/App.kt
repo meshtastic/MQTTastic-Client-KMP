@@ -49,6 +49,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -229,6 +231,8 @@ private fun TwoPaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel
         MessagesFeed(
             messages = state.receivedMessages,
             totalCount = state.totalMessageCount,
+            showRawPayload = state.showRawPayload,
+            onToggleRaw = viewModel::toggleRawPayload,
             onClear = viewModel::clearMessages,
             modifier = Modifier.weight(0.6f).fillMaxHeight(),
         )
@@ -247,6 +251,8 @@ private fun SinglePaneLayout(state: MqttSampleState, viewModel: MqttSampleViewMo
             MessagesFeed(
                 messages = state.receivedMessages,
                 totalCount = state.totalMessageCount,
+                showRawPayload = state.showRawPayload,
+                onToggleRaw = viewModel::toggleRawPayload,
                 onClear = viewModel::clearMessages,
                 modifier = Modifier.fillMaxWidth().height(500.dp),
             )
@@ -541,24 +547,17 @@ private fun SubscribeSection(
             Column {
                 Spacer(Modifier.height(8.dp))
                 activeSubscriptions.forEach { topic ->
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        shape = MaterialTheme.shapes.small,
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
+                    ListItem(
+                        headlineContent = {
                             Text(
                                 text = topic,
-                                modifier = Modifier.weight(1f),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
+                        },
+                        trailingContent = {
                             IconButton(
                                 onClick = { onUnsubscribe(topic) },
                                 modifier = Modifier
@@ -573,8 +572,15 @@ private fun SubscribeSection(
                                     fontSize = 12.sp,
                                 )
                             }
-                        }
-                    }
+                        },
+                        colors = ListItemDefaults.colors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                            .clip(MaterialTheme.shapes.small),
+                    )
                 }
             }
         }
@@ -657,6 +663,8 @@ private fun PublishSection(
 private fun MessagesFeed(
     messages: List<DisplayMessage>,
     totalCount: Int,
+    showRawPayload: Boolean,
+    onToggleRaw: () -> Unit,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -699,9 +707,19 @@ private fun MessagesFeed(
                         }
                     }
                 }
-                if (messages.isNotEmpty()) {
-                    TextButton(onClick = onClear) {
-                        Text("Clear", style = MaterialTheme.typography.labelMedium)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    FilterChip(
+                        selected = showRawPayload,
+                        onClick = onToggleRaw,
+                        label = { Text("Raw", style = MaterialTheme.typography.labelSmall) },
+                    )
+                    if (messages.isNotEmpty()) {
+                        TextButton(onClick = onClear) {
+                            Text("Clear", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
@@ -742,7 +760,7 @@ private fun MessagesFeed(
                             items = messages,
                             key = { "${it.topic}:${it.payload.hashCode()}" },
                         ) { msg ->
-                            MessageRow(msg)
+                            MessageRow(msg, showRawPayload)
                         }
                     }
                 }
@@ -754,58 +772,75 @@ private fun MessagesFeed(
 // -- Message Row --
 
 @Composable
-private fun MessageRow(msg: DisplayMessage) {
+private fun MessageRow(msg: DisplayMessage, showRawPayload: Boolean) {
     val meshInfo = msg.meshtastic
     val accentColor = meshInfo?.let { portnumColor(it) }
         ?: MaterialTheme.colorScheme.outline
 
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Box(
-            modifier = Modifier
-                .width(3.dp)
-                .height(60.dp)
-                .background(accentColor),
-        )
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            if (meshInfo != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "${meshInfo.from} → ${meshInfo.to}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (meshInfo.isEncrypted) {
-                            MeshBadge("ENC", MaterialTheme.colorScheme.outline)
-                        }
-                        meshInfo.portnum?.let { port ->
-                            MeshBadge(port.replace("_APP", ""), accentColor)
-                        }
-                    }
+    if (showRawPayload) {
+        ListItem(
+            overlineContent = {
+                Text(
+                    text = msg.topic,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            headlineContent = {
+                Text(
+                    text = msg.rawPayload.ifEmpty { "(empty)" },
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            trailingContent = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    MeshBadge("QoS ${msg.qos.ordinal}")
+                    if (msg.retained) MeshBadge("RET", MeshWarning)
                 }
-
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+            ),
+        )
+    } else if (meshInfo != null) {
+        ListItem(
+            leadingContent = {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .fillMaxHeight()
+                        .background(accentColor),
+                )
+            },
+            overlineContent = {
+                Text(
+                    text = "${meshInfo.from} → ${meshInfo.to}",
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                )
+            },
+            headlineContent = {
                 if (meshInfo.payloadText != null) {
                     Text(
                         text = meshInfo.payloadText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                } else {
+                    Text(
+                        text = buildString {
+                            append("via ${meshInfo.gatewayId}")
+                            if (meshInfo.hopLimit > 0) append(" · ${meshInfo.hopLimit} hops")
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-
+            },
+            supportingContent = {
                 Text(
                     text = buildString {
                         append("via ${meshInfo.gatewayId}")
@@ -813,47 +848,63 @@ private fun MessageRow(msg: DisplayMessage) {
                         if (meshInfo.rxRssi != 0) append(" · ${meshInfo.rxRssi} dBm")
                         if (meshInfo.rxSnr != 0f) append(" · ${meshInfo.rxSnr} SNR")
                     },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 1.dp),
-                    fontSize = 10.sp,
                 )
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = msg.topic,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        MeshBadge("QoS ${msg.qos.ordinal}")
-                        if (msg.retained) MeshBadge("RET", MeshWarning)
+            },
+            trailingContent = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (meshInfo.isEncrypted) {
+                        MeshBadge("ENC", MaterialTheme.colorScheme.outline)
+                    }
+                    meshInfo.portnum?.let { port ->
+                        MeshBadge(port.replace("_APP", ""), accentColor)
                     }
                 }
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+            ),
+        )
+    } else {
+        ListItem(
+            leadingContent = {
+                Box(
+                    modifier = Modifier
+                        .width(3.dp)
+                        .fillMaxHeight()
+                        .background(accentColor),
+                )
+            },
+            headlineContent = {
+                Text(
+                    text = msg.topic,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            supportingContent = {
                 Text(
                     text = msg.payload,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
                 )
-            }
-        }
+            },
+            trailingContent = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    MeshBadge("QoS ${msg.qos.ordinal}")
+                    if (msg.retained) MeshBadge("RET", MeshWarning)
+                }
+            },
+            colors = ListItemDefaults.colors(
+                containerColor = Color.Transparent,
+            ),
+        )
     }
 
     HorizontalDivider(
         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-        thickness = 0.5.dp,
     )
 }
 
