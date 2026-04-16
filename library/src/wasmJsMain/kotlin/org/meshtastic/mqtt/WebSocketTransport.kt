@@ -47,6 +47,9 @@ internal class WebSocketTransport : MqttTransport {
             "WebSocketTransport requires MqttEndpoint.WebSocket"
         }
 
+        // Close any existing connection to prevent resource leaks on reconnect
+        close()
+
         val httpClient =
             HttpClient(Js) {
                 install(WebSockets)

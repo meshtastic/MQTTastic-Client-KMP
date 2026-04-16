@@ -54,17 +54,30 @@ internal class TcpTransport : MqttTransport {
     override suspend fun connect(endpoint: MqttEndpoint) {
         require(endpoint is MqttEndpoint.Tcp) { "TcpTransport requires MqttEndpoint.Tcp" }
 
+        // Close any existing connection to prevent resource leaks on reconnect
+        close()
+
         val selector = SelectorManager(Dispatchers.IO)
-        selectorManager = selector
         val rawSocket = aSocket(selector).tcp().connect(endpoint.host, endpoint.port)
 
-        socket =
-            if (endpoint.tls) {
-                rawSocket.tls(Dispatchers.IO)
-            } else {
-                rawSocket
+        try {
+            socket =
+                if (endpoint.tls) {
+                    rawSocket.tls(Dispatchers.IO)
+                } else {
+                    rawSocket
+                }
+        } catch (e: Exception) {
+            // TLS handshake failed — close the raw socket and selector to prevent leaks
+            try {
+                rawSocket.close()
+            } finally {
+                selector.close()
             }
+            throw e
+        }
 
+        selectorManager = selector
         readChannel = socket!!.openReadChannel()
         writeChannel = socket!!.openWriteChannel(autoFlush = false)
     }
