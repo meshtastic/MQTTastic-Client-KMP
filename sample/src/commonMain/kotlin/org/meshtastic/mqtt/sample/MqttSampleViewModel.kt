@@ -45,7 +45,7 @@ data class DisplayMessage(
 
 /** UI state for the MQTTtastic sample app. */
 data class MqttSampleState(
-    val brokerUri: String = "tcp://mqtt.meshtastic.org:1883",
+    val brokerUri: String = "tls://mqtt.meshtastic.org:8883",
     val clientId: String = "mqtttastic-sample",
     val username: String = "meshdev",
     val password: String = "large4cats",
