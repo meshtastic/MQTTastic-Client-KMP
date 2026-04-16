@@ -24,8 +24,8 @@
 -keep interface org.meshtastic.mqtt.MqttLogger { *; }
 
 # Reason codes and packet properties (public re-exports)
--keepclassmembers enum org.meshtastic.mqtt.packet.ReasonCode { *; }
--keepclassmembers enum org.meshtastic.mqtt.packet.RetainHandling { *; }
+-keepclassmembers enum org.meshtastic.mqtt.ReasonCode { *; }
+-keepclassmembers enum org.meshtastic.mqtt.RetainHandling { *; }
 
 # Keep Kotlin metadata for proper interop
 -keep class kotlin.Metadata { *; }

@@ -27,7 +27,6 @@ import org.meshtastic.mqtt.packet.Connect
 import org.meshtastic.mqtt.packet.Disconnect
 import org.meshtastic.mqtt.packet.MqttProperties
 import org.meshtastic.mqtt.packet.Publish
-import org.meshtastic.mqtt.packet.ReasonCode
 import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscribe
 import org.meshtastic.mqtt.packet.UnsubAck
@@ -327,7 +326,7 @@ class MqttClientTest {
             advanceUntilIdle()
 
             val payload = byteArrayOf(0xCA.toByte(), 0xFE.toByte())
-            client.publish("bytes/topic", payload)
+            client.publish(MqttMessage(topic = "bytes/topic", payload = payload))
             advanceUntilIdle()
 
             val sentPublish = transport.decodeSentPackets().last()

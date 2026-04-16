@@ -25,8 +25,6 @@ import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.MqttProperties
 import org.meshtastic.mqtt.packet.PubAck
 import org.meshtastic.mqtt.packet.Publish
-import org.meshtastic.mqtt.packet.ReasonCode
-import org.meshtastic.mqtt.packet.RetainHandling
 import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscribe
 import kotlin.test.Test
@@ -411,12 +409,17 @@ class AdvancedFeaturesTest {
             transport.enqueuePacket(PubAck(packetIdentifier = 1))
 
             val correlationData = ByteString(byteArrayOf(0x01, 0x02, 0x03))
-            client.publishWithResponse(
-                topic = "request/topic",
-                payload = "request body".encodeToByteArray(),
-                responseTopic = "response/topic",
-                correlationData = correlationData,
-                qos = QoS.AT_LEAST_ONCE,
+            client.publish(
+                MqttMessage(
+                    topic = "request/topic",
+                    payload = ByteString("request body".encodeToByteArray()),
+                    qos = QoS.AT_LEAST_ONCE,
+                    properties =
+                        PublishProperties(
+                            responseTopic = "response/topic",
+                            correlationData = correlationData,
+                        ),
+                ),
             )
             advanceUntilIdle()
 
@@ -440,11 +443,16 @@ class AdvancedFeaturesTest {
             val client = createConnectedClient(transport, scope = this)
 
             // QoS 0 — no ack needed
-            client.publishWithResponse(
-                topic = "cmd/execute",
-                payload = "run".encodeToByteArray(),
-                responseTopic = "cmd/result",
-                qos = QoS.AT_MOST_ONCE,
+            client.publish(
+                MqttMessage(
+                    topic = "cmd/execute",
+                    payload = ByteString("run".encodeToByteArray()),
+                    qos = QoS.AT_MOST_ONCE,
+                    properties =
+                        PublishProperties(
+                            responseTopic = "cmd/result",
+                        ),
+                ),
             )
             advanceUntilIdle()
 

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package org.meshtastic.mqtt.packet
+package org.meshtastic.mqtt
 
 /**
  * MQTT 5.0 reason codes per §2.4.

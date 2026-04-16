@@ -16,7 +16,6 @@
  */
 package org.meshtastic.mqtt
 
-import org.meshtastic.mqtt.packet.ReasonCode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

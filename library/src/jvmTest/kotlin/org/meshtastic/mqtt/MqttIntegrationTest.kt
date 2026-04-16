@@ -322,7 +322,14 @@ class MqttIntegrationTest {
                             delay(50)
                         }
                     }
-                    cleaner.publish(topic, byteArrayOf(), QoS.AT_LEAST_ONCE, retain = true)
+                    cleaner.publish(
+                        MqttMessage(
+                            topic = topic,
+                            payload = byteArrayOf(),
+                            qos = QoS.AT_LEAST_ONCE,
+                            retain = true,
+                        ),
+                    )
                     delay(500)
                     cleaner.disconnect()
                 } finally {

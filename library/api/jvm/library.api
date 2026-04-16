@@ -1,14 +1,14 @@
 public final class org/meshtastic/mqtt/AuthChallenge {
-	public fun <init> (Lorg/meshtastic/mqtt/packet/ReasonCode;Ljava/lang/String;[B)V
-	public final fun component1 ()Lorg/meshtastic/mqtt/packet/ReasonCode;
+	public fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;[B)V
+	public final fun component1 ()Lorg/meshtastic/mqtt/ReasonCode;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun component3 ()[B
-	public final fun copy (Lorg/meshtastic/mqtt/packet/ReasonCode;Ljava/lang/String;[B)Lorg/meshtastic/mqtt/AuthChallenge;
-	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/AuthChallenge;Lorg/meshtastic/mqtt/packet/ReasonCode;Ljava/lang/String;[BILjava/lang/Object;)Lorg/meshtastic/mqtt/AuthChallenge;
+	public final fun copy (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;[B)Lorg/meshtastic/mqtt/AuthChallenge;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/AuthChallenge;Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;[BILjava/lang/Object;)Lorg/meshtastic/mqtt/AuthChallenge;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAuthenticationData ()[B
 	public final fun getAuthenticationMethod ()Ljava/lang/String;
-	public final fun getReasonCode ()Lorg/meshtastic/mqtt/packet/ReasonCode;
+	public final fun getReasonCode ()Lorg/meshtastic/mqtt/ReasonCode;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -24,9 +24,6 @@ public final class org/meshtastic/mqtt/ConnectionState : java/lang/Enum {
 }
 
 public final class org/meshtastic/mqtt/MqttClient {
-	public static final field AUTH_BUFFER_CAPACITY I
-	public static final field MAX_REDIRECTS I
-	public static final field MESSAGE_BUFFER_CAPACITY I
 	public fun <init> (Lorg/meshtastic/mqtt/MqttConfig;Lkotlinx/coroutines/CoroutineScope;)V
 	public synthetic fun <init> (Lorg/meshtastic/mqtt/MqttConfig;Lkotlinx/coroutines/CoroutineScope;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun close (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -35,17 +32,13 @@ public final class org/meshtastic/mqtt/MqttClient {
 	public final fun getAuthChallenges ()Lkotlinx/coroutines/flow/SharedFlow;
 	public final fun getConnectionState ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getMessages ()Lkotlinx/coroutines/flow/SharedFlow;
-	public final fun publish (Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun publish (Ljava/lang/String;[BLorg/meshtastic/mqtt/QoS;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun publish (Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun publish (Lorg/meshtastic/mqtt/MqttMessage;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun publish$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public static synthetic fun publish$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;[BLorg/meshtastic/mqtt/QoS;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public final fun publishWithResponse (Ljava/lang/String;[BLjava/lang/String;Lkotlinx/io/bytestring/ByteString;Lorg/meshtastic/mqtt/QoS;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun publishWithResponse$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;[BLjava/lang/String;Lkotlinx/io/bytestring/ByteString;Lorg/meshtastic/mqtt/QoS;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun publish$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun sendAuthResponse ([BLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public final fun subscribe (Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZZLorg/meshtastic/mqtt/packet/RetainHandling;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun subscribe (Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZZLorg/meshtastic/mqtt/RetainHandling;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun subscribe (Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun subscribe$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZZLorg/meshtastic/mqtt/packet/RetainHandling;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun subscribe$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZZLorg/meshtastic/mqtt/RetainHandling;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun unsubscribe ([Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
@@ -54,9 +47,6 @@ public final class org/meshtastic/mqtt/MqttClientKt {
 	public static synthetic fun MqttClient$default (Ljava/lang/String;Lkotlinx/coroutines/CoroutineScope;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/mqtt/MqttClient;
 	public static final fun messagesForTopic (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;)Lkotlinx/coroutines/flow/Flow;
 	public static final fun messagesMatching (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;)Lkotlinx/coroutines/flow/Flow;
-	public static final fun publish (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun publish$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZLorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public static final fun subscribe (Lorg/meshtastic/mqtt/MqttClient;Lorg/meshtastic/mqtt/QoS;[Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun use (Lorg/meshtastic/mqtt/MqttClient;Lorg/meshtastic/mqtt/MqttEndpoint;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
@@ -291,6 +281,76 @@ public final class org/meshtastic/mqtt/QoS$Companion {
 	public final fun fromValue (I)Lorg/meshtastic/mqtt/QoS;
 }
 
+public final class org/meshtastic/mqtt/ReasonCode : java/lang/Enum {
+	public static final field ADMINISTRATIVE_ACTION Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field BAD_AUTHENTICATION_METHOD Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field BAD_USER_NAME_OR_PASSWORD Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field BANNED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field CLIENT_IDENTIFIER_NOT_VALID Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field CONNECTION_RATE_EXCEEDED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field CONTINUE_AUTHENTICATION Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field Companion Lorg/meshtastic/mqtt/ReasonCode$Companion;
+	public static final field DISCONNECT_WITH_WILL Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field GRANTED_QOS_1 Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field GRANTED_QOS_2 Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field IMPLEMENTATION_SPECIFIC_ERROR Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field KEEP_ALIVE_TIMEOUT Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field MALFORMED_PACKET Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field MAXIMUM_CONNECT_TIME Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field MESSAGE_RATE_TOO_HIGH Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field NOT_AUTHORIZED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field NO_MATCHING_SUBSCRIBERS Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field NO_SUBSCRIPTION_EXISTED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field PACKET_IDENTIFIER_IN_USE Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field PACKET_IDENTIFIER_NOT_FOUND Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field PACKET_TOO_LARGE Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field PAYLOAD_FORMAT_INVALID Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field PROTOCOL_ERROR Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field QOS_NOT_SUPPORTED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field QUOTA_EXCEEDED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field RECEIVE_MAXIMUM_EXCEEDED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field RETAIN_NOT_SUPPORTED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field RE_AUTHENTICATE Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SERVER_BUSY Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SERVER_MOVED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SERVER_SHUTTING_DOWN Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SERVER_UNAVAILABLE Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SESSION_TAKEN_OVER Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SHARED_SUBSCRIPTIONS_NOT_SUPPORTED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SUBSCRIPTION_IDENTIFIERS_NOT_SUPPORTED Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field SUCCESS Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field TOPIC_ALIAS_INVALID Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field TOPIC_FILTER_INVALID Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field TOPIC_NAME_INVALID Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field UNSPECIFIED_ERROR Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field UNSUPPORTED_PROTOCOL_VERSION Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field USE_ANOTHER_SERVER Lorg/meshtastic/mqtt/ReasonCode;
+	public static final field WILDCARD_SUBSCRIPTIONS_NOT_SUPPORTED Lorg/meshtastic/mqtt/ReasonCode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getValue ()I
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/mqtt/ReasonCode;
+	public static fun values ()[Lorg/meshtastic/mqtt/ReasonCode;
+}
+
+public final class org/meshtastic/mqtt/ReasonCode$Companion {
+	public final fun fromValue (I)Lorg/meshtastic/mqtt/ReasonCode;
+}
+
+public final class org/meshtastic/mqtt/RetainHandling : java/lang/Enum {
+	public static final field Companion Lorg/meshtastic/mqtt/RetainHandling$Companion;
+	public static final field DO_NOT_SEND Lorg/meshtastic/mqtt/RetainHandling;
+	public static final field SEND_AT_SUBSCRIBE Lorg/meshtastic/mqtt/RetainHandling;
+	public static final field SEND_IF_NEW_SUBSCRIPTION Lorg/meshtastic/mqtt/RetainHandling;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getValue ()I
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/mqtt/RetainHandling;
+	public static fun values ()[Lorg/meshtastic/mqtt/RetainHandling;
+}
+
+public final class org/meshtastic/mqtt/RetainHandling$Companion {
+	public final fun fromValue (I)Lorg/meshtastic/mqtt/RetainHandling;
+}
+
 public final class org/meshtastic/mqtt/WillConfig {
 	public fun <init> (Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;Lorg/meshtastic/mqtt/QoS;ZLjava/lang/Long;Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;ZLjava/util/List;)V
 	public synthetic fun <init> (Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;Lorg/meshtastic/mqtt/QoS;ZLjava/lang/Long;Ljava/lang/Long;Ljava/lang/String;Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;ZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -323,75 +383,5 @@ public final class org/meshtastic/mqtt/WillConfig {
 	public final fun getWillDelayInterval ()Ljava/lang/Long;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
-}
-
-public final class org/meshtastic/mqtt/packet/ReasonCode : java/lang/Enum {
-	public static final field ADMINISTRATIVE_ACTION Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field BAD_AUTHENTICATION_METHOD Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field BAD_USER_NAME_OR_PASSWORD Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field BANNED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field CLIENT_IDENTIFIER_NOT_VALID Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field CONNECTION_RATE_EXCEEDED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field CONTINUE_AUTHENTICATION Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field Companion Lorg/meshtastic/mqtt/packet/ReasonCode$Companion;
-	public static final field DISCONNECT_WITH_WILL Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field GRANTED_QOS_1 Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field GRANTED_QOS_2 Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field IMPLEMENTATION_SPECIFIC_ERROR Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field KEEP_ALIVE_TIMEOUT Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field MALFORMED_PACKET Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field MAXIMUM_CONNECT_TIME Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field MESSAGE_RATE_TOO_HIGH Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field NOT_AUTHORIZED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field NO_MATCHING_SUBSCRIBERS Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field NO_SUBSCRIPTION_EXISTED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field PACKET_IDENTIFIER_IN_USE Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field PACKET_IDENTIFIER_NOT_FOUND Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field PACKET_TOO_LARGE Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field PAYLOAD_FORMAT_INVALID Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field PROTOCOL_ERROR Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field QOS_NOT_SUPPORTED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field QUOTA_EXCEEDED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field RECEIVE_MAXIMUM_EXCEEDED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field RETAIN_NOT_SUPPORTED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field RE_AUTHENTICATE Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SERVER_BUSY Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SERVER_MOVED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SERVER_SHUTTING_DOWN Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SERVER_UNAVAILABLE Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SESSION_TAKEN_OVER Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SHARED_SUBSCRIPTIONS_NOT_SUPPORTED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SUBSCRIPTION_IDENTIFIERS_NOT_SUPPORTED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field SUCCESS Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field TOPIC_ALIAS_INVALID Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field TOPIC_FILTER_INVALID Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field TOPIC_NAME_INVALID Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field UNSPECIFIED_ERROR Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field UNSUPPORTED_PROTOCOL_VERSION Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field USE_ANOTHER_SERVER Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static final field WILDCARD_SUBSCRIPTIONS_NOT_SUPPORTED Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public final fun getValue ()I
-	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/mqtt/packet/ReasonCode;
-	public static fun values ()[Lorg/meshtastic/mqtt/packet/ReasonCode;
-}
-
-public final class org/meshtastic/mqtt/packet/ReasonCode$Companion {
-	public final fun fromValue (I)Lorg/meshtastic/mqtt/packet/ReasonCode;
-}
-
-public final class org/meshtastic/mqtt/packet/RetainHandling : java/lang/Enum {
-	public static final field Companion Lorg/meshtastic/mqtt/packet/RetainHandling$Companion;
-	public static final field DO_NOT_SEND Lorg/meshtastic/mqtt/packet/RetainHandling;
-	public static final field SEND_AT_SUBSCRIBE Lorg/meshtastic/mqtt/packet/RetainHandling;
-	public static final field SEND_IF_NEW_SUBSCRIPTION Lorg/meshtastic/mqtt/packet/RetainHandling;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public final fun getValue ()I
-	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/mqtt/packet/RetainHandling;
-	public static fun values ()[Lorg/meshtastic/mqtt/packet/RetainHandling;
-}
-
-public final class org/meshtastic/mqtt/packet/RetainHandling$Companion {
-	public final fun fromValue (I)Lorg/meshtastic/mqtt/packet/RetainHandling;
 }
 

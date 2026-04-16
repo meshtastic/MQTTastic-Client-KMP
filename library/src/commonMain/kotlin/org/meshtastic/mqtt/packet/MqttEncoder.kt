@@ -17,6 +17,7 @@
 package org.meshtastic.mqtt.packet
 
 import org.meshtastic.mqtt.QoS
+import org.meshtastic.mqtt.ReasonCode
 
 /**
  * Encode any [MqttPacket] subclass into its complete MQTT 5.0 wire format bytes.

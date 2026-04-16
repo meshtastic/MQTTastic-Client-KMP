@@ -17,6 +17,8 @@
 package org.meshtastic.mqtt.packet
 
 import org.meshtastic.mqtt.QoS
+import org.meshtastic.mqtt.ReasonCode
+import org.meshtastic.mqtt.RetainHandling
 
 /**
  * Decode a complete MQTT 5.0 packet (including fixed header) into the appropriate [MqttPacket] subclass.

@@ -28,8 +28,6 @@ import org.meshtastic.mqtt.packet.PubComp
 import org.meshtastic.mqtt.packet.PubRec
 import org.meshtastic.mqtt.packet.PubRel
 import org.meshtastic.mqtt.packet.Publish
-import org.meshtastic.mqtt.packet.ReasonCode
-import org.meshtastic.mqtt.packet.RetainHandling
 import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscribe
 import org.meshtastic.mqtt.packet.Subscription

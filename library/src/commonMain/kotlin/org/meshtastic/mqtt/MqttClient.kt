@@ -36,8 +36,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.io.bytestring.ByteString
 import org.meshtastic.mqtt.packet.MqttProperties
-import org.meshtastic.mqtt.packet.ReasonCode
-import org.meshtastic.mqtt.packet.RetainHandling
 import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscription
 
@@ -50,15 +48,16 @@ import org.meshtastic.mqtt.packet.Subscription
  * - **Connection management** — [connect], [disconnect], and [close] with lifecycle tracking
  *   via the [connectionState] flow.
  * - **Publishing** — [publish] messages with QoS 0/1/2, optional retain, and full MQTT 5.0
- *   properties. Convenience overloads accept [String], [ByteArray], or [MqttMessage].
+ *   properties. Overloads accept [String] payloads or fully-constructed [MqttMessage] objects.
  * - **Subscribing** — [subscribe] to topic filters with per-subscription QoS, No Local,
  *   Retain As Published, and Retain Handling options.
  * - **Automatic reconnection** — configurable exponential backoff with subscription
  *   re-establishment on reconnect (when [MqttConfig.autoReconnect] is `true`).
  * - **Enhanced authentication** — AUTH packet challenge/response via [authChallenges] flow
  *   and [sendAuthResponse] (§4.12).
- * - **Request/Response** — [publishWithResponse] sets Response Topic and Correlation Data
- *   for the MQTT 5.0 request/response pattern (§4.10).
+ * - **Request/Response** — set [PublishProperties.responseTopic] and
+ *   [PublishProperties.correlationData] on any publish for the MQTT 5.0 request/response
+ *   pattern (§4.10).
  *
  * ## Example
  * ```kotlin
@@ -231,39 +230,19 @@ public class MqttClient
         }
 
         /**
-         * Publish a message with a raw [ByteArray] payload.
+         * Publish a message with a [String] payload and optional MQTT 5.0 [properties].
          *
-         * Convenience overload that wraps [payload] in an [MqttMessage].
+         * This is the primary convenience overload for string payloads. For binary
+         * payloads, construct an [MqttMessage] directly with a [ByteArray] or [ByteString].
          *
-         * @param topic The topic to publish to.
-         * @param payload Raw byte payload.
-         * @param qos Quality of service level (default: [QoS.AT_MOST_ONCE]).
-         * @param retain Whether the message should be retained (default: false).
-         */
-        @Throws(
-            IllegalStateException::class,
-            IllegalArgumentException::class,
-            MqttConnectionException::class,
-            kotlin.coroutines.cancellation.CancellationException::class,
-        )
-        public suspend fun publish(
-            topic: String,
-            payload: ByteArray,
-            qos: QoS = QoS.AT_MOST_ONCE,
-            retain: Boolean = false,
-        ) {
-            publish(MqttMessage(topic = topic, payload = ByteString(payload), qos = qos, retain = retain))
-        }
-
-        /**
-         * Publish a message with a [String] payload.
-         *
-         * Convenience overload that encodes the string as UTF-8 bytes.
+         * For the MQTT 5.0 request/response pattern (§4.10), set [PublishProperties.responseTopic]
+         * and [PublishProperties.correlationData] in the [properties] parameter.
          *
          * @param topic The topic to publish to.
          * @param payload String payload (encoded as UTF-8).
          * @param qos Quality of service level (default: [QoS.AT_MOST_ONCE]).
          * @param retain Whether the message should be retained (default: false).
+         * @param properties MQTT 5.0 publish properties (default: none).
          */
         @Throws(
             IllegalStateException::class,
@@ -276,49 +255,15 @@ public class MqttClient
             payload: String,
             qos: QoS = QoS.AT_MOST_ONCE,
             retain: Boolean = false,
+            properties: PublishProperties = PublishProperties(),
         ) {
-            publish(topic, payload.encodeToByteArray(), qos, retain)
-        }
-
-        /**
-         * Publish a message with MQTT 5.0 request/response pattern properties (§4.10).
-         *
-         * Sets the [responseTopic] and optional [correlationData] in the publish properties
-         * so that receiving clients know where to send their response.
-         *
-         * @param topic The topic to publish the request to.
-         * @param payload Raw byte payload.
-         * @param responseTopic The topic the responder should publish its response to.
-         * @param correlationData Optional data to correlate request with response (immutable).
-         * @param qos Quality of service level (default: [QoS.AT_LEAST_ONCE]).
-         * @param retain Whether the message should be retained (default: false).
-         */
-        @Throws(
-            IllegalStateException::class,
-            IllegalArgumentException::class,
-            MqttConnectionException::class,
-            kotlin.coroutines.cancellation.CancellationException::class,
-        )
-        public suspend fun publishWithResponse(
-            topic: String,
-            payload: ByteArray,
-            responseTopic: String,
-            correlationData: ByteString? = null,
-            qos: QoS = QoS.AT_LEAST_ONCE,
-            retain: Boolean = false,
-        ) {
-            val props =
-                PublishProperties(
-                    responseTopic = responseTopic,
-                    correlationData = correlationData,
-                )
             publish(
                 MqttMessage(
                     topic = topic,
-                    payload = ByteString(payload),
+                    payload = ByteString(payload.encodeToByteArray()),
                     qos = qos,
                     retain = retain,
-                    properties = props,
+                    properties = properties,
                 ),
             )
         }
@@ -639,10 +584,10 @@ public class MqttClient
             }
         }
 
-        internal companion object {
-            const val MESSAGE_BUFFER_CAPACITY = 64
-            const val AUTH_BUFFER_CAPACITY = 8
-            const val MAX_REDIRECTS = 5
+        private companion object {
+            private const val MESSAGE_BUFFER_CAPACITY = 64
+            private const val AUTH_BUFFER_CAPACITY = 8
+            private const val MAX_REDIRECTS = 5
             private const val TAG = "MqttClient"
         }
     }
@@ -763,58 +708,6 @@ public fun MqttClient.messagesForTopic(topic: String): Flow<MqttMessage> = messa
  */
 public fun MqttClient.messagesMatching(topicFilter: String): Flow<MqttMessage> =
     messages.filter { topicMatchesFilter(it.topic, topicFilter) }
-
-/**
- * Subscribe to multiple topic filters at the same QoS level.
- *
- * Convenience for the common case of subscribing to several topics with identical QoS:
- *
- * ```kotlin
- * client.subscribe(QoS.AT_LEAST_ONCE, "sensors/temp", "sensors/humidity", "sensors/pressure")
- * ```
- *
- * @param qos QoS level applied to all topic filters.
- * @param topicFilters One or more topic filters to subscribe to.
- */
-public suspend fun MqttClient.subscribe(
-    qos: QoS,
-    vararg topicFilters: String,
-) {
-    subscribe(topicFilters.associateWith { qos })
-}
-
-/**
- * Publish a message with MQTT 5.0 [PublishProperties].
- *
- * Use when you need to set content type, message expiry, user properties, or other
- * MQTT 5.0 publish properties alongside a simple string payload:
- *
- * ```kotlin
- * client.publish(
- *     topic = "sensors/data",
- *     payload = """{"temp": 22.5}""",
- *     qos = QoS.AT_LEAST_ONCE,
- *     properties = PublishProperties(contentType = "application/json"),
- * )
- * ```
- */
-public suspend fun MqttClient.publish(
-    topic: String,
-    payload: String,
-    qos: QoS = QoS.AT_MOST_ONCE,
-    retain: Boolean = false,
-    properties: PublishProperties = PublishProperties(),
-) {
-    publish(
-        MqttMessage(
-            topic = topic,
-            payload = ByteString(payload.encodeToByteArray()),
-            qos = qos,
-            retain = retain,
-            properties = properties,
-        ),
-    )
-}
 
 /**
  * Connect, execute [block], then close — structured resource management.

@@ -21,7 +21,6 @@ import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.Connect
 import org.meshtastic.mqtt.packet.PingReq
 import org.meshtastic.mqtt.packet.PingResp
-import org.meshtastic.mqtt.packet.ReasonCode
 import org.meshtastic.mqtt.packet.encode
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
