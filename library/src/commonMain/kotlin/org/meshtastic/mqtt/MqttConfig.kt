@@ -186,27 +186,70 @@ public data class MqttConfig(
     @MqttDsl
     @Suppress("TooManyFunctions")
     public class Builder {
+        /** Client identifier sent to the broker. Empty requests broker-assigned ID. */
         public var clientId: String = ""
+
+        /** Maximum interval in seconds between control packets (§3.1.2.10). Range: 0..65,535. */
         public var keepAliveSeconds: Int = 60
+
+        /** If `true`, the broker discards any existing session state (§3.1.2.4). */
         public var cleanStart: Boolean = true
+
+        /** Optional username for password-based authentication (§3.1.3.5). */
         public var username: String? = null
+
+        /** Optional password as an immutable [ByteString] (§3.1.3.6). */
         public var password: ByteString? = null
+
+        /** Optional will message published on unexpected disconnect (§3.1.3.2). */
         public var will: WillConfig? = null
+
+        /** Session state retention duration in seconds after disconnect (§3.1.2.11.3). */
         public var sessionExpiryInterval: Long? = null
+
+        /** Maximum concurrent in-flight QoS 1/2 messages. Range: 1..65,535 (§3.1.2.11.4). */
         public var receiveMaximum: Int = 65535
+
+        /** Maximum MQTT packet size in bytes the client accepts (§3.1.2.11.5). */
         public var maximumPacketSize: Long? = null
+
+        /** Maximum topic aliases the client accepts from the broker (§3.1.2.11.6). */
         public var topicAliasMaximum: Int = 0
+
+        /** If `true`, requests Response Information in CONNACK (§3.1.2.11.7). */
         public var requestResponseInformation: Boolean = false
+
+        /** If `true`, allows Reason String and User Properties on failure packets (§3.1.2.11.8). */
         public var requestProblemInformation: Boolean = true
+
+        /** Application-defined key-value pairs sent with the CONNECT packet. */
         public var userProperties: List<Pair<String, String>> = emptyList()
+
+        /** Authentication method for enhanced authentication (§4.12). */
         public var authenticationMethod: String? = null
+
+        /** Initial authentication data for enhanced auth (§3.1.2.11.10). */
         public var authenticationData: ByteString? = null
+
+        /** If `true`, automatically reconnect with exponential backoff on connection loss. */
         public var autoReconnect: Boolean = true
+
+        /** Initial delay in milliseconds between reconnection attempts. Must be > 0. */
         public var reconnectBaseDelayMs: Long = 1000
+
+        /** Maximum delay in milliseconds between reconnection attempts. */
         public var reconnectMaxDelayMs: Long = 30000
+
+        /** Default [QoS] level for convenience [MqttClient.publish] calls. */
         public var defaultQos: QoS = QoS.AT_MOST_ONCE
+
+        /** Default retain flag for convenience [MqttClient.publish] calls. */
         public var defaultRetain: Boolean = false
+
+        /** Optional [MqttLogger] for receiving library log output. */
         public var logger: MqttLogger? = null
+
+        /** Minimum log level for messages delivered to [logger]. */
         public var logLevel: MqttLogLevel = MqttLogLevel.NONE
 
         /**
