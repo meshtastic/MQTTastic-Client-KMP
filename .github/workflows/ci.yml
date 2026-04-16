@@ -14,7 +14,16 @@ env:
   GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048M"
 
 jobs:
+  validate-wrapper:
+    name: Validate Gradle Wrapper
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: gradle/actions/wrapper-validation@v4
+
   lint:
+    needs: [validate-wrapper]
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -42,6 +51,7 @@ jobs:
 
   test-jvm:
     name: Test JVM
+    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -66,8 +76,22 @@ jobs:
       - name: Run JVM tests
         run: ./gradlew jvmTest --no-daemon --stacktrace
 
+      - name: Generate coverage report
+        if: always()
+        run: ./gradlew koverXmlReport --no-daemon --stacktrace
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: library/build/reports/kover/report.xml
+          flags: jvm
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   test-native-linux:
     name: Test Native Linux
+    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +118,7 @@ jobs:
 
   test-native-macos:
     name: Test Native macOS
+    needs: [validate-wrapper]
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -120,6 +145,7 @@ jobs:
 
   test-wasm:
     name: Test wasmJs
+    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -146,6 +172,7 @@ jobs:
 
   test-windows:
     name: Test Windows
+    needs: [validate-wrapper]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -169,6 +196,7 @@ jobs:
 
   api-check:
     name: API Check
+    needs: [validate-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
