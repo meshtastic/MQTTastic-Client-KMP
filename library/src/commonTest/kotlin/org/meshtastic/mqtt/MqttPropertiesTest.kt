@@ -494,6 +494,50 @@ class MqttPropertiesTest {
         assertEquals(3, result.userProperties.size)
     }
 
+    // ===== Boolean byte strict validation (§1.5.1.4) =====
+
+    @Test
+    fun decodeBooleanByte_rejects0x02() {
+        // Build raw property bytes with Payload Format Indicator (0x01) set to 0x02
+        val body = byteArrayOf(PropertyId.PAYLOAD_FORMAT_INDICATOR.toByte(), 0x02)
+        val encoded = VariableByteInt.encode(body.size) + body
+
+        assertFailsWith<IllegalArgumentException> {
+            decodePropertiesFromEncoded(encoded)
+        }
+    }
+
+    @Test
+    fun decodeBooleanByte_rejects0xFF() {
+        // Build raw property bytes with Retain Available (0x25) set to 0xFF
+        val body = byteArrayOf(PropertyId.RETAIN_AVAILABLE.toByte(), 0xFF.toByte())
+        val encoded = VariableByteInt.encode(body.size) + body
+
+        assertFailsWith<IllegalArgumentException> {
+            decodePropertiesFromEncoded(encoded)
+        }
+    }
+
+    @Test
+    fun decodeBooleanByte_accepts0x00() {
+        // Build raw property bytes with Retain Available (0x25) set to 0x00
+        val body = byteArrayOf(PropertyId.RETAIN_AVAILABLE.toByte(), 0x00)
+        val encoded = VariableByteInt.encode(body.size) + body
+
+        val decoded = decodePropertiesFromEncoded(encoded)
+        assertEquals(false, decoded.retainAvailable)
+    }
+
+    @Test
+    fun decodeBooleanByte_accepts0x01() {
+        // Build raw property bytes with Retain Available (0x25) set to 0x01
+        val body = byteArrayOf(PropertyId.RETAIN_AVAILABLE.toByte(), 0x01)
+        val encoded = VariableByteInt.encode(body.size) + body
+
+        val decoded = decodePropertiesFromEncoded(encoded)
+        assertEquals(true, decoded.retainAvailable)
+    }
+
     // ===== Helpers =====
 
     private fun roundTrip(props: MqttProperties): MqttProperties {

@@ -33,6 +33,7 @@ import org.meshtastic.mqtt.packet.UnsubAck
 import org.meshtastic.mqtt.packet.Unsubscribe
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -393,6 +394,75 @@ class MqttClientTest {
 
             client.disconnect()
             advanceUntilIdle()
+            client.close()
+        }
+
+    // --- Use-after-close guard ---
+
+    @Test
+    fun connectAfterCloseThrowsIllegalState() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            client.close()
+            advanceUntilIdle()
+
+            assertFailsWith<IllegalStateException> {
+                client.connect(endpoint)
+            }
+        }
+
+    @Test
+    fun publishAfterCloseThrowsIllegalState() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            client.close()
+            advanceUntilIdle()
+
+            assertFailsWith<IllegalStateException> {
+                client.publish(MqttMessage(topic = "t", payload = ByteString()))
+            }
+        }
+
+    // --- CancellationException preservation in connect() ---
+
+    @Test
+    fun cancelledConnectPropagatesCancellationException() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig()
+            val client = MqttClient(config, transport, this)
+
+            // Don't enqueue a ConnAck so connect() blocks waiting
+            var caughtException: Throwable? = null
+            val connectJob =
+                launch {
+                    try {
+                        client.connect(endpoint)
+                    } catch (e: Throwable) {
+                        caughtException = e
+                    }
+                }
+            advanceUntilIdle()
+
+            // Cancel the coroutine — should propagate CancellationException
+            connectJob.cancel()
+            advanceUntilIdle()
+            connectJob.join()
+
+            // Should be CancellationException, not MqttConnectionException
+            assertTrue(
+                caughtException is kotlinx.coroutines.CancellationException,
+                "Expected CancellationException but got ${caughtException?.let { it::class.simpleName }}",
+            )
+
             client.close()
         }
 }

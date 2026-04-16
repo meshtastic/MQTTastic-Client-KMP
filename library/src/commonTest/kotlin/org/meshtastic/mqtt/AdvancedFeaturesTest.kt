@@ -190,6 +190,66 @@ class AdvancedFeaturesTest {
             advanceUntilIdle()
         }
 
+    @Test
+    fun topicAliasInbound_exceedingMaximum_disconnects() =
+        runTest {
+            val transport = FakeTransport()
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+
+            // Advertise topicAliasMaximum = 3
+            val connection = MqttConnection(transport, defaultConfig(topicAliasMaximum = 3), this)
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Send a PUBLISH with alias 10 which exceeds the advertised maximum
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "device/status",
+                    payload = "data".encodeToByteArray(),
+                    properties = MqttProperties(topicAlias = 10),
+                ),
+            )
+            advanceUntilIdle()
+
+            // The connection should be torn down due to TOPIC_ALIAS_INVALID
+            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+        }
+
+    @Test
+    fun topicAliasInbound_atMaximum_succeeds() =
+        runTest {
+            val transport = FakeTransport()
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+
+            val connection = MqttConnection(transport, defaultConfig(topicAliasMaximum = 5), this)
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            val receivedMessages = mutableListOf<MqttMessage>()
+            val job =
+                launch {
+                    connection.incomingMessages.collect { receivedMessages.add(it) }
+                }
+
+            // Alias exactly at maximum should succeed
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "sensor/temp",
+                    payload = "22.5".encodeToByteArray(),
+                    properties = MqttProperties(topicAlias = 5),
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(1, receivedMessages.size)
+            assertEquals("sensor/temp", receivedMessages[0].topic)
+            assertEquals(ConnectionState.CONNECTED, connection.connectionState.value)
+
+            job.cancel()
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
     // ==================== 2. Flow Control (§3.3.4) ====================
 
     @Test

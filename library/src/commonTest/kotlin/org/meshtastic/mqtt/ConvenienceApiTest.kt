@@ -189,6 +189,27 @@ class ConvenienceApiTest {
         assertFalse(topicMatchesFilter("a/b", "/a/b"))
     }
 
+    // --- $-prefix topic filter exclusion (§4.7.2) ---
+
+    @Test
+    fun dollarPrefixTopicExcludedFromHashWildcard() {
+        assertFalse(topicMatchesFilter("\$SYS/load", "#"))
+        assertFalse(topicMatchesFilter("\$SYS/broker/clients", "#"))
+    }
+
+    @Test
+    fun dollarPrefixTopicExcludedFromPlusWildcard() {
+        assertFalse(topicMatchesFilter("\$SYS/info", "+/info"))
+        assertFalse(topicMatchesFilter("\$SYS/broker", "+/broker"))
+    }
+
+    @Test
+    fun dollarPrefixTopicMatchesExactFilter() {
+        assertTrue(topicMatchesFilter("\$SYS/load", "\$SYS/load"))
+        assertTrue(topicMatchesFilter("\$SYS/info", "\$SYS/+"))
+        assertTrue(topicMatchesFilter("\$SYS/broker/clients", "\$SYS/#"))
+    }
+
     // --- MqttClient factory function ---
 
     @Test

@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.io.bytestring.ByteString
 import org.meshtastic.mqtt.packet.Auth
 import org.meshtastic.mqtt.packet.ConnAck
@@ -653,6 +654,229 @@ class MqttConnectionTest {
 
             connection.disconnect()
             advanceUntilIdle()
+        }
+
+    // --- QoS 2 PUBREC error code check (§4.3.3) ---
+
+    @Test
+    fun qos2PubRecError_doesNotSendPubRel() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Respond with PUBREC containing error reason code (>= 0x80)
+            launch {
+                while (transport.sentPackets.size < 2) {
+                    delay(1)
+                }
+                val publishPacket = decodePacket(transport.sentPackets.last()) as Publish
+                transport.enqueuePacket(
+                    PubRec(
+                        packetIdentifier = publishPacket.packetIdentifier!!,
+                        reasonCode = ReasonCode.QUOTA_EXCEEDED,
+                    ),
+                )
+            }
+
+            val result =
+                connection.publish(
+                    MqttMessage("test/topic", "payload".encodeToByteArray(), QoS.EXACTLY_ONCE),
+                )
+            advanceUntilIdle()
+
+            // Should return the error reason code from PUBREC
+            assertEquals(ReasonCode.QUOTA_EXCEEDED, result)
+
+            // Should NOT have sent PUBREL — only CONNECT and PUBLISH
+            val allSent = transport.decodeSentPackets()
+            assertTrue(allSent.none { it is PubRel }, "PUBREL must NOT be sent when PUBREC has error code")
+
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    // --- disconnect()/abort() fail pending ACKs ---
+
+    @Test
+    fun disconnectFailsPendingPublishImmediately() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Start a QoS 1 publish but don't enqueue a PubAck — it will hang
+            var publishException: Throwable? = null
+            val publishJob =
+                launch {
+                    try {
+                        connection.publish(
+                            MqttMessage("test/topic", "data".encodeToByteArray(), QoS.AT_LEAST_ONCE),
+                        )
+                    } catch (e: Throwable) {
+                        publishException = e
+                    }
+                }
+            // Let the publish coroutine send the PUBLISH and reach deferred.await()
+            // without advancing virtual time (which would trigger the 30s timeout)
+            while (transport.sentPackets.size < 2) {
+                yield()
+            }
+
+            // disconnect() should fail the pending ACK immediately
+            connection.disconnect()
+            advanceUntilIdle()
+
+            publishJob.join()
+            assertNotNull(publishException, "Pending publish should fail when disconnect() is called")
+            assertIs<MqttConnectionException>(publishException)
+        }
+
+    @Test
+    fun abortFailsPendingSubscribeImmediately() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Start a subscribe but don't enqueue a SubAck — it will hang
+            var subscribeException: Throwable? = null
+            val subscribeJob =
+                launch {
+                    try {
+                        connection.subscribe(
+                            listOf(Subscription(topicFilter = "test/+", maxQos = QoS.AT_LEAST_ONCE)),
+                        )
+                    } catch (e: Throwable) {
+                        subscribeException = e
+                    }
+                }
+            // Let the subscribe coroutine send the SUBSCRIBE and reach deferred.await()
+            while (transport.sentPackets.size < 2) {
+                yield()
+            }
+
+            // abort() should fail the pending ACK immediately
+            connection.abort()
+            advanceUntilIdle()
+
+            subscribeJob.join()
+            assertNotNull(subscribeException, "Pending subscribe should fail when abort() is called")
+            assertIs<MqttConnectionException>(subscribeException)
+        }
+
+    // --- Inbound topic alias validation (§3.3.2.3.4) ---
+
+    @Test
+    fun inboundTopicAliasExceedingMaximum_triggersError() =
+        runTest {
+            val transport = FakeTransport()
+            // Advertise topicAliasMaximum = 5
+            val connection = MqttConnection(transport, defaultConfig().copy(topicAliasMaximum = 5), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Send a PUBLISH with alias 10 which exceeds the advertised maximum of 5
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "device/status",
+                    payload = "ok".encodeToByteArray(),
+                    properties = MqttProperties(topicAlias = 10),
+                ),
+            )
+            advanceUntilIdle()
+
+            // The connection should be in DISCONNECTED state due to the protocol error
+            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+        }
+
+    // --- Safe ACK casts — wrong packet type for pending ACK ---
+
+    @Test
+    fun wrongAckPacketType_throwsProtocolError() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Start a subscribe — expects SubAck
+            var subscribeException: Throwable? = null
+            val subscribeJob =
+                launch {
+                    try {
+                        connection.subscribe(
+                            listOf(Subscription(topicFilter = "test/+", maxQos = QoS.AT_LEAST_ONCE)),
+                        )
+                    } catch (e: Throwable) {
+                        subscribeException = e
+                    }
+                }
+            // Let the subscribe coroutine send the SUBSCRIBE and reach deferred.await()
+            while (transport.sentPackets.size < 2) {
+                yield()
+            }
+
+            // Instead of SubAck, send a PubAck with the same packet ID
+            val subPacket = decodePacket(transport.sentPackets.last()) as Subscribe
+            transport.enqueuePacket(
+                PubAck(packetIdentifier = subPacket.packetIdentifier),
+            )
+            advanceUntilIdle()
+
+            subscribeJob.join()
+            // Should get MqttConnectionException, not ClassCastException
+            assertNotNull(subscribeException, "Wrong ACK type should cause an error")
+            assertIs<MqttConnectionException>(subscribeException)
+            assertEquals(ReasonCode.PROTOCOL_ERROR, (subscribeException as MqttConnectionException).reasonCode)
+
+            // Clean up — disconnect to stop read loop
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    // --- handleFatalError sends DISCONNECT (protocol violation teardown) ---
+
+    @Test
+    fun protocolViolation_triggersDisconnectPacket() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            // Sending a CONNECT packet from the broker is a protocol violation
+            transport.enqueuePacket(
+                ConnAck(reasonCode = ReasonCode.SUCCESS),
+            )
+            advanceUntilIdle()
+
+            // Connection should be torn down
+            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+
+            // Verify a DISCONNECT was sent with PROTOCOL_ERROR reason code
+            val disconnects = transport.decodeSentPackets().filterIsInstance<Disconnect>()
+            assertTrue(disconnects.isNotEmpty(), "Should send DISCONNECT on protocol violation")
+            assertEquals(
+                ReasonCode.PROTOCOL_ERROR,
+                disconnects.last().reasonCode,
+                "DISCONNECT should carry PROTOCOL_ERROR reason code",
+            )
         }
 
     // --- AUTH During Connect ---

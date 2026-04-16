@@ -159,4 +159,20 @@ class MqttMessageTest {
             PublishProperties(subscriptionIdentifiers = listOf(268_435_456))
         }
     }
+
+    // --- MqttMessage empty topic validation ---
+
+    @Test
+    fun emptyTopicThrowsIllegalArgument() {
+        assertFailsWith<IllegalArgumentException> {
+            MqttMessage(topic = "", payload = byteArrayOf(1, 2, 3))
+        }
+    }
+
+    @Test
+    fun emptyTopicWithByteStringThrowsIllegalArgument() {
+        assertFailsWith<IllegalArgumentException> {
+            MqttMessage(topic = "", payload = ByteString())
+        }
+    }
 }
