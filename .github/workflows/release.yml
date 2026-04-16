@@ -176,7 +176,7 @@ jobs:
           upload-release-assets: true
 
       - name: Attest build provenance for release assets
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             sbom.cdx.json
