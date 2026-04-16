@@ -19,6 +19,7 @@ package org.meshtastic.mqtt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -125,12 +126,19 @@ internal class MqttConnection(
     private val pendingAcks = mutableMapOf<Int, CompletableDeferred<MqttPacket>>()
     private val inboundQos2PacketIds = mutableSetOf<Int>()
 
+    // QoS 2 inbound: store resolved messages until PUBREL arrives (§4.3.3)
+    private val pendingQos2Messages = mutableMapOf<Int, MqttMessage>()
+
     private var readLoopJob: Job? = null
     private var keepAliveJob: Job? = null
     private var lastSendMark: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow()
 
     @Volatile
     private var awaitingPingResp = false
+    private var pingSentMark: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow()
+
+    @Volatile
+    private var handlingFatalError = false
 
     // Server-assigned values from CONNACK
     private var serverReceiveMaximum: Int = DEFAULT_RECEIVE_MAXIMUM
@@ -214,7 +222,26 @@ internal class MqttConnection(
             connAck.properties.assignedClientIdentifier?.let { assignedClientId = it }
             connAck.properties.topicAliasMaximum?.let { serverTopicAliasMaximum = it }
             connAck.properties.sharedSubscriptionAvailable?.let { serverSharedSubscriptionAvailable = it }
-            connAck.properties.maximumQos?.let { serverMaximumQos = QoS.entries[it] }
+            connAck.properties.maximumQos?.let { value ->
+                serverMaximumQos =
+                    when (value) {
+                        0 -> {
+                            QoS.AT_MOST_ONCE
+                        }
+
+                        1 -> {
+                            QoS.AT_LEAST_ONCE
+                        }
+
+                        else -> {
+                            log.warn(TAG) { "Invalid Maximum QoS value $value in CONNACK, treating as protocol error" }
+                            throw MqttConnectionException(
+                                ReasonCode.PROTOCOL_ERROR,
+                                "Invalid Maximum QoS value $value in CONNACK (§3.2.2.3.4)",
+                            )
+                        }
+                    }
+            }
             connAck.properties.retainAvailable?.let { serverRetainAvailable = it }
             connAck.properties.wildcardSubscriptionAvailable?.let { serverWildcardSubscriptionAvailable = it }
             connAck.properties.subscriptionIdentifiersAvailable?.let { serverSubscriptionIdentifiersAvailable = it }
@@ -241,6 +268,22 @@ internal class MqttConnection(
             return connAck
         } catch (e: MqttConnectionException) {
             throw e
+        } catch (e: TimeoutCancellationException) {
+            // awaitConnAck timed out — map to a meaningful connection error
+            log.error(TAG) { "Connection timed out waiting for CONNACK" }
+            try {
+                transport.close()
+            } catch (
+                @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+            ) {
+                // Best-effort transport close
+            }
+            _connectionState.value = ConnectionState.DISCONNECTED
+            throw MqttConnectionException(
+                ReasonCode.UNSPECIFIED_ERROR,
+                "Connection timed out: no CONNACK received within ${ACK_TIMEOUT_MS}ms",
+                e,
+            )
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e // Preserve structured concurrency — do not wrap cancellation
         } catch (
@@ -262,37 +305,41 @@ internal class MqttConnection(
     /**
      * Read packets from the transport until CONNACK is received.
      * Handles interleaved AUTH packets for enhanced authentication (§4.12).
+     * Times out after [ACK_TIMEOUT_MS] to prevent hanging on unresponsive brokers.
      */
-    private suspend fun awaitConnAck(): ConnAck {
-        while (true) {
-            val responseBytes = transport.receive()
-            val response = decodePacket(responseBytes)
+    private suspend fun awaitConnAck(): ConnAck =
+        withTimeout(ACK_TIMEOUT_MS) {
+            while (true) {
+                val responseBytes = transport.receive()
+                val response = decodePacket(responseBytes)
 
-            when (response) {
-                is ConnAck -> {
-                    return response
-                }
+                when (response) {
+                    is ConnAck -> {
+                        return@withTimeout response
+                    }
 
-                is Auth -> {
-                    _authChallenges.emit(
-                        AuthChallenge(
-                            reasonCode = response.reasonCode,
-                            authenticationMethod = response.properties.authenticationMethod,
-                            authenticationData = response.properties.authenticationData?.let { ByteString(it) },
-                        ),
-                    )
-                    // Application must call sendAuthResponse() to continue the handshake
-                }
+                    is Auth -> {
+                        _authChallenges.emit(
+                            AuthChallenge(
+                                reasonCode = response.reasonCode,
+                                authenticationMethod = response.properties.authenticationMethod,
+                                authenticationData = response.properties.authenticationData?.let { ByteString(it) },
+                            ),
+                        )
+                        // Application must call sendAuthResponse() to continue the handshake
+                    }
 
-                else -> {
-                    throw MqttConnectionException(
-                        ReasonCode.PROTOCOL_ERROR,
-                        "Expected CONNACK or AUTH during handshake, got ${response.packetType}",
-                    )
+                    else -> {
+                        throw MqttConnectionException(
+                            ReasonCode.PROTOCOL_ERROR,
+                            "Expected CONNACK or AUTH during handshake, got ${response.packetType}",
+                        )
+                    }
                 }
             }
+            @Suppress("UNREACHABLE_CODE")
+            error("Unreachable")
         }
-    }
 
     /**
      * Gracefully disconnect from the broker per §3.14.
@@ -348,9 +395,11 @@ internal class MqttConnection(
         }
         acksMutex.withLock {
             inboundQos2PacketIds.clear()
+            pendingQos2Messages.clear()
         }
         inflightSemaphore = null
         awaitingPingResp = false
+        handlingFatalError = false
         // Reset server capabilities to defaults — they will be restored from CONNACK on reconnect
         serverMaximumQos = QoS.EXACTLY_ONCE
         serverRetainAvailable = true
@@ -740,6 +789,10 @@ internal class MqttConnection(
 
     /** Centralized fatal error handler: tear down resources and fail all pending waiters. */
     private suspend fun handleFatalError(reasonCode: ReasonCode = ReasonCode.UNSPECIFIED_ERROR) {
+        // Guard against re-entrant calls (e.g., handlePacket → handleFatalError → sendPacket fails)
+        if (handlingFatalError) return
+        handlingFatalError = true
+
         log.error(TAG) { "Fatal error — tearing down connection" }
         stopBackgroundJobs()
         try {
@@ -810,9 +863,21 @@ internal class MqttConnection(
             }
 
             is PubRel -> {
-                log.debug(TAG) { "Received PUBREL packetId=${packet.packetIdentifier}, sending PUBCOMP" }
-                acksMutex.withLock { inboundQos2PacketIds.remove(packet.packetIdentifier) }
+                log.debug(TAG) { "Received PUBREL packetId=${packet.packetIdentifier}" }
+                val deferredMessage =
+                    acksMutex.withLock {
+                        inboundQos2PacketIds.remove(packet.packetIdentifier)
+                        pendingQos2Messages.remove(packet.packetIdentifier)
+                    }
                 sendPacket(PubComp(packetIdentifier = packet.packetIdentifier))
+                if (deferredMessage != null) {
+                    _incomingMessages.emit(deferredMessage)
+                } else {
+                    // PUBREL for unknown packet ID — could be session resumption or stale
+                    log.warn(TAG) {
+                        "PUBREL for unknown packetId=${packet.packetIdentifier} — no stored message"
+                    }
+                }
             }
 
             is Publish -> {
@@ -867,7 +932,13 @@ internal class MqttConnection(
         }
     }
 
-    /** Handle an incoming PUBLISH packet: resolve topic aliases, send QoS acks, then emit the message. */
+    /**
+     * Handle an incoming PUBLISH packet: resolve topic aliases, send QoS acks, emit the message.
+     *
+     * For QoS 2, the message is stored and NOT emitted until PUBREL is received (§4.3.3).
+     * This ensures exactly-once delivery semantics — the message is only delivered to the
+     * application after the sender has committed (PUBREL).
+     */
     private suspend fun handleIncomingPublish(packet: Publish) {
         // QoS 2 duplicate suppression — track packet IDs to prevent double delivery (§4.3.3)
         if (packet.qos == QoS.EXACTLY_ONCE && packet.packetIdentifier != null) {
@@ -890,21 +961,6 @@ internal class MqttConnection(
                 (packet.packetIdentifier?.let { " packetId=$it" } ?: "")
         }
 
-        // Send protocol ACKs BEFORE emitting to application flow (§4.3, §4.4).
-        // This prevents slow consumers from stalling broker acknowledgements,
-        // which would cause redelivery and potential disconnects.
-        when (packet.qos) {
-            QoS.AT_MOST_ONCE -> { /* No ack needed */ }
-
-            QoS.AT_LEAST_ONCE -> {
-                packet.packetIdentifier?.let { sendPacket(PubAck(packetIdentifier = it)) }
-            }
-
-            QoS.EXACTLY_ONCE -> {
-                packet.packetIdentifier?.let { sendPacket(PubRec(packetIdentifier = it)) }
-            }
-        }
-
         val message =
             MqttMessage(
                 topic = resolvedTopic,
@@ -913,7 +969,27 @@ internal class MqttConnection(
                 retain = packet.retain,
                 properties = extractPublishProperties(packet.properties),
             )
-        _incomingMessages.emit(message)
+
+        when (packet.qos) {
+            QoS.AT_MOST_ONCE -> {
+                _incomingMessages.emit(message)
+            }
+
+            QoS.AT_LEAST_ONCE -> {
+                // Send PUBACK before emitting to prevent slow consumers from stalling ACKs
+                packet.packetIdentifier?.let { sendPacket(PubAck(packetIdentifier = it)) }
+                _incomingMessages.emit(message)
+            }
+
+            QoS.EXACTLY_ONCE -> {
+                // §4.3.3: Send PUBREC but defer delivery until PUBREL arrives.
+                // Store the resolved message so topic alias state can't change under us.
+                packet.packetIdentifier?.let { packetId ->
+                    acksMutex.withLock { pendingQos2Messages[packetId] = message }
+                    sendPacket(PubRec(packetIdentifier = packetId))
+                }
+            }
+        }
     }
 
     // --- Private: Keepalive ---
@@ -937,17 +1013,24 @@ internal class MqttConnection(
                     while (isActive && transport.isConnected) {
                         delay(intervalMs)
 
-                        // Check for PINGRESP timeout — dead connection
+                        // Check for PINGRESP timeout — dead connection.
+                        // Timeout fires if PINGRESP not received within keepAliveSeconds after PINGREQ.
                         if (awaitingPingResp) {
-                            log.warn(TAG) { "PINGRESP timeout — connection assumed dead" }
-                            handleFatalError()
-                            return@launch
+                            val pingElapsedMs = pingSentMark.elapsedNow().inWholeMilliseconds
+                            if (pingElapsedMs >= deadlineMs) {
+                                log.warn(TAG) {
+                                    "PINGRESP timeout (${pingElapsedMs}ms since PINGREQ) — connection assumed dead"
+                                }
+                                handleFatalError()
+                                return@launch
+                            }
                         }
 
                         val elapsedMs = sendMutex.withLock { lastSendMark.elapsedNow().inWholeMilliseconds }
                         if (elapsedMs >= intervalMs) {
                             log.trace(TAG) { "Sending PINGREQ (${elapsedMs}ms since last send)" }
                             awaitingPingResp = true
+                            pingSentMark = TimeSource.Monotonic.markNow()
                             sendPacket(PingReq)
                         }
                     }

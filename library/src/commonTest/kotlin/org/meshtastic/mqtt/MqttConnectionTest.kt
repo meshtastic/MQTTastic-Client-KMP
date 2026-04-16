@@ -587,7 +587,7 @@ class MqttConnectionTest {
                 }
             advanceUntilIdle()
 
-            // First QoS 2 PUBLISH — should be delivered
+            // First QoS 2 PUBLISH — stored pending PUBREL, PUBREC sent, NOT yet delivered
             transport.enqueuePacket(
                 Publish(
                     topicName = "qos2/test",
@@ -599,10 +599,9 @@ class MqttConnectionTest {
             )
             advanceUntilIdle()
 
-            assertEquals(1, received.size, "First QoS 2 PUBLISH should be delivered")
-            assertEquals("first", received[0].payload.toByteArray().decodeToString())
+            assertEquals(0, received.size, "QoS 2 message should NOT be delivered before PUBREL")
 
-            // Retransmission with same packet ID — should NOT be delivered again
+            // Retransmission with same packet ID — should NOT overwrite stored message
             transport.enqueuePacket(
                 Publish(
                     topicName = "qos2/test",
@@ -615,15 +614,18 @@ class MqttConnectionTest {
             )
             advanceUntilIdle()
 
-            assertEquals(1, received.size, "Duplicate QoS 2 PUBLISH should be suppressed")
+            assertEquals(0, received.size, "Duplicate QoS 2 PUBLISH should still not deliver before PUBREL")
 
             // Both should have sent PUBREC
             val pubRecs = transport.decodeSentPackets().filterIsInstance<PubRec>()
             assertEquals(2, pubRecs.size, "PUBREC should be sent for both original and duplicate")
 
-            // PubRel should release the tracking
+            // PUBREL releases the message — now it should be delivered
             transport.enqueuePacket(PubRel(packetIdentifier = 42))
             advanceUntilIdle()
+
+            assertEquals(1, received.size, "QoS 2 message should be delivered exactly once after PUBREL")
+            assertEquals("first", received[0].payload.toByteArray().decodeToString())
 
             collectJob.cancel()
             connection.disconnect()
@@ -647,9 +649,9 @@ class MqttConnectionTest {
                 ),
             )
             val connAck = connection.connect(endpoint)
-            advanceUntilIdle()
 
-            // Verify the server keep alive was received
+            // Verify the server keep alive was received (no advanceUntilIdle before
+            // disconnect — the keepalive loop runs indefinitely in virtual time)
             assertEquals(30, connAck.properties.serverKeepAlive)
 
             connection.disconnect()
