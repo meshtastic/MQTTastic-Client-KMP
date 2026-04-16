@@ -33,6 +33,35 @@ jobs:
       - name: Validate before publish
         run: ./gradlew spotlessCheck detekt allTests apiCheck build --stacktrace
 
+      - name: Stage signed artifacts locally
+        run: ./gradlew publishToMavenLocal --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: Collect Maven artifacts for attestation
+        shell: bash
+        run: |
+          mkdir -p maven-staging
+          cd ~/.m2/repository
+          find org/meshtastic -type f \
+            -not -name "maven-metadata*" \
+            -not -name "*.md5" \
+            -not -name "*.sha1" \
+            -not -name "*.sha256" \
+            -not -name "*.sha512" \
+            | while IFS= read -r f; do
+              mkdir -p "${{ github.workspace }}/maven-staging/$(dirname "$f")"
+              cp "$f" "${{ github.workspace }}/maven-staging/$f"
+            done
+          echo "Staged $(find "${{ github.workspace }}/maven-staging" -type f | wc -l) files for attestation"
+
+      - name: Attest Maven artifacts
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: maven-staging/**/*
+
       - name: Publish to Maven Central
         run: ./gradlew publishAllPublicationsToMavenCentralRepository --stacktrace
         env:
@@ -127,6 +156,12 @@ jobs:
         with:
           files: release-assets/*
           fail_on_unmatched_files: false
+
+      - name: Attest sample artifacts
+        if: steps.collect.outputs.count != '0'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: release-assets/*
 
   sbom:
     name: SBOM & Provenance
