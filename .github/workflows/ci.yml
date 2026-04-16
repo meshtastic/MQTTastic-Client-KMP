@@ -224,7 +224,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test-jvm, test-native-linux, test-native-macos, test-wasm, test-windows]
+    needs: [lint, test-jvm, test-native-linux, test-native-macos, test-wasm, test-windows, api-check]
     steps:
       - uses: actions/checkout@v4
 
