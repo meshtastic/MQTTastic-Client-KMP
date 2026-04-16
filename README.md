@@ -348,6 +348,13 @@ The library uses **Ktor 3.4.2** and **kotlinx-coroutines 1.10.2**. If your proje
 | Configurable logging (6 levels) | ✅ | — |
 | Connection state observation | ✅ | — |
 
+### Known Limitations
+
+| Limitation | Detail |
+|------------|--------|
+| Enhanced auth during CONNECT | Auth challenges are delivered only after the connection is established. SASL-style challenge/response during the CONNECT handshake (§4.12.1) is not yet supported. |
+| Client-side session persistence | When `cleanStart=false`, the broker resumes session state, but the client does not persist in-flight QoS 1/2 messages across reconnects. Unacknowledged messages may be lost. |
+
 ## Building
 
 ```bash

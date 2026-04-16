@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Full MQTT 5.0 client** — complete implementation of all 15 packet types with encode/decode
-- **`MqttClient`** — public API with `connect`, `disconnect`, `publish`, `subscribe`, `unsubscribe`, `close`
+- **`MqttClient`** — public API with `connect`, `disconnect`, `publish`, `subscribe`, `unsubscribe`, `close`, and use-after-close protection
+- **`MqttException`** — sealed exception hierarchy: `ConnectionRejected` (broker rejected CONNECT), `ConnectionLost` (unexpected disconnect), `ProtocolError` (malformed packets)
 - **`MqttConnection`** — internal connection manager with QoS 0/1/2 state machines, keepalive, read loop
 - **`MqttConfig`** — configuration data class with all CONNECT packet fields + `MqttConfig.build {}` DSL
 - **`WillConfig`** — will message configuration with Will Delay Interval and Will Properties
@@ -44,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Builder DSL** — `MqttConfig.build { clientId = "x"; keepAliveSeconds = 30 }`
 - **Spec-compliant validation** — reserved bits in CONNECT/CONNACK/SUBSCRIBE decoded packets (§3.1.2.3, §3.2.2.1, §3.8.3.1)
 - **Build tooling** — Binary Compatibility Validator, Dokka, Kover (≥80% line coverage)
-- Input validation on all public types (port range, topic alias, subscription identifiers, etc.)
+- Input validation on all public types (port range, topic alias, subscription identifiers, `MqttMessage` topic must not be empty, etc.)
 - KDoc on all public API types with spec references, examples, and parameter documentation
 - **Consumer convenience APIs:**
   - `MqttMessage.payloadAsString()` — decode UTF-8 payload without boilerplate

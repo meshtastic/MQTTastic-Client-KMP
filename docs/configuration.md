@@ -118,6 +118,8 @@ val client = MqttClient("device-001") {
 }
 ```
 
+> **Limitation:** Client-side session persistence is not yet implemented. When `cleanStart=false`, the broker will resume session state (subscriptions, queued QoS 1/2 messages), but the client does not persist in-flight messages across reconnects. Packet IDs are preserved, but unacknowledged messages may be lost. Full client-side session persistence will be added in a future release.
+
 See [Session Management](#session-management) for the full picture on persistent sessions.
 
 ### `userProperties`
@@ -187,7 +189,7 @@ launch {
 `AuthChallenge` contains:
 - `reasonCode: ReasonCode` — the reason code from the AUTH packet
 - `authenticationMethod: String?` — the authentication method in use
-- `authenticationData: ByteArray?` — the challenge data from the broker
+- `authenticationData: ByteString?` — the challenge data from the broker
 
 ---
 

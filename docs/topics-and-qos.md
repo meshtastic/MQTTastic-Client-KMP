@@ -367,6 +367,8 @@ Publisher  ◀──PUBCOMP──  Broker     (complete)
 
 This is the safest but most expensive QoS level — each message requires four packets and the broker must track state per packet ID.
 
+If the broker responds to PUBLISH with a PUBREC containing an error reason code (≥ 0x80), the QoS 2 flow terminates immediately — no PUBREL is sent and the publish is considered failed.
+
 ```kotlin
 client.publish("commands/firmware-update", firmwareUrl, qos = QoS.EXACTLY_ONCE)
 ```
