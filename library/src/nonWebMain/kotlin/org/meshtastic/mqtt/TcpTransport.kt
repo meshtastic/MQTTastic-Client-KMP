@@ -119,6 +119,15 @@ internal class TcpTransport : MqttTransport {
         val vbiResult = VariableByteInt.decode(vbiBytes, 0)
         val remainingLength = vbiResult.value
 
+        // Safety cap: reject packets larger than the VBI maximum to prevent OOM
+        // from a malicious/broken broker. Application-level enforcement of
+        // config.maximumPacketSize happens in MqttConnection's read loop.
+        if (remainingLength > MAX_PACKET_REMAINING_LENGTH) {
+            throw IllegalArgumentException(
+                "Packet remaining length $remainingLength exceeds safety cap $MAX_PACKET_REMAINING_LENGTH",
+            )
+        }
+
         // Step 3: Read exactly remainingLength bytes
         val payload = ByteArray(remainingLength)
         if (remainingLength > 0) {
@@ -144,5 +153,10 @@ internal class TcpTransport : MqttTransport {
             selectorManager?.close()
             selectorManager = null
         }
+    }
+
+    private companion object {
+        /** Hard safety cap for remaining length allocation (256 MB). */
+        const val MAX_PACKET_REMAINING_LENGTH = 268_435_455 // VBI max per §1.5.5
     }
 }

@@ -162,6 +162,11 @@ internal class MqttConnection(
 
     // Server capabilities from CONNACK properties (§3.2.2.3)
     private var serverSharedSubscriptionAvailable: Boolean = true
+    private var serverMaximumQos: QoS = QoS.EXACTLY_ONCE
+    private var serverRetainAvailable: Boolean = true
+    private var serverWildcardSubscriptionAvailable: Boolean = true
+    private var serverSubscriptionIdentifiersAvailable: Boolean = true
+    private var serverMaximumPacketSize: Long? = null
 
     private val _serverRedirect = MutableSharedFlow<ServerRedirect>(extraBufferCapacity = 1)
 
@@ -210,6 +215,11 @@ internal class MqttConnection(
             connAck.properties.assignedClientIdentifier?.let { assignedClientId = it }
             connAck.properties.topicAliasMaximum?.let { serverTopicAliasMaximum = it }
             connAck.properties.sharedSubscriptionAvailable?.let { serverSharedSubscriptionAvailable = it }
+            connAck.properties.maximumQos?.let { serverMaximumQos = QoS.entries[it] }
+            connAck.properties.retainAvailable?.let { serverRetainAvailable = it }
+            connAck.properties.wildcardSubscriptionAvailable?.let { serverWildcardSubscriptionAvailable = it }
+            connAck.properties.subscriptionIdentifiersAvailable?.let { serverSubscriptionIdentifiersAvailable = it }
+            connAck.properties.maximumPacketSize?.let { serverMaximumPacketSize = it }
 
             // Honor Server Keep Alive override (§3.2.2.3.14)
             effectiveKeepAliveSeconds =
@@ -236,6 +246,13 @@ internal class MqttConnection(
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {
             log.error(TAG, throwable = e) { "Connection failed: ${e.message}" }
+            try {
+                transport.close()
+            } catch (
+                @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+            ) {
+                // Best-effort transport close on handshake failure
+            }
             _connectionState.value = ConnectionState.DISCONNECTED
             throw MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, "Connection failed: ${e.message}", e)
         }
@@ -331,6 +348,12 @@ internal class MqttConnection(
         }
         inflightSemaphore = null
         awaitingPingResp = false
+        // Reset server capabilities to defaults — they will be restored from CONNACK on reconnect
+        serverMaximumQos = QoS.EXACTLY_ONCE
+        serverRetainAvailable = true
+        serverWildcardSubscriptionAvailable = true
+        serverSubscriptionIdentifiersAvailable = true
+        serverMaximumPacketSize = null
         log.debug(TAG) { "Connection state reset" }
     }
 
@@ -346,6 +369,18 @@ internal class MqttConnection(
      */
     suspend fun publish(message: MqttMessage): ReasonCode? {
         check(_connectionState.value == ConnectionState.CONNECTED) { "Not connected" }
+
+        // Enforce server Maximum QoS (§3.2.2.3.4)
+        require(message.qos <= serverMaximumQos) {
+            "Server maximum QoS is $serverMaximumQos, cannot publish with ${message.qos} (§3.2.2.3.4)"
+        }
+
+        // Enforce server Retain Available (§3.2.2.3.7)
+        if (message.retain) {
+            require(serverRetainAvailable) {
+                "Server does not support retained messages (§3.2.2.3.7)"
+            }
+        }
 
         val publishProperties = buildPublishProperties(message.properties)
         val (resolvedTopic, resolvedProperties) = applyOutboundTopicAlias(message.topic, publishProperties)
@@ -396,6 +431,22 @@ internal class MqttConnection(
                 require(!TopicValidator.isSharedSubscription(sub.topicFilter)) {
                     "Server does not support shared subscriptions (§4.8.2): '${sub.topicFilter}'"
                 }
+            }
+        }
+
+        // Enforce wildcard subscription availability (§3.2.2.3.12)
+        if (!serverWildcardSubscriptionAvailable) {
+            subscriptions.forEach { sub ->
+                require(!TopicValidator.containsWildcards(sub.topicFilter)) {
+                    "Server does not support wildcard subscriptions (§3.2.2.3.12): '${sub.topicFilter}'"
+                }
+            }
+        }
+
+        // Enforce subscription identifier availability (§3.2.2.3.14)
+        if (!serverSubscriptionIdentifiersAvailable) {
+            require(properties.subscriptionIdentifier.isEmpty()) {
+                "Server does not support subscription identifiers (§3.2.2.3.14)"
             }
         }
 
@@ -486,6 +537,15 @@ internal class MqttConnection(
     private suspend fun sendPacket(packet: MqttPacket) {
         sendMutex.withLock {
             val bytes = packet.encode()
+
+            // Enforce broker's Maximum Packet Size on outbound packets (§3.2.2.3.6)
+            serverMaximumPacketSize?.let { maxSize ->
+                require(bytes.size <= maxSize) {
+                    "Outbound ${packet.packetType} (${bytes.size} bytes) exceeds server " +
+                        "Maximum Packet Size ($maxSize) (§3.2.2.3.6)"
+                }
+            }
+
             log.trace(TAG) { "Sending ${packet.packetType} (${bytes.size} bytes)" }
             transport.send(bytes)
             lastSendMark = TimeSource.Monotonic.markNow()
@@ -609,6 +669,19 @@ internal class MqttConnection(
                     while (isActive && transport.isConnected) {
                         val bytes = transport.receive()
                         log.trace(TAG) { "Received ${bytes.size} bytes from transport" }
+
+                        // Enforce Maximum Packet Size advertised in CONNECT (§3.1.2.11.5)
+                        config.maximumPacketSize?.let { maxSize ->
+                            if (bytes.size > maxSize) {
+                                log.error(TAG) {
+                                    "Received packet (${bytes.size} bytes) exceeds " +
+                                        "Maximum Packet Size ($maxSize) — disconnecting"
+                                }
+                                handleFatalError()
+                                return@launch
+                            }
+                        }
+
                         val packet = decodePacket(bytes)
                         log.debug(TAG) { "Received ${packet.packetType}" }
                         handlePacket(packet)
@@ -709,20 +782,27 @@ internal class MqttConnection(
                         ),
                     )
                 }
-                _connectionState.value = ConnectionState.DISCONNECTED
                 stopBackgroundJobs()
                 transport.close()
+                failAllPendingAcks()
+                _connectionState.value = ConnectionState.DISCONNECTED
             }
 
             is ConnAck, is Connect, is Subscribe, is Unsubscribe -> {
-                log.warn(TAG) { "Unexpected ${packet.packetType} from broker — protocol violation" }
+                log.error(TAG) {
+                    "Protocol violation: unexpected ${packet.packetType} from broker — disconnecting"
+                }
+                handleFatalError()
             }
 
-            is PingReq, is PingResp -> {
-                if (packet is PingResp) {
-                    log.trace(TAG) { "Received PINGRESP" }
-                    awaitingPingResp = false
-                }
+            is PingReq -> {
+                log.error(TAG) { "Protocol violation: received PINGREQ from broker — disconnecting" }
+                handleFatalError()
+            }
+
+            is PingResp -> {
+                log.trace(TAG) { "Received PINGRESP" }
+                awaitingPingResp = false
             }
 
             is Auth -> {
@@ -732,7 +812,7 @@ internal class MqttConnection(
         }
     }
 
-    /** Handle an incoming PUBLISH packet: resolve topic aliases, emit the message, and send QoS acks. */
+    /** Handle an incoming PUBLISH packet: resolve topic aliases, send QoS acks, then emit the message. */
     private suspend fun handleIncomingPublish(packet: Publish) {
         // QoS 2 duplicate suppression — track packet IDs to prevent double delivery (§4.3.3)
         if (packet.qos == QoS.EXACTLY_ONCE && packet.packetIdentifier != null) {
@@ -755,16 +835,9 @@ internal class MqttConnection(
                 (packet.packetIdentifier?.let { " packetId=$it" } ?: "")
         }
 
-        val message =
-            MqttMessage(
-                topic = resolvedTopic,
-                payload = ByteString(packet.payload),
-                qos = packet.qos,
-                retain = packet.retain,
-                properties = extractPublishProperties(packet.properties),
-            )
-        _incomingMessages.emit(message)
-
+        // Send protocol ACKs BEFORE emitting to application flow (§4.3, §4.4).
+        // This prevents slow consumers from stalling broker acknowledgements,
+        // which would cause redelivery and potential disconnects.
         when (packet.qos) {
             QoS.AT_MOST_ONCE -> { /* No ack needed */ }
 
@@ -776,6 +849,16 @@ internal class MqttConnection(
                 packet.packetIdentifier?.let { sendPacket(PubRec(packetIdentifier = it)) }
             }
         }
+
+        val message =
+            MqttMessage(
+                topic = resolvedTopic,
+                payload = ByteString(packet.payload),
+                qos = packet.qos,
+                retain = packet.retain,
+                properties = extractPublishProperties(packet.properties),
+            )
+        _incomingMessages.emit(message)
     }
 
     // --- Private: Keepalive ---
@@ -795,21 +878,34 @@ internal class MqttConnection(
         log.debug(TAG) { "Keepalive started: interval=${intervalMs}ms, deadline=${deadlineMs}ms" }
         keepAliveJob =
             scope.launch {
-                while (isActive && transport.isConnected) {
-                    delay(intervalMs)
+                try {
+                    while (isActive && transport.isConnected) {
+                        delay(intervalMs)
 
-                    // Check for PINGRESP timeout — dead connection
-                    if (awaitingPingResp) {
-                        log.warn(TAG) { "PINGRESP timeout — connection assumed dead" }
-                        handleFatalError()
-                        return@launch
+                        // Check for PINGRESP timeout — dead connection
+                        if (awaitingPingResp) {
+                            log.warn(TAG) { "PINGRESP timeout — connection assumed dead" }
+                            handleFatalError()
+                            return@launch
+                        }
+
+                        val elapsedMs = sendMutex.withLock { lastSendMark.elapsedNow().inWholeMilliseconds }
+                        if (elapsedMs >= intervalMs) {
+                            log.trace(TAG) { "Sending PINGREQ (${elapsedMs}ms since last send)" }
+                            awaitingPingResp = true
+                            sendPacket(PingReq)
+                        }
                     }
-
-                    val elapsedMs = sendMutex.withLock { lastSendMark.elapsedNow().inWholeMilliseconds }
-                    if (elapsedMs >= intervalMs) {
-                        log.trace(TAG) { "Sending PINGREQ (${elapsedMs}ms since last send)" }
-                        awaitingPingResp = true
-                        sendPacket(PingReq)
+                } catch (
+                    @Suppress("SwallowedException") _: kotlin.coroutines.cancellation.CancellationException,
+                ) {
+                    // Job was cancelled — expected during disconnect
+                } catch (
+                    @Suppress("TooGenericExceptionCaught") e: Exception,
+                ) {
+                    if (isActive) {
+                        log.error(TAG, throwable = e) { "Keepalive error: ${e.message}" }
+                        handleFatalError()
                     }
                 }
             }
@@ -878,7 +974,8 @@ internal class MqttConnection(
             correlationData = props.correlationData?.toByteArray(),
             payloadFormatIndicator = props.payloadFormatIndicator,
             userProperties = props.userProperties,
-            subscriptionIdentifier = props.subscriptionIdentifiers,
+            // subscriptionIdentifier intentionally omitted — it is set by the broker
+            // on inbound PUBLISH only, not sent by clients on outbound PUBLISH (§3.3.2.3.8)
         )
 
     /** Extract user-facing [PublishProperties] from wire-level [MqttProperties]. */

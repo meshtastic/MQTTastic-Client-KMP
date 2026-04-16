@@ -331,6 +331,20 @@ public class MqttClient
         @Throws(MqttConnectionException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun connect(endpoint: MqttEndpoint) {
             connectionMutex.withLock {
+                // Close any existing connection to prevent resource leaks
+                connection?.let { existing ->
+                    log.warn(TAG) { "Already connected — closing existing connection before reconnecting" }
+                    try {
+                        existing.disconnect()
+                    } catch (
+                        @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                    ) {
+                        // Best-effort close of old connection
+                    }
+                    stopForwardJobs()
+                    connection = null
+                }
+
                 log.info(TAG) { "Connecting to $endpoint" }
                 intentionalDisconnect = false
                 currentEndpoint = endpoint
@@ -696,12 +710,14 @@ public class MqttClient
                     scope.launch {
                         _connectionState.value = ConnectionState.RECONNECTING
                         var delayMs = config.reconnectBaseDelayMs
-                        val endpoint = currentEndpoint ?: return@launch
 
-                        log.warn(TAG) { "Connection lost, starting reconnect to $endpoint" }
+                        log.warn(TAG) { "Connection lost, starting reconnect" }
 
                         while (isActive && !intentionalDisconnect) {
-                            log.debug(TAG) { "Reconnecting in ${delayMs}ms" }
+                            // Read endpoint each attempt to honor mid-flight redirects
+                            val endpoint = currentEndpoint ?: return@launch
+
+                            log.debug(TAG) { "Reconnecting to $endpoint in ${delayMs}ms" }
                             delay(delayMs)
                             try {
                                 connectionMutex.withLock {

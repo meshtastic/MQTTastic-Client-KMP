@@ -96,6 +96,9 @@ internal object TopicValidator {
      */
     fun isSharedSubscription(filter: String): Boolean = filter.startsWith("\$share/")
 
+    /** Check if a topic filter contains wildcard characters (`#` or `+`). */
+    fun containsWildcards(filter: String): Boolean = '#' in filter || '+' in filter
+
     /** Validate wildcard placement in the filter portion of a topic. */
     private fun validateWildcards(filter: String) {
         val hashIdx = filter.indexOf('#')
