@@ -3,7 +3,6 @@ agp = "9.1.0"
 kotlin = "2.3.20"
 ktor = "3.4.2"
 coroutines = "1.10.2"
-atomicfu = "0.32.1"
 kotlinx-io = "0.8.2"
 compose-multiplatform = "1.10.3"
 androidx-activityCompose = "1.10.1"
@@ -44,7 +43,6 @@ androidApplication = { id = "com.android.application", version.ref = "agp" }
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 composeMultiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-kotlinx-atomicfu = { id = "org.jetbrains.kotlinx.atomicfu", version.ref = "atomicfu" }
 vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

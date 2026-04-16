@@ -32,33 +32,9 @@ See the **Build & Test Commands** section in [AGENTS.md](AGENTS.md) for the full
 
 This project uses [ktlint](https://pinterest.github.io/ktlint/) (via [Spotless](https://github.com/diffplug/spotless)) and [detekt](https://detekt.dev/) for formatting and static analysis, plus [BCV](https://github.com/Kotlin/binary-compatibility-validator) for API compatibility tracking and [Kover](https://github.com/Kotlin/kotlinx-kover) for code coverage.
 
-## Architecture Rules
+## Architecture & Commit Conventions
 
-- **All protocol logic goes in `commonMain`** — no platform-specific code in the protocol layer
-- **Never import `java.*`, `android.*`, or `platform.*` in `commonMain`**
-- **Platform source sets contain only transport implementations** — `TcpTransport` + `WebSocketTransport` in `nonWebMain`, `WebSocketTransport` in `wasmJsMain`
-- **Use `ByteString` (from kotlinx-io) for binary data** in public API surfaces — no raw `ByteArray` exposure
-- **Internal by default** — only types listed in `AGENTS.md` are `public`
-
-## Commit Conventions
-
-We follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-<type>(<scope>): <subject>
-```
-
-**Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
-
-**Scopes:** `packet`, `transport`, `client`, `codec`, `qos`, `props`, `build`, `ci`, `deps`
-
-**Examples:**
-```
-feat(packet): implement CONNECT packet encoder
-fix(codec): handle partial VBI reads correctly
-test(qos): add QoS 2 state machine round-trip tests
-docs: update README installation instructions
-```
+See [AGENTS.md](AGENTS.md) for the full architecture rules, commit format, and scope definitions.
 
 ## Pull Requests
 

@@ -11,8 +11,7 @@
       "matchPackagePatterns": [
         "^org\\.jetbrains\\.kotlin:",
         "^org\\.jetbrains\\.kotlinx:kotlinx-coroutines",
-        "^org\\.jetbrains\\.kotlinx:kotlinx-io",
-        "^org\\.jetbrains\\.kotlinx:atomicfu"
+        "^org\\.jetbrains\\.kotlinx:kotlinx-io"
       ]
     },
     {

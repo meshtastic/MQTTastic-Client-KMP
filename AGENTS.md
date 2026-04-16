@@ -108,14 +108,14 @@ All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2
 Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs.versions.toml`).
 
 <rules>
-- **No Framework Bleed:** NEVER import `java.*`, `android.*`, or any platform API in `commonMain`. Use KMP equivalents: `kotlinx.coroutines.sync.Mutex` for locks, `atomicfu` for atomics, `kotlinx.io` or Ktor's `ByteReadChannel`/`ByteWriteChannel` for I/O.
+- **No Framework Bleed:** NEVER import `java.*`, `android.*`, or any platform API in `commonMain`. Use KMP equivalents: `kotlinx.coroutines.sync.Mutex` for locks, `kotlinx.io` or Ktor's `ByteReadChannel`/`ByteWriteChannel` for I/O.
 - **No Lazy Coding:** DO NOT use placeholders like `// ... existing code ...`. Always provide complete, valid code blocks for the sections you modify.
 - **Dependency Discipline:** Zero dependencies beyond Ktor + kotlinx-coroutines + kotlinx-io-bytestring (already a transitive Ktor dependency). Check `gradle/libs.versions.toml` before adding anything. Prefer removing dependencies over adding them.
 - **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.
 - **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, and `AuthChallenge` are public. Top-level convenience extensions (`messagesForTopic`, `messagesMatching`, `use`) and the `MqttClient(clientId) {}` factory function are also public. Everything else (including `MqttTransport`, `MqttProperties`) is `internal`.
-- **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `Mutex`-guarded counters for packet ID allocation (atomicfu is blocked by Android plugin incompatibility).
+- **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `Mutex`-guarded counters for packet ID allocation.
 - **Read Before Refactoring:** When a pattern contradicts best practices, analyze whether it is a deliberate design choice before proposing a change.
 </rules>
 

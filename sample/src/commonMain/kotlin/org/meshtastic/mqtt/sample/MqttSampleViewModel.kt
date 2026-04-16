@@ -1,5 +1,3 @@
-@file:Suppress("MagicNumber")
-
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *

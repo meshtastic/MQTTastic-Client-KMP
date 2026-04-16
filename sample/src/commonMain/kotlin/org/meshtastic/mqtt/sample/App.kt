@@ -760,7 +760,6 @@ private fun MessageRow(msg: DisplayMessage) {
         ?: MaterialTheme.colorScheme.outline
 
     Row(modifier = Modifier.fillMaxWidth()) {
-        // Left accent bar
         Box(
             modifier = Modifier
                 .width(3.dp)
