@@ -77,6 +77,10 @@ kotlin {
         jvmTest.get().dependsOn(nonWebTest)
         nativeTest.get().dependsOn(nonWebTest)
 
+        jvmTest.get().dependencies {
+            implementation(libs.konsist)
+        }
+
         // Wire Android host test to nonWebTest for shared transport tests
         findByName("androidHostTest")?.dependsOn(nonWebTest)
 
