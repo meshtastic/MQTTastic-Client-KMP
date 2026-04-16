@@ -748,12 +748,20 @@ internal class MqttConnection(
                 sendPacket(Disconnect(reasonCode = reasonCode))
             }
         } catch (
+            @Suppress("SwallowedException") _: kotlin.coroutines.cancellation.CancellationException,
+        ) {
+            // Scope cancelled during best-effort DISCONNECT — continue cleanup
+        } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
         ) {
             // Best-effort DISCONNECT — transport may already be broken
         }
         try {
             transport.close()
+        } catch (
+            @Suppress("SwallowedException") _: kotlin.coroutines.cancellation.CancellationException,
+        ) {
+            // Scope cancelled during best-effort close — continue cleanup
         } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
         ) {

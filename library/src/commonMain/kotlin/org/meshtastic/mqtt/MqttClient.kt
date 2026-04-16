@@ -310,6 +310,7 @@ public class MqttClient
          */
         public val authChallenges: SharedFlow<AuthChallenge> = _authChallenges.asSharedFlow()
 
+        @Volatile
         private var connection: MqttConnection? = null
 
         @Volatile
@@ -350,13 +351,16 @@ public class MqttClient
                         log.warn(TAG) { "Already connected — closing existing connection before reconnecting" }
                         try {
                             existing.disconnect()
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (
                             @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
                         ) {
                             // Best-effort close of old connection
+                        } finally {
+                            stopForwardJobs()
+                            connection = null
                         }
-                        stopForwardJobs()
-                        connection = null
                     }
 
                     log.info(TAG) { "Connecting to $endpoint" }
@@ -388,6 +392,12 @@ public class MqttClient
                 reconnectJob = null
                 try {
                     connection?.disconnect()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (
+                    @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                ) {
+                    // Best-effort disconnect — transport may already be closed
                 } finally {
                     stopForwardJobs()
                     connection = null
@@ -595,14 +605,17 @@ public class MqttClient
                 reconnectJob = null
                 try {
                     connection?.disconnect()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (
                     @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
                 ) {
                     // Best-effort disconnect during close
+                } finally {
+                    stopForwardJobs()
+                    connection = null
+                    _connectionState.value = ConnectionState.DISCONNECTED
                 }
-                stopForwardJobs()
-                connection = null
-                _connectionState.value = ConnectionState.DISCONNECTED
             }
             scope.coroutineContext[Job]?.cancel()
             log.info(TAG) { "Client closed" }
@@ -624,14 +637,17 @@ public class MqttClient
                 reconnectJob = null
                 try {
                     connection?.abort()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (
                     @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
                 ) {
                     // Best-effort abort
+                } finally {
+                    stopForwardJobs()
+                    connection = null
+                    _connectionState.value = ConnectionState.DISCONNECTED
                 }
-                stopForwardJobs()
-                connection = null
-                _connectionState.value = ConnectionState.DISCONNECTED
             }
             scope.coroutineContext[Job]?.cancel()
         }
