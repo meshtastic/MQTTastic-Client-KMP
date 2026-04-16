@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`TopicValidator`** — topic name and filter wildcard validation per §4.7
 - **`RetainHandling`** — subscription retain handling options (§3.8.3.1)
 - **`TcpTransport`** (nonWebMain) — TCP/TLS transport via ktor-network
-- **`WebSocketTransport`** (wasmJsMain) — binary WebSocket transport via ktor-client
+- **`WebSocketTransport`** (nonWebMain + wasmJsMain) — binary WebSocket transport on all platforms via ktor-client
 - **Automatic reconnection** with configurable exponential backoff and subscription re-establishment
 - **Enhanced authentication** — AUTH packet challenge/response flow (§4.12)
 - **Topic aliases** — bidirectional client↔server mapping (§3.3.2.3.4)

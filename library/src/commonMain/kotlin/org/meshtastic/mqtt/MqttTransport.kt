@@ -21,8 +21,9 @@ package org.meshtastic.mqtt
  *
  * This is the sole platform abstraction boundary in the library.
  * Implementations:
- * - `TcpTransport` in `nonWebMain` — raw TCP sockets via ktor-network
- * - `WebSocketTransport` in `wasmJsMain` — binary WebSocket frames via ktor-client-websockets
+ * - `TcpTransport` in `nonWebMain` — raw TCP sockets via ktor-network (JVM, Android, iOS, macOS, Linux, Windows)
+ * - `WebSocketTransport` in `nonWebMain` — binary WebSocket frames via ktor-client-websockets (JVM, Android, iOS, macOS, Linux, Windows)
+ * - `WebSocketTransport` in `wasmJsMain` — binary WebSocket frames via ktor-client-websockets (browser)
  *
  * Not part of the public API — consumers use [MqttClient] instead.
  */
@@ -48,8 +49,8 @@ internal interface MqttTransport {
  *
  * Used as the argument to [MqttClient.connect] to specify the broker's address and transport.
  * Two transport types are supported, each as a sealed subclass:
- * - [Tcp] — raw TCP socket (optionally with TLS), used by JVM, Android, iOS, macOS, Linux, Windows.
- * - [WebSocket] — binary WebSocket frames, used by browser/wasmJs targets.
+ * - [Tcp] — raw TCP socket (optionally with TLS), available on JVM, Android, iOS, macOS, Linux, Windows.
+ * - [WebSocket] — binary WebSocket frames, available on **all** platforms including browser/wasmJs.
  *
  * ## Example
  * ```kotlin
@@ -87,10 +88,12 @@ public sealed interface MqttEndpoint {
     }
 
     /**
-     * WebSocket connection, used by browser/wasmJs targets.
+     * WebSocket connection, available on all platforms.
      *
      * Connects via binary WebSocket frames using ktor-client-websockets.
      * Each WebSocket frame carries exactly one complete MQTT packet.
+     * Useful for connecting through load balancers, CDNs, and firewalls
+     * that don't allow raw TCP but do allow WebSocket upgrades.
      *
      * @property url The WebSocket URL (e.g. `"wss://broker.example.com/mqtt"`).
      *   Must not be blank. Use `ws://` for unencrypted or `wss://` for TLS.

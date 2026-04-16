@@ -23,7 +23,8 @@ MqttClient (commonMain) — public API surface
   └─ MqttConnection (commonMain) — lifecycle, keepalive, read loop, QoS state machines
        └─ MqttTransport (interface, commonMain)
             ├─ TcpTransport (nonWebMain) — ktor-network raw sockets + TLS
-            └─ WebSocketTransport (wasmJsMain) — ktor-client-websockets, binary frames
+            ├─ WebSocketTransport (nonWebMain) — ktor-client-websockets, binary frames (JVM/Android/native)
+            └─ WebSocketTransport (wasmJsMain) — ktor-client-websockets, binary frames (browser)
 ```
 
 `MqttTransport` is an internal interface — not `expect`/`actual`. Everything above it is pure common Kotlin.
@@ -32,7 +33,7 @@ MqttClient (commonMain) — public API surface
 
 ```
 commonMain        ← ALL protocol logic: packets, encoder, decoder, client, connection, properties
-├── nonWebMain*   ← TcpTransport (ktor-network + ktor-network-tls)
+├── nonWebMain*   ← TcpTransport + WebSocketTransport (ktor-network + ktor-network-tls + ktor-client-websockets)
 │   ├── jvmMain
 │   ├── androidMain
 │   ├── nativeMain (auto-created by default hierarchy template)
@@ -83,7 +84,7 @@ ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed interface hie
 - `MqttEndpoint` — sealed interface for TCP and WebSocket endpoints with input validation + `MqttEndpoint.parse(uri)` factory (public)
 - `MqttTransport` — internal transport interface
 - `TcpTransport` — TCP/TLS transport via ktor-network (nonWebMain, internal)
-- `WebSocketTransport` — binary WebSocket transport via ktor-client (wasmJsMain, internal)
+- `WebSocketTransport` — binary WebSocket transport via ktor-client (nonWebMain + wasmJsMain, internal)
 - `MqttLogger` / `MqttLogLevel` — configurable logging interface with zero-cost filtering (public)
 - `TopicValidator` — topic name and filter validation per §4.7 (internal)
 - `QoS` — Quality of Service enum (public)

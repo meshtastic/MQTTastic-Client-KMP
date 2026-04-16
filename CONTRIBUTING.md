@@ -65,7 +65,7 @@ This project uses [ktlint](https://pinterest.github.io/ktlint/) (via [Spotless](
 
 - **All protocol logic goes in `commonMain`** — no platform-specific code in the protocol layer
 - **Never import `java.*`, `android.*`, or `platform.*` in `commonMain`**
-- **Platform source sets contain only transport implementations** — `TcpTransport` in `nonWebMain`, `WebSocketTransport` in `wasmJsMain`
+- **Platform source sets contain only transport implementations** — `TcpTransport` + `WebSocketTransport` in `nonWebMain`, `WebSocketTransport` in `wasmJsMain`
 - **Use `ByteString` (from kotlinx-io) for binary data** in public API surfaces — no raw `ByteArray` exposure
 - **Internal by default** — only types listed in `AGENTS.md` are `public`
 

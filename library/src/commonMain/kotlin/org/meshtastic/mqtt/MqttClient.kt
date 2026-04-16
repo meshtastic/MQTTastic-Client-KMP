@@ -244,7 +244,7 @@ public class MqttClient
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     ) {
         private val log = MqttLoggerInternal(config.logger, config.logLevel)
-        private var effectiveTransportFactory: (MqttEndpoint) -> MqttTransport = { createPlatformTransport() }
+        private var effectiveTransportFactory: (MqttEndpoint) -> MqttTransport = { createPlatformTransport(it) }
 
         /** Internal constructor for testing with a pre-built transport and injected scope. */
         internal constructor(config: MqttConfig, transport: MqttTransport, scope: CoroutineScope) :

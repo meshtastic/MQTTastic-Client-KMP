@@ -16,5 +16,11 @@
  */
 package org.meshtastic.mqtt
 
-/** Platform-specific transport factory. Creates the appropriate [MqttTransport] for the current platform. */
-internal expect fun createPlatformTransport(): MqttTransport
+/**
+ * Platform-specific transport factory.
+ *
+ * Creates the appropriate [MqttTransport] for the given [endpoint]:
+ * - [MqttEndpoint.Tcp] → `TcpTransport` (JVM, Android, iOS, macOS, Linux, Windows)
+ * - [MqttEndpoint.WebSocket] → `WebSocketTransport` (all platforms including browser/wasmJs)
+ */
+internal expect fun createPlatformTransport(endpoint: MqttEndpoint): MqttTransport

@@ -28,11 +28,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * WebSocket-based [MqttTransport] for browser/wasmJs targets.
+ * WebSocket-based [MqttTransport] for JVM, Android, iOS, macOS, Linux, and Windows targets.
  *
- * Uses Ktor's Js engine (auto-detected from classpath). One binary WebSocket
- * frame = one complete MQTT packet, so no stream parsing is needed — the
- * WebSocket layer handles framing.
+ * Uses Ktor's multiplatform HttpClient with engine auto-detection (CIO on JVM/Android/Apple/Linux,
+ * WinHttp on Windows). One binary WebSocket frame = one complete MQTT packet, so no stream
+ * parsing is needed — the WebSocket layer handles framing.
  */
 internal class WebSocketTransport : MqttTransport {
     private var client: HttpClient? = null

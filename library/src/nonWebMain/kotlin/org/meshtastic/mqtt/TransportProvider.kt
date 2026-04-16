@@ -16,4 +16,8 @@
  */
 package org.meshtastic.mqtt
 
-internal actual fun createPlatformTransport(): MqttTransport = TcpTransport()
+internal actual fun createPlatformTransport(endpoint: MqttEndpoint): MqttTransport =
+    when (endpoint) {
+        is MqttEndpoint.Tcp -> TcpTransport()
+        is MqttEndpoint.WebSocket -> WebSocketTransport()
+    }

@@ -15,7 +15,7 @@ A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — co
 - 🔄 **All QoS levels** — QoS 0, 1, and 2 with complete state machine handling
 - 🌍 **True multiplatform** — one codebase, 9 targets (see [Platform Support](#platform-support))
 - 🔒 **TLS/SSL** — secure connections on all native/JVM targets
-- 🌐 **WebSocket** — browser-compatible transport for wasmJs
+- 🌐 **WebSocket** — binary WebSocket transport on all platforms (behind LBs, CDNs, firewalls)
 - ⚡ **Coroutines-first** — `suspend` functions and `Flow`-based message delivery
 - 🪶 **Minimal dependencies** — only Ktor (transport) + kotlinx-coroutines + kotlinx-io
 - 🛡️ **Immutable by design** — `ByteString` payloads, validated inputs, data class models
@@ -36,12 +36,12 @@ A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — co
 
 | Platform | Target | Transport | Status |
 |----------|--------|-----------|--------|
-| JVM | `jvm` | TCP/TLS | ✅ |
-| Android | `android` | TCP/TLS | ✅ |
-| iOS | `iosArm64`, `iosSimulatorArm64` | TCP/TLS | ✅ |
-| macOS | `macosArm64` | TCP/TLS | ✅ |
-| Linux | `linuxX64`, `linuxArm64` | TCP/TLS | ✅ |
-| Windows | `mingwX64` | TCP/TLS | ✅ |
+| JVM | `jvm` | TCP/TLS, WebSocket | ✅ |
+| Android | `android` | TCP/TLS, WebSocket | ✅ |
+| iOS | `iosArm64`, `iosSimulatorArm64` | TCP/TLS, WebSocket | ✅ |
+| macOS | `macosArm64` | TCP/TLS, WebSocket | ✅ |
+| Linux | `linuxX64`, `linuxArm64` | TCP/TLS, WebSocket | ✅ |
+| Windows | `mingwX64` | TCP/TLS, WebSocket | ✅ |
 | Browser | `wasmJs` | WebSocket | ✅ |
 
 ## Architecture
@@ -55,8 +55,9 @@ All protocol logic — packet encoding/decoding, the client state machine, QoS f
 │  MqttPacket / Encoder / Decoder             │  ← MQTT 5.0 wire format
 ├──────────────────────┬──────────────────────┤
 │  TcpTransport        │  WebSocketTransport  │
-│  (nonWebMain)        │  (wasmJsMain)        │
-│  ktor-network + TLS  │  ktor-client-ws      │
+│  (nonWebMain)        │  (nonWebMain +       │
+│  ktor-network + TLS  │   wasmJsMain)        │
+│                      │  ktor-client-ws      │
 └──────────────────────┴──────────────────────┘
 ```
 

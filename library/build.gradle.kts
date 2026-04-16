@@ -86,6 +86,8 @@ kotlin {
         commonMain.dependencies {
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.io.bytestring)
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.websockets)
         }
 
         commonTest.dependencies {
@@ -98,10 +100,25 @@ kotlin {
             implementation(libs.ktor.network.tls)
         }
 
+        // Ktor HttpClient engines — one per platform family for WebSocket auto-detection.
+        jvmMain.get().dependencies {
+            implementation(libs.ktor.client.cio)
+        }
+        findByName("androidMain")?.dependencies {
+            implementation(libs.ktor.client.cio)
+        }
+        findByName("appleMain")?.dependencies {
+            implementation(libs.ktor.client.cio)
+        }
+        findByName("linuxMain")?.dependencies {
+            implementation(libs.ktor.client.cio)
+        }
+        findByName("mingwMain")?.dependencies {
+            implementation(libs.ktor.client.winhttp)
+        }
+
         wasmJsMain.dependencies {
-            implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.js)
-            implementation(libs.ktor.client.websockets)
         }
     }
 }

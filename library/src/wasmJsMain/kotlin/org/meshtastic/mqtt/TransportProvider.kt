@@ -16,4 +16,15 @@
  */
 package org.meshtastic.mqtt
 
-internal actual fun createPlatformTransport(): MqttTransport = WebSocketTransport()
+internal actual fun createPlatformTransport(endpoint: MqttEndpoint): MqttTransport =
+    when (endpoint) {
+        is MqttEndpoint.WebSocket -> {
+            WebSocketTransport()
+        }
+
+        is MqttEndpoint.Tcp -> {
+            error(
+                "TCP sockets are not available on browser/wasmJs. Use MqttEndpoint.WebSocket instead.",
+            )
+        }
+    }
