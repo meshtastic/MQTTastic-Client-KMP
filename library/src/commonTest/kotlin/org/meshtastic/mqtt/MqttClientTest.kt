@@ -27,6 +27,7 @@ import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.Connect
 import org.meshtastic.mqtt.packet.Disconnect
 import org.meshtastic.mqtt.packet.MqttProperties
+import org.meshtastic.mqtt.packet.PubAck
 import org.meshtastic.mqtt.packet.Publish
 import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscribe
@@ -464,6 +465,104 @@ class MqttClientTest {
             assertTrue(
                 caughtException is kotlinx.coroutines.CancellationException,
                 "Expected CancellationException but got ${caughtException?.let { it::class.simpleName }}",
+            )
+
+            client.close()
+        }
+
+    // --- ProtocolError surfacing (F24) ---
+
+    @Test
+    fun connectionRejectedSurfacedFromBadConnAck() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig()
+            val client = MqttClient(config, transport, this)
+
+            // CONNACK with non-success reason code
+            transport.enqueuePacket(
+                ConnAck(
+                    reasonCode = ReasonCode.NOT_AUTHORIZED,
+                ),
+            )
+
+            val exception =
+                assertFailsWith<MqttException.ConnectionRejected> {
+                    client.connect(endpoint)
+                }
+            assertEquals(ReasonCode.NOT_AUTHORIZED, exception.reasonCode)
+
+            client.close()
+        }
+
+    // --- Concurrent publish + subscribe (F25) ---
+
+    @Test
+    fun concurrentPublishAndSubscribe() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // Launch concurrent publish and subscribe
+            val publishJob =
+                launch {
+                    // Respond to PUBLISH with PUBACK
+                    launch {
+                        while (true) {
+                            yield()
+                            val packets = transport.decodeSentPackets()
+                            val publish = packets.filterIsInstance<Publish>().firstOrNull()
+                            if (publish != null && publish.packetIdentifier != null) {
+                                transport.enqueuePacket(
+                                    org.meshtastic.mqtt.packet.PubAck(
+                                        packetIdentifier = publish.packetIdentifier!!,
+                                    ),
+                                )
+                                break
+                            }
+                        }
+                    }
+                    client.publish("concurrent/pub", "data", QoS.AT_LEAST_ONCE)
+                }
+
+            val subscribeJob =
+                launch {
+                    // Respond to SUBSCRIBE with SUBACK
+                    launch {
+                        while (true) {
+                            yield()
+                            val packets = transport.decodeSentPackets()
+                            val subscribe = packets.filterIsInstance<Subscribe>().firstOrNull()
+                            if (subscribe != null) {
+                                transport.enqueuePacket(
+                                    SubAck(
+                                        packetIdentifier = subscribe.packetIdentifier,
+                                        reasonCodes = listOf(ReasonCode.GRANTED_QOS_1),
+                                    ),
+                                )
+                                break
+                            }
+                        }
+                    }
+                    client.subscribe("concurrent/sub", QoS.AT_LEAST_ONCE)
+                }
+
+            advanceUntilIdle()
+            publishJob.join()
+            subscribeJob.join()
+
+            // Both operations should complete without deadlock or error
+            val sentPackets = transport.decodeSentPackets()
+            assertTrue(
+                sentPackets.any { it is Publish && it.topicName == "concurrent/pub" },
+                "PUBLISH should have been sent",
+            )
+            assertTrue(
+                sentPackets.any { it is Subscribe },
+                "SUBSCRIBE should have been sent",
             )
 
             client.close()
