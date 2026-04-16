@@ -207,6 +207,7 @@ private fun TwoPaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel
         }
         MessagesFeed(
             messages = state.receivedMessages,
+            totalCount = state.totalMessageCount,
             onClear = viewModel::clearMessages,
             modifier = Modifier.weight(0.6f).fillMaxHeight(),
         )
@@ -224,6 +225,7 @@ private fun SinglePaneLayout(state: MqttSampleState, viewModel: MqttSampleViewMo
         item {
             MessagesFeed(
                 messages = state.receivedMessages,
+                totalCount = state.totalMessageCount,
                 onClear = viewModel::clearMessages,
                 modifier = Modifier.fillMaxWidth().height(500.dp),
             )
@@ -614,6 +616,7 @@ private fun PublishSection(
 @Composable
 private fun MessagesFeed(
     messages: List<DisplayMessage>,
+    totalCount: Int,
     onClear: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -641,13 +644,13 @@ private fun MessagesFeed(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
-                    if (messages.isNotEmpty()) {
+                    if (totalCount > 0) {
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                         ) {
                             Text(
-                                text = "${messages.size}",
+                                text = "$totalCount",
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.primary,

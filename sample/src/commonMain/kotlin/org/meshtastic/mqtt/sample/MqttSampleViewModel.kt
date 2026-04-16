@@ -81,6 +81,7 @@ data class MqttSampleState(
     val publishRetain: Boolean = false,
     // messages
     val receivedMessages: List<DisplayMessage> = emptyList(),
+    val totalMessageCount: Int = 0,
     // error
     val error: String? = null,
 )
@@ -142,7 +143,7 @@ class MqttSampleViewModel {
     }
 
     fun clearMessages() {
-        _state.update { it.copy(receivedMessages = emptyList()) }
+        _state.update { it.copy(receivedMessages = emptyList(), totalMessageCount = 0) }
     }
 
     // -- MQTT operations --
@@ -177,7 +178,10 @@ class MqttSampleViewModel {
                         val display = decodeMessage(msg)
                         _state.update { current ->
                             val updated = listOf(display) + current.receivedMessages
-                            current.copy(receivedMessages = updated.take(100))
+                            current.copy(
+                                receivedMessages = updated.take(100),
+                                totalMessageCount = current.totalMessageCount + 1,
+                            )
                         }
                     }
                 }
