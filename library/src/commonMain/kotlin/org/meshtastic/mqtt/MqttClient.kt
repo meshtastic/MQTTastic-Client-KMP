@@ -255,7 +255,7 @@ public class MqttClient
         private val effectiveTransportFactory: (MqttEndpoint) -> MqttTransport
             get() = transportFactoryOverride ?: transportFactory
 
-        private val scope = CoroutineScope(SupervisorJob() + scope.coroutineContext.minusKey(Job))
+        private val scope = CoroutineScope(SupervisorJob(scope.coroutineContext[Job]) + scope.coroutineContext.minusKey(Job))
 
         private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
 
@@ -556,6 +556,34 @@ public class MqttClient
             log.info(TAG) { "Client closed" }
         }
 
+        // --- Internal helpers ---
+
+        /**
+         * Abort the connection without sending a DISCONNECT packet.
+         *
+         * This causes the broker to treat the disconnection as unexpected and
+         * publish any configured Will Message (§3.1.2.5). Used for testing
+         * will message delivery.
+         */
+        internal suspend fun abortConnection() {
+            connectionMutex.withLock {
+                intentionalDisconnect = true
+                reconnectJob?.cancel()
+                reconnectJob = null
+                try {
+                    connection?.abort()
+                } catch (
+                    @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                ) {
+                    // Best-effort abort
+                }
+                stopForwardJobs()
+                connection = null
+                _connectionState.value = ConnectionState.DISCONNECTED
+            }
+            scope.coroutineContext[Job]?.cancel()
+        }
+
         // --- Private helpers ---
 
         private suspend fun connectInternal(endpoint: MqttEndpoint) {
@@ -670,8 +698,11 @@ public class MqttClient
                         log.debug(TAG) { "Reconnecting in ${delayMs}ms" }
                         delay(delayMs)
                         try {
-                            connectInternal(endpoint)
-                            resubscribe()
+                            connectionMutex.withLock {
+                                if (intentionalDisconnect) return@launch
+                                connectInternal(endpoint)
+                                resubscribe()
+                            }
                             log.info(TAG) { "Reconnected to $endpoint" }
                             reconnectJob = null
                             return@launch
@@ -715,7 +746,18 @@ public class MqttClient
                     activeSubscriptions.values.toList()
                 }
             if (subs.isNotEmpty()) {
-                connection?.subscribe(subs, MqttProperties.EMPTY)
+                val subAck = connection?.subscribe(subs, MqttProperties.EMPTY) ?: return
+                // Remove subscriptions that failed on reconnect
+                subscriptionsMutex.withLock {
+                    subs.zip(subAck.reasonCodes).forEach { (sub, code) ->
+                        if (!isSuccessfulSubAck(code)) {
+                            activeSubscriptions.remove(sub.topicFilter)
+                            log.warn(TAG) {
+                                "Subscription '${sub.topicFilter}' failed on resubscribe: $code"
+                            }
+                        }
+                    }
+                }
             }
         }
 
