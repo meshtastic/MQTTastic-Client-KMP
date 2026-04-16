@@ -341,7 +341,6 @@ internal class MqttConnection(
                     }
                 }
             }
-            @Suppress("UNREACHABLE_CODE")
             error("Unreachable")
         }
 
