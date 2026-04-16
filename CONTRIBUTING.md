@@ -10,56 +10,27 @@ Thank you for your interest in contributing! This guide will help you get starte
 
 ## Building
 
+See the **Build & Test Commands** section in [AGENTS.md](AGENTS.md) for the full command reference.
+
+**Quick start:**
+
 ```bash
-# Full build (all targets)
-./gradlew build
-
-# Run all tests
-./gradlew allTests
-
-# Run tests for a specific target
-./gradlew jvmTest
-./gradlew wasmJsBrowserTest
-./gradlew macosArm64Test
+./gradlew build              # Full build (compile + test + check) for all targets
+./gradlew allTests           # Run all KMP tests (always use this, not bare `test`)
+./gradlew jvmTest            # JVM tests only
 ```
 
 > **Important:** Always use `allTests` instead of `test` — it's the KMP lifecycle task that covers all source sets.
-
-## Code Style
-
-This project uses [ktlint](https://pinterest.github.io/ktlint/) (via [Spotless](https://github.com/diffplug/spotless)) and [detekt](https://detekt.dev/) for formatting and static analysis, plus [BCV](https://github.com/Kotlin/binary-compatibility-validator) for API compatibility tracking and [Kover](https://github.com/Kotlin/kotlinx-kover) for code coverage.
-
-```bash
-# Check formatting
-./gradlew spotlessCheck
-
-# Auto-fix formatting
-./gradlew spotlessApply
-
-# Run static analysis
-./gradlew detekt
-
-# Check binary API compatibility
-./gradlew apiCheck
-
-# Regenerate API baseline after intentional API changes
-./gradlew apiDump
-
-# Check code coverage (≥80% enforced)
-./gradlew koverVerify
-
-# Generate HTML coverage report
-./gradlew koverHtmlReport
-
-# Generate API documentation
-./gradlew dokkaGeneratePublicationHtml
-```
 
 **Before submitting a PR, ensure all checks pass:**
 
 ```bash
 ./gradlew spotlessApply detekt allTests apiCheck koverVerify
 ```
+
+## Code Style
+
+This project uses [ktlint](https://pinterest.github.io/ktlint/) (via [Spotless](https://github.com/diffplug/spotless)) and [detekt](https://detekt.dev/) for formatting and static analysis, plus [BCV](https://github.com/Kotlin/binary-compatibility-validator) for API compatibility tracking and [Kover](https://github.com/Kotlin/kotlinx-kover) for code coverage.
 
 ## Architecture Rules
 

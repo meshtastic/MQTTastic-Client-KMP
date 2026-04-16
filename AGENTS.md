@@ -5,13 +5,9 @@ You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP,
 </role>
 
 <context_and_memory>
-- **Project Goal:** A first-class, production-grade MQTT 5.0 client library for Kotlin Multiplatform — targeting JVM, Android, iOS, macOS, Linux, Windows (mingwX64), and wasmJs (browser). Published as `org.meshtastic:mqtt-client`.
-- **Language & Tech:** Kotlin 2.3.20, Gradle 9.3.0, Gradle Kotlin DSL, Ktor 3.4.2 (transport), kotlinx-coroutines 1.10.2, kotlinx-io-bytestring 0.8.2 (immutable byte sequences). Zero dependencies beyond Ktor + coroutines + kotlinx-io (already a transitive Ktor dependency).
-- **Core Architecture:**
-  - `commonMain` is pure KMP — ALL protocol logic, packet encoding/decoding, client state machine, and connection management live here.
-  - Platform source sets (`nonWebMain`, `wasmJsMain`) contain ONLY transport implementations.
-  - `MqttTransport` is the sole platform abstraction boundary (internal — not public API).
-- **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) — consult this for byte-level packet layouts, property definitions, and reason codes.
+- **Project:** `org.meshtastic:mqtt-client` — production-grade MQTT 5.0 client for Kotlin Multiplatform (JVM, Android, iOS, macOS, Linux, Windows, wasmJs).
+- **Stack:** Kotlin 2.3.20, Gradle 9.3.0, Ktor 3.4.2, kotlinx-coroutines 1.10.2, kotlinx-io-bytestring 0.8.2. Zero external deps beyond these.
+- **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) — consult for byte-level packet layouts, property definitions, and reason codes.
 </context_and_memory>
 
 ## Architecture
@@ -68,72 +64,9 @@ ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed interface hie
 
 `MqttPacket` is a sealed interface with data class implementations for each of the 15 MQTT 5.0 packet types. Encode and decode are separate top-level/extension functions, not methods on the packet classes. Properties are modeled as a dedicated `MqttProperties` class shared across packet types.
 
-### Current implementation status
+### Implementation status
 
-**Fully implemented:**
-- `MqttClient` — public API surface: connect, disconnect, publish, subscribe, unsubscribe, close, enhanced auth, request/response (public)
-- `MqttConfig` — client configuration with `MqttConfig.build {}` DSL (public)
-- `WillConfig` — will message configuration (public)
-- `MqttConnection` — internal connection manager: QoS 0/1/2 state machines, keepalive, read loop, topic aliases, flow control, enhanced auth, auto-reconnect
-- `MqttPacket` — sealed interface with 15 packet type data classes (internal)
-- `MqttEncoder` — `MqttPacket.encode()` extension for all 15 types (internal)
-- `MqttDecoder` — `decodePacket(ByteArray)` for all 15 types with reserved bits validation (internal)
-- `MqttProperties` — 28-property model with encode/decode, duplicate singleton detection (internal)
-- `MqttMessage` — MQTT message data class using `ByteString` for immutable payload + `payloadAsString()` convenience (public)
-- `PublishProperties` — MQTT 5.0 §3.3.2.3 publish properties data class with input validation (public)
-- `MqttEndpoint` — sealed interface for TCP and WebSocket endpoints with input validation + `MqttEndpoint.parse(uri)` factory (public)
-- `MqttTransport` — internal transport interface
-- `TcpTransport` — TCP/TLS transport via ktor-network (nonWebMain, internal)
-- `WebSocketTransport` — binary WebSocket transport via ktor-client (nonWebMain + wasmJsMain, internal)
-- `MqttLogger` / `MqttLogLevel` — configurable logging interface with zero-cost filtering (public)
-- `TopicValidator` — topic name and filter validation per §4.7 (internal)
-- `QoS` — Quality of Service enum (public)
-- `ConnectionState` — connection lifecycle states (public)
-- `ReasonCode` — 43 MQTT 5.0 reason codes (public)
-- `RetainHandling` — subscription retain handling options (public)
-- `PacketType` — packet type enum with fixed-header flag validation (internal)
-- `VariableByteInt` — Variable Byte Integer encoder/decoder per §1.5.5 (internal)
-- `PacketIdAllocator` — Mutex-guarded 16-bit packet ID counter (internal)
-- Convenience extensions — `MqttClient(clientId) {}` factory, `messagesForTopic()`, `messagesMatching()`, `subscribe(qos, vararg)`, `publish(topic, payload, qos, properties)`, `use(endpoint) {}` (public)
-
-## MQTT 5.0 Scope — Full Protocol
-
-All 15 packet types will be implemented:
-
-| Type | Code | Direction | QoS Flow |
-|------|------|-----------|----------|
-| CONNECT | 1 | C→S | — |
-| CONNACK | 2 | S→C | — |
-| PUBLISH | 3 | Both | Initiator |
-| PUBACK | 4 | Both | QoS 1 ACK |
-| PUBREC | 5 | Both | QoS 2 step 1 |
-| PUBREL | 6 | Both | QoS 2 step 2 |
-| PUBCOMP | 7 | Both | QoS 2 step 3 |
-| SUBSCRIBE | 8 | C→S | — |
-| SUBACK | 9 | S→C | — |
-| UNSUBSCRIBE | 10 | C→S | — |
-| UNSUBACK | 11 | S→C | — |
-| PINGREQ | 12 | C→S | — |
-| PINGRESP | 13 | S→C | — |
-| DISCONNECT | 14 | Both | — |
-| AUTH | 15 | Both | — |
-
-### Features
-
-- **All three QoS levels:** QoS 0 (AT_MOST_ONCE), QoS 1 (AT_LEAST_ONCE), QoS 2 (EXACTLY_ONCE)
-- **Full MQTT 5.0 Properties** on all packet types — Session Expiry, Topic Alias, User Properties, Message Expiry, Content Type, Response Topic, Correlation Data, Assigned Client Identifier, Server Keep Alive, Authentication Method/Data, etc.
-- **Reason Codes** — full set on CONNACK, PUBACK, PUBREC, PUBREL, PUBCOMP, SUBACK, UNSUBACK, DISCONNECT, AUTH
-- **QoS 2 state machine** — PUBLISH → PUBREC → PUBREL → PUBCOMP with in-flight state tracking and session resumption
-- **Will messages** with Will Delay Interval and Will Properties
-- **Retained messages**
-- **Enhanced authentication** — AUTH packet for SASL-style challenge/response
-- **Shared Subscriptions** — `$share/{group}/{filter}`
-- **Subscription Options** — Retain Handling, No Local, Retain As Published
-- **Topic Aliases** — bidirectional client↔server mapping
-- **Flow Control** — Receive Maximum to limit concurrent in-flight QoS 1/2 messages
-- **Server Redirect** — handle Server Reference in CONNACK/DISCONNECT
-- **Request/Response** — Response Topic + Correlation Data pattern
-- **Automatic reconnection** with configurable exponential backoff and session resumption
+All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2 state machines, enhanced auth, topic aliases, flow control, auto-reconnect, will messages, shared subscriptions, and request/response. See README.md for detailed MQTT 5.0 coverage tables.
 
 ## Build & Test Commands
 

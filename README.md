@@ -358,18 +358,7 @@ The library uses **Ktor 3.4.2** and **kotlinx-coroutines 1.10.2**. If your proje
 
 ## Building
 
-```bash
-./gradlew build              # Compile all targets
-./gradlew allTests           # Run tests on all targets
-./gradlew jvmTest            # JVM tests only
-./gradlew spotlessCheck      # Check formatting
-./gradlew detekt             # Static analysis
-./gradlew apiCheck           # Verify binary compatibility
-./gradlew koverVerify        # Check code coverage (≥80%)
-./gradlew dokkaGeneratePublicationHtml  # Generate API docs
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed build instructions.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for build setup, development workflow, and the full command reference.
 
 ## Documentation
 
