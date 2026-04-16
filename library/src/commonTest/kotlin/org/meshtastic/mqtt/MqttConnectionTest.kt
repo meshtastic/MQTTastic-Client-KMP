@@ -160,7 +160,7 @@ class MqttConnectionTest {
             assertIs<Connect>(sent)
             assertEquals("last-will/topic", sent.willTopic)
             assertNotNull(sent.willPayload)
-            assertEquals("goodbye", sent.willPayload?.decodeToString())
+            assertEquals("goodbye", sent.willPayload.decodeToString())
             assertEquals(QoS.AT_LEAST_ONCE, sent.willQos)
             assertEquals(true, sent.willRetain)
             assertEquals(60L, sent.willProperties.willDelayInterval)

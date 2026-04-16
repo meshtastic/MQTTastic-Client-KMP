@@ -16,6 +16,7 @@
  */
 package org.meshtastic.mqtt
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import org.meshtastic.mqtt.packet.MqttPacket
 import org.meshtastic.mqtt.packet.decodePacket
@@ -57,6 +58,7 @@ internal class FakeTransport : MqttTransport {
     override suspend fun connect(endpoint: MqttEndpoint) {
         connectError?.let { throw it }
         // Recreate receive channel if it was closed (supports reconnect testing)
+        @OptIn(ExperimentalCoroutinesApi::class)
         if (receiveChannel.isClosedForSend) {
             receiveChannel = Channel(Channel.UNLIMITED)
         }

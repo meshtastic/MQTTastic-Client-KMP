@@ -520,7 +520,7 @@ class MqttClientTest {
                             if (publish != null && publish.packetIdentifier != null) {
                                 transport.enqueuePacket(
                                     org.meshtastic.mqtt.packet.PubAck(
-                                        packetIdentifier = publish.packetIdentifier!!,
+                                        packetIdentifier = publish.packetIdentifier,
                                     ),
                                 )
                                 break
