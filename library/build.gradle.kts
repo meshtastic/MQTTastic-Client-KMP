@@ -167,6 +167,11 @@ detekt {
 
 kover {
     reports {
+        total {
+            xml {
+                onCheck = false
+            }
+        }
         verify {
             rule {
                 minBound(80)
