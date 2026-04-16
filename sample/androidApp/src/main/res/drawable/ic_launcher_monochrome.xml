@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Monochrome variant for Android 13+ themed icons. Diamond silhouette only,
+  rendered in white for dynamic-color tinting.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M59.66,14.66 L93.34,48.34 Q99,54 93.34,59.66 L59.66,93.34 Q54,99 48.34,93.34 L14.66,59.66 Q9,54 14.66,48.34 L48.34,14.66 Q54,9 59.66,14.66 Z" />
+</vector>

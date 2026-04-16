@@ -1,0 +1,184 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2048M"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  publish:
+    name: Publish to Maven Central
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Validate before publish
+        run: ./gradlew spotlessCheck detekt allTests apiCheck build --no-daemon --stacktrace
+
+      - name: Publish to Maven Central
+        run: ./gradlew publishAllPublicationsToMavenCentralRepository --no-daemon --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.OSSRH_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.OSSRH_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+
+  sample-artifacts:
+    name: Build sample (${{ matrix.label }})
+    needs: [publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x64
+            tasks: >-
+              :sample:androidApp:assembleRelease
+              :sample:packageReleaseDistributionForCurrentOS
+              :sample:wasmJsBrowserDistribution
+            artifact_glob: |
+              sample/androidApp/build/outputs/apk/release/*.apk
+              sample/build/compose/binaries/main-release/deb/*.deb
+            web_zip: true
+          - os: ubuntu-24.04-arm
+            label: linux-arm64
+            tasks: :sample:packageReleaseDistributionForCurrentOS
+            artifact_glob: |
+              sample/build/compose/binaries/main-release/deb/*.deb
+            web_zip: false
+          - os: macos-14
+            label: macos-arm64
+            tasks: :sample:packageReleaseDistributionForCurrentOS
+            artifact_glob: |
+              sample/build/compose/binaries/main-release/dmg/*.dmg
+            web_zip: false
+          - os: windows-latest
+            label: windows-x64
+            tasks: :sample:packageReleaseDistributionForCurrentOS
+            artifact_glob: |
+              sample/build/compose/binaries/main-release/msi/*.msi
+            web_zip: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        if: runner.os != 'Windows'
+        run: chmod +x gradlew
+
+      - name: Build sample artifacts
+        shell: bash
+        run: ./gradlew ${{ matrix.tasks }} --no-daemon --stacktrace
+
+      - name: Zip wasmJs browser distribution
+        if: matrix.web_zip == true
+        shell: bash
+        run: |
+          cd sample/build/dist/wasmJs/productionExecutable
+          zip -r "${GITHUB_WORKSPACE}/mqtt-sample-web-wasmjs.zip" .
+
+      - name: Collect release assets
+        id: collect
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            # shellcheck disable=SC2086
+            for f in $pattern; do
+              [ -e "$f" ] || continue
+              if [ -d "$f" ]; then continue; fi
+              cp "$f" release-assets/
+            done
+          done <<< "${{ matrix.artifact_glob }}"
+          if [ "${{ matrix.web_zip }}" = "true" ] && [ -f "mqtt-sample-web-wasmjs.zip" ]; then
+            cp mqtt-sample-web-wasmjs.zip release-assets/
+          fi
+          ls -la release-assets/
+          echo "count=$(ls release-assets/ | wc -l)" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to GitHub Release
+        if: steps.collect.outputs.count != '0'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          fail_on_unmatched_files: false
+
+  sbom:
+    name: SBOM & Provenance
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SBOM (CycloneDX + SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: true
+          upload-release-assets: true
+
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: true
+          upload-release-assets: true
+
+      - name: Attest build provenance for release assets
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            sbom.cdx.json
+            sbom.spdx.json
+

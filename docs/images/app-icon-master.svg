@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MQTTastic app icon — master artwork (1024×1024).
+
+  Brand mark: rounded tilted-square (diamond) badge in Meshtastic green
+  carrying the Meshtastic® M logomark. Dark charcoal background identifies
+  MQTTastic as a distinct client app within the Meshtastic family.
+
+  Geometry is the 108-unit Android adaptive-icon layout scaled by ~9.48
+  (1024/108) so the SVG, Android vector drawable, and rasterized desktop /
+  web icons all stay pixel-perfect siblings.
+
+  Logomark source: meshtastic/design, logo/svg/Mesh_Logo_Dynamic.svg,
+  used under the Meshtastic® trademark guidelines at
+  https://meshtastic.org/docs/legal/licensing-and-trademark/.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+    <!-- Dark charcoal canvas with rounded corners so the master SVG also works as a macOS / iOS-style tile. -->
+    <rect x="0" y="0" width="1024" height="1024" rx="192" ry="192" fill="#2C2D3C"/>
+    <!-- Everything else is drawn in the Android 108-unit space, then scaled. -->
+    <g transform="scale(9.4815)">
+        <!-- Diamond badge. -->
+        <path fill="#67EA94"
+              d="M59.66,14.66 L93.34,48.34 Q99,54 93.34,59.66 L59.66,93.34 Q54,99 48.34,93.34 L14.66,59.66 Q9,54 14.66,48.34 L48.34,14.66 Q54,9 59.66,14.66 Z"/>
+        <!-- Meshtastic M, dark on green. -->
+        <g transform="translate(26.5 38.875) scale(0.55)">
+            <path fill="#2C2D3C"
+                  d="M64.716,13.073 L37.867,52.447 L32.204,48.585 L61.878,5.068 C62.516,4.132 63.575,3.572 64.707,3.571 C65.839,3.570 66.899,4.128 67.538,5.062 L97.281,48.512 L91.625,52.384 L64.716,13.073 Z"/>
+            <path fill="#2C2D3C"
+                  d="M8.379,52.406 L39.741,6.415 L34.078,2.553 L2.716,48.544 L8.379,52.406 Z"/>
+        </g>
+    </g>
+</svg>

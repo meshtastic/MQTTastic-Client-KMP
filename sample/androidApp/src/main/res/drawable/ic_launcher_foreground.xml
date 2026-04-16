@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MQTTastic launcher icon — adaptive foreground.
+
+  Brand mark: a rounded tilted-square (diamond) badge in Meshtastic green
+  carrying the Meshtastic® M logomark. The 45°-rotated silhouette keeps
+  MQTTastic visually distinct from the Meshtastic-Android launcher under
+  every adaptive mask while staying within the brand palette.
+
+  Canvas: 108×108dp. Geometry:
+    - Diamond: vertices at (54,9), (99,54), (54,99), (9,54); 8dp rounded
+      corners implemented with quadratic Béziers.
+    - M logomark: source 100×55 viewport (meshtastic/design
+      Mesh_Logo_Dynamic), scaled to 0.55 and centered; its farthest corner
+      (|dx|+|dy| ≈ 42.6) sits comfortably inside the diamond (d = 45).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#67EA94"
+        android:pathData="M59.66,14.66 L93.34,48.34 Q99,54 93.34,59.66 L59.66,93.34 Q54,99 48.34,93.34 L14.66,59.66 Q9,54 14.66,48.34 L48.34,14.66 Q54,9 59.66,14.66 Z" />
+    <group
+        android:translateX="26.5"
+        android:translateY="38.875"
+        android:scaleX="0.55"
+        android:scaleY="0.55">
+        <path
+            android:fillColor="#2C2D3C"
+            android:pathData="M64.716,13.073L37.867,52.447L32.204,48.585L61.878,5.068C62.516,4.132 63.575,3.572 64.707,3.571C65.839,3.570 66.899,4.128 67.538,5.062L97.281,48.512L91.625,52.384L64.716,13.073Z" />
+        <path
+            android:fillColor="#2C2D3C"
+            android:pathData="M8.379,52.406L39.741,6.415L34.078,2.553L2.716,48.544L8.379,52.406Z" />
+    </group>
+</vector>
