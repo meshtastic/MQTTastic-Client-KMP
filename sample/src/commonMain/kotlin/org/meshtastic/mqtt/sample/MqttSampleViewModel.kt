@@ -99,6 +99,10 @@ class MqttSampleViewModel {
     private var messagesJob: Job? = null
     private var nextMessageId = 0L
 
+    companion object {
+        private const val MAX_MESSAGES = 100
+    }
+
     // -- Text-field / toggle updaters --
 
     fun updateBrokerUri(value: String) {
@@ -184,9 +188,9 @@ class MqttSampleViewModel {
                     newClient.messages.collect { msg ->
                         val display = decodeMessage(msg)
                         _state.update { current ->
-                            val updated = listOf(display) + current.receivedMessages
+                            val updated = current.receivedMessages + display
                             current.copy(
-                                receivedMessages = updated.take(100),
+                                receivedMessages = updated.takeLast(MAX_MESSAGES),
                                 totalMessageCount = current.totalMessageCount + 1,
                             )
                         }

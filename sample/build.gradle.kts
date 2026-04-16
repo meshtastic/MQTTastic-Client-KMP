@@ -40,7 +40,12 @@ kotlin {
         commonMain.dependencies {
             implementation(compose.runtime)
             implementation(compose.foundation)
-            implementation(compose.material3)
+            implementation(libs.compose.material3)
+            implementation(libs.compose.material3.adaptive)
+            implementation(libs.compose.material3.adaptive.layout)
+            implementation(libs.compose.material3.adaptive.navigation)
+            implementation(libs.compose.material3.navigation.suite)
+            implementation(libs.compose.material3.window.size)
             implementation(compose.ui)
             implementation(project(":library"))
             implementation(libs.wire.runtime)
