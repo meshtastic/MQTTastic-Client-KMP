@@ -32,6 +32,9 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
+      - name: Validate before publish
+        run: ./gradlew spotlessCheck detekt allTests apiCheck build --no-daemon --stacktrace
+
       - name: Publish to Maven Central
         run: ./gradlew publishAllPublicationsToMavenCentralRepository --no-daemon --stacktrace
         env:
