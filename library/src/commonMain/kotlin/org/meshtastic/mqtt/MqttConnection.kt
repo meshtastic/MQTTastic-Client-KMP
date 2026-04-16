@@ -824,14 +824,15 @@ internal class MqttConnection(
                 val isRedirect =
                     packet.reasonCode == ReasonCode.USE_ANOTHER_SERVER ||
                         packet.reasonCode == ReasonCode.SERVER_MOVED
-                if (isRedirect && packet.properties.serverReference != null) {
+                val serverRef = packet.properties.serverReference
+                if (isRedirect && serverRef != null) {
                     log.info(TAG) {
-                        "Server redirect (${packet.reasonCode}): ${packet.properties.serverReference}"
+                        "Server redirect (${packet.reasonCode}): $serverRef"
                     }
                     _serverRedirect.emit(
                         ServerRedirect(
                             reasonCode = packet.reasonCode,
-                            serverReference = packet.properties.serverReference!!,
+                            serverReference = serverRef,
                             permanent = packet.reasonCode == ReasonCode.SERVER_MOVED,
                         ),
                     )
