@@ -92,15 +92,16 @@ import org.meshtastic.mqtt.*
 val client = MqttClient("my-client") {
     keepAliveSeconds = 30
     autoReconnect = true
+    defaultQos = QoS.AT_LEAST_ONCE  // all publishes default to QoS 1
 }
 
 // Connect, work, and auto-close
 client.use(MqttEndpoint.parse("tcp://broker.example.com:1883")) { c ->
     // Subscribe
-    c.subscribe("sensors/temperature", QoS.AT_LEAST_ONCE)
+    c.subscribe("sensors/temperature")
 
-    // Publish
-    c.publish("sensors/temperature", "22.5", QoS.AT_LEAST_ONCE)
+    // Publish (uses defaultQos from config)
+    c.publish("sensors/temperature", "22.5")
 
     // Collect messages
     c.messagesForTopic("sensors/temperature").collect { msg ->
@@ -146,7 +147,9 @@ The library ships several ergonomic extensions to reduce boilerplate:
 | `msg.payloadAsString()` | `msg.payload.toByteArray().decodeToString()` |
 | `client.messagesForTopic("x")` | `client.messages.filter { it.topic == "x" }` |
 | `client.messagesMatching("x/+/y")` | Manual wildcard matching on `messages` flow |
-| `client.publish(topic, payload, qos, properties)` | Constructing `MqttMessage` + `PublishProperties` manually |
+| `client.publish(topic, payload)` | Constructing `MqttMessage` manually |
+| `defaultQos` / `defaultRetain` | Repeating `qos = QoS.AT_LEAST_ONCE` on every publish |
+| `will { topic = ...; payload("...") }` | `will = WillConfig(topic = ..., payload = ByteString(...))` |
 
 #### Endpoint Parsing
 
@@ -171,7 +174,7 @@ client.messagesMatching("sensors/+/temperature").collect { ... }
 
 ### Builder DSL
 
-Use the builder DSL for complex configurations:
+Use the builder DSL for complex configurations (annotated with `@MqttDsl` for scope safety, like Ktor's `@KtorDsl`):
 
 ```kotlin
 val config = MqttConfig.build {
@@ -179,8 +182,15 @@ val config = MqttConfig.build {
     keepAliveSeconds = 30
     cleanStart = false
     autoReconnect = true
+    defaultQos = QoS.AT_LEAST_ONCE
     logger = MqttLogger.println()
     logLevel = MqttLogLevel.DEBUG
+    will {
+        topic = "sensors/status"
+        payload("offline")
+        qos = QoS.AT_LEAST_ONCE
+        retain = true
+    }
 }
 ```
 

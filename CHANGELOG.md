@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Integration test suite (Docker-based Mosquitto broker)
 
 ### Changed
+- **Ktor-aligned API surface** — DSL patterns now mirror Ktor's `HttpClient { }` conventions:
+  - `@MqttDsl` annotation on builder classes (like `@KtorDsl`) for scope safety
+  - `will { topic = ...; payload("...") }` nested DSL block in `MqttConfig.Builder`
+  - `WillConfig.build { }` companion factory
+  - `defaultQos` and `defaultRetain` config properties for client-level publish defaults (like Ktor's `defaultRequest {}`)
+  - Expanded `MqttClient` class KDoc to comprehensive IDE getting-started guide
+- `publish(topic, String)` convenience now takes nullable `qos: QoS?` and `retain: Boolean?` — `null` falls through to `MqttConfig.defaultQos`/`defaultRetain`
 - **API simplification** — consolidated publish API from 4 overloads to 2 (`publish(MqttMessage)` + `publish(topic, String, qos, retain, properties)`)
 - Moved `ReasonCode` and `RetainHandling` from `org.meshtastic.mqtt.packet` to `org.meshtastic.mqtt` — consumers import from the main package
 - Made internal buffer constants (`MESSAGE_BUFFER_CAPACITY`, `AUTH_BUFFER_CAPACITY`, `MAX_REDIRECTS`) private
