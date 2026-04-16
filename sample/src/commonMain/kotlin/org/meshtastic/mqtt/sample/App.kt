@@ -714,7 +714,9 @@ private fun MessagesFeed(
                     FilterChip(
                         selected = showRawPayload,
                         onClick = onToggleRaw,
-                        label = { Text("Raw", style = MaterialTheme.typography.labelSmall) },
+                        label = {
+                            Text("Raw (UTF-8)", style = MaterialTheme.typography.labelSmall)
+                        },
                     )
                     if (messages.isNotEmpty()) {
                         TextButton(onClick = onClear) {
@@ -789,11 +791,14 @@ private fun MessageRow(msg: DisplayMessage, showRawPayload: Boolean) {
             },
             headlineContent = {
                 Text(
-                    text = msg.rawPayload.ifEmpty { "(empty)" },
+                    text = msg.rawUtf8.ifEmpty { "(empty)" },
                     fontFamily = FontFamily.Monospace,
-                    maxLines = 4,
+                    maxLines = 6,
                     overflow = TextOverflow.Ellipsis,
                 )
+            },
+            supportingContent = {
+                Text(text = formatElapsed(msg.receivedAt))
             },
             trailingContent = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -843,7 +848,8 @@ private fun MessageRow(msg: DisplayMessage, showRawPayload: Boolean) {
             supportingContent = {
                 Text(
                     text = buildString {
-                        append("via ${meshInfo.gatewayId}")
+                        append(formatElapsed(msg.receivedAt))
+                        append(" · via ${meshInfo.gatewayId}")
                         if (meshInfo.hopLimit > 0) append(" · ${meshInfo.hopLimit} hops")
                         if (meshInfo.rxRssi != 0) append(" · ${meshInfo.rxRssi} dBm")
                         if (meshInfo.rxSnr != 0f) append(" · ${meshInfo.rxSnr} SNR")
@@ -885,11 +891,14 @@ private fun MessageRow(msg: DisplayMessage, showRawPayload: Boolean) {
                 )
             },
             supportingContent = {
-                Text(
-                    text = msg.payload,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column {
+                    Text(
+                        text = msg.payload,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(text = formatElapsed(msg.receivedAt))
+                }
             },
             trailingContent = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -909,6 +918,16 @@ private fun MessageRow(msg: DisplayMessage, showRawPayload: Boolean) {
 }
 
 // -- Badge --
+
+private fun formatElapsed(mark: kotlin.time.TimeMark): String {
+    val elapsed = mark.elapsedNow()
+    return when {
+        elapsed.inWholeSeconds < 60 -> "${elapsed.inWholeSeconds}s ago"
+        elapsed.inWholeMinutes < 60 -> "${elapsed.inWholeMinutes}m ago"
+        elapsed.inWholeHours < 24 -> "${elapsed.inWholeHours}h ago"
+        else -> "${elapsed.inWholeDays}d ago"
+    }
+}
 
 @Composable
 private fun MeshBadge(

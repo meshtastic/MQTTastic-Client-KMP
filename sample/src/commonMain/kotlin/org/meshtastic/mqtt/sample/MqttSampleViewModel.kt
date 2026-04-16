@@ -40,7 +40,8 @@ import org.meshtastic.proto.ServiceEnvelope
 data class DisplayMessage(
     val topic: String,
     val payload: String,
-    val rawPayload: String,
+    val rawUtf8: String,
+    val receivedAt: kotlin.time.TimeMark,
     val qos: QoS,
     val retained: Boolean,
     /** Decoded Meshtastic metadata, if this was a ServiceEnvelope. */
@@ -278,10 +279,7 @@ class MqttSampleViewModel {
 
     @Suppress("TooGenericExceptionCaught")
     private fun decodeMessage(msg: MqttMessage): DisplayMessage {
-        val rawBytes = msg.payload.toByteArray()
-        val rawPayload = rawBytes.joinToString(" ") { byte ->
-            (byte.toInt() and 0xFF).toString(radix = 16).padStart(2, '0').uppercase()
-        }
+        val rawUtf8 = msg.payloadAsString()
         val meshtastic = try {
             decodeMeshtastic(msg)
         } catch (_: Exception) {
@@ -289,8 +287,9 @@ class MqttSampleViewModel {
         }
         return DisplayMessage(
             topic = msg.topic,
-            payload = meshtastic?.let { formatMeshtastic(it) } ?: msg.payloadAsString(),
-            rawPayload = rawPayload,
+            payload = meshtastic?.let { formatMeshtastic(it) } ?: rawUtf8,
+            rawUtf8 = rawUtf8,
+            receivedAt = kotlin.time.TimeSource.Monotonic.markNow(),
             qos = msg.qos,
             retained = msg.retain,
             meshtastic = meshtastic,
