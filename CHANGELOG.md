@@ -54,22 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `client.messagesMatching(filter)` — wildcard-aware message flow (`+`, `#`)
   - `client.publish(topic, payload, qos, properties)` — string publish with optional properties
   - `client.use(endpoint) { ... }` — structured connect/close lifecycle
+- **Ktor-aligned API surface** — DSL patterns mirror Ktor's `HttpClient { }` conventions with `@MqttDsl` scope safety
+- `defaultQos` and `defaultRetain` config properties for client-level publish defaults
 - 345 tests across 17 test classes covering encode/decode, client state machine, QoS flows, properties, logging, convenience APIs
 - Integration test suite (Docker-based Mosquitto broker)
-
-### Changed
-- **Ktor-aligned API surface** — DSL patterns now mirror Ktor's `HttpClient { }` conventions:
-  - `@MqttDsl` annotation on builder classes (like `@KtorDsl`) for scope safety
-  - `will { topic = ...; payload("...") }` nested DSL block in `MqttConfig.Builder`
-  - `WillConfig.build { }` companion factory
-  - `defaultQos` and `defaultRetain` config properties for client-level publish defaults (like Ktor's `defaultRequest {}`)
-  - Expanded `MqttClient` class KDoc to comprehensive IDE getting-started guide
-- `publish(topic, String)` convenience now takes nullable `qos: QoS?` and `retain: Boolean?` — `null` falls through to `MqttConfig.defaultQos`/`defaultRetain`
-- **API simplification** — consolidated publish API from 4 overloads to 2 (`publish(MqttMessage)` + `publish(topic, String, qos, retain, properties)`)
-- Moved `ReasonCode` and `RetainHandling` from `org.meshtastic.mqtt.packet` to `org.meshtastic.mqtt` — consumers import from the main package
-- Made internal buffer constants (`MESSAGE_BUFFER_CAPACITY`, `AUTH_BUFFER_CAPACITY`, `MAX_REDIRECTS`) private
-
-### Removed
-- `publish(topic, ByteArray, qos, retain)` — use `publish(MqttMessage(topic, byteArrayPayload))` instead
-- `publishWithResponse(...)` — use `publish(topic, payload, properties = PublishProperties(responseTopic = ...))` instead
-- `subscribe(qos, vararg topics)` extension — use `subscribe(mapOf("a" to qos, "b" to qos))` instead
+- **CI/CD** — GitHub Actions workflows for build/test matrix and Maven Central publishing
