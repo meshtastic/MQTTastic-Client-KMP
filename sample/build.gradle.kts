@@ -74,7 +74,12 @@ kotlin {
 
 wire {
     sourcePath {
-        srcDir("../../protobufs")
+        srcDir("../protobufs")
+        include("meshtastic/*.proto")
+    }
+    protoPath {
+        srcDir("../protobufs")
+        include("nanopb.proto")
     }
     kotlin {
         makeImmutableCopies = false
