@@ -54,12 +54,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -208,7 +211,11 @@ private fun MqttTopBar(
                 ) {
                     Text("M", color = Color(0xFF003919), fontWeight = FontWeight.Bold)
                 }
-                Text("MQTTtastic", fontWeight = FontWeight.SemiBold)
+                Text(
+                    "MQTTtastic",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         },
         actions = {
@@ -364,15 +371,16 @@ private fun ConnectionCard(state: MqttSampleState, viewModel: MqttSampleViewMode
                 shape = MaterialTheme.shapes.medium,
             )
         }
-        FilledTonalButton(
+        Button(
             onClick = { if (connected) viewModel.disconnect() else viewModel.connect() },
             enabled = !connecting,
-            modifier = Modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            shape = MaterialShapes.Pill.toShape(),
+            contentPadding = ButtonDefaults.ContentPadding,
         ) {
             if (connecting) {
-                LoadingIndicator(modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
+                LoadingIndicator(modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(12.dp))
             }
             Text(
                 when (state.connectionState) {
@@ -381,6 +389,7 @@ private fun ConnectionCard(state: MqttSampleState, viewModel: MqttSampleViewMode
                     ConnectionState.RECONNECTING -> "Reconnecting…"
                     ConnectionState.DISCONNECTED -> "Connect"
                 },
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
         }
@@ -475,21 +484,16 @@ private fun QosChipRow(
     onSelect: (QoS) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Material3 Expressive: connected tonal toggle buttons for an at-a-glance
-    // segmented selector. Shape morphs on press and selection.
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
+    // Expressive: true ButtonGroup — tight connected row with shape
+    // morphing on press. Delegates interaction to toggleableItem.
+    ButtonGroup(modifier = modifier) {
         QoS.entries.forEach { q ->
-            TonalToggleButton(
+            toggleableItem(
                 checked = selected == q,
+                label = "QoS ${q.ordinal}",
                 onCheckedChange = { if (it) onSelect(q) },
-                shapes = ToggleButtonDefaults.shapes(),
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("QoS ${q.ordinal}", style = MaterialTheme.typography.labelMedium)
-            }
+                weight = 1f,
+            )
         }
     }
 }
@@ -517,7 +521,11 @@ private fun MessagesPane(
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             if (state.receivedMessages.isEmpty()) {
-                EmptyMessages(Modifier.fillMaxSize())
+                EmptyMessages(
+                    connecting = state.connectionState == ConnectionState.CONNECTING ||
+                        state.connectionState == ConnectionState.RECONNECTING,
+                    modifier = Modifier.fillMaxSize(),
+                )
             } else {
                 MessagesList(
                     messages = state.receivedMessages,
@@ -546,12 +554,15 @@ private fun MessagesHeader(
             Text("Messages", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             if (total > 0) Badge(total.toString(), MaterialTheme.colorScheme.primary)
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            FilterChip(
-                selected = showRaw,
-                onClick = onToggleRaw,
-                label = { Text("Raw (UTF-8)", style = MaterialTheme.typography.labelMedium) },
-            )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TonalToggleButton(
+                checked = showRaw,
+                onCheckedChange = { onToggleRaw() },
+                shapes = ToggleButtonDefaults.shapes(),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text("Raw (UTF-8)", style = MaterialTheme.typography.labelLarge)
+            }
             AnimatedVisibility(canClear) {
                 TextButton(onClick = onClear) { Text("Clear") }
             }
@@ -560,16 +571,31 @@ private fun MessagesHeader(
 }
 
 @Composable
-private fun EmptyMessages(modifier: Modifier = Modifier) {
+private fun EmptyMessages(connecting: Boolean, modifier: Modifier = Modifier) {
     Box(modifier, contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("📡", style = MaterialTheme.typography.headlineLarge)
-            Text("No messages yet", style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "Connect and subscribe to start receiving",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (connecting) {
+                ContainedLoadingIndicator(modifier = Modifier.size(56.dp))
+                Text("Connecting to broker…", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Messages will stream in as they arrive",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Box(
+                    Modifier
+                        .size(72.dp)
+                        .clip(MaterialShapes.Flower.toShape())
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                )
+                Text("No messages yet", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Connect and subscribe to start receiving",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -737,7 +763,7 @@ private fun GenericRow(msg: DisplayMessage, accent: Color) {
 
 @Composable
 private fun AccentBar(color: Color) {
-    Box(Modifier.width(3.dp).height(40.dp).clip(MaterialTheme.shapes.extraSmall).background(color))
+    Box(Modifier.width(4.dp).height(44.dp).clip(MaterialShapes.Pill.toShape()).background(color))
 }
 
 @Composable
@@ -759,12 +785,12 @@ private fun ConnectionChip(connectionState: ConnectionState) {
         ConnectionState.DISCONNECTED -> "Offline" to MaterialTheme.colorScheme.outline
     }
     Surface(
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialShapes.Pill.toShape(),
         color = color.copy(alpha = 0.16f),
         modifier = Modifier.semantics { contentDescription = "Connection: $label" },
     ) {
         Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -777,12 +803,12 @@ private fun ConnectionChip(connectionState: ConnectionState) {
 @Composable
 private fun Badge(text: String, color: Color = LocalContentColor.current) {
     Surface(
-        shape = MaterialTheme.shapes.small,
+        shape = MaterialShapes.Pill.toShape(),
         color = color.copy(alpha = 0.14f),
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
             style = MaterialTheme.typography.labelSmall,
             color = color,
             fontWeight = FontWeight.SemiBold,
