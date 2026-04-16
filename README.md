@@ -3,6 +3,9 @@
 [![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/mqtt-client?label=Maven%20Central)](https://central.sonatype.com/artifact/org.meshtastic/mqtt-client)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7f52ff.svg?logo=kotlin)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
+[![CI](https://github.com/meshtastic/MQTTtastic-Client-KMP/actions/workflows/ci.yml/badge.svg)](https://github.com/meshtastic/MQTTtastic-Client-KMP/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/meshtastic/MQTTtastic-Client-KMP/graph/badge.svg)](https://codecov.io/gh/meshtastic/MQTTtastic-Client-KMP)
+[![API Docs](https://img.shields.io/badge/API%20Docs-latest-blue.svg)](https://meshtastic.github.io/MQTTtastic-Client-KMP)
 
 A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — connecting JVM, Android, iOS, macOS, Linux, Windows, and browsers through a single, idiomatic Kotlin API.
 
@@ -19,6 +22,16 @@ A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — co
 - 📝 **Configurable logging** — zero-overhead `MqttLogger` interface with level filtering
 - ✅ **Spec-validated** — topic filter wildcards, reserved bits, and packet structure per MQTT 5.0
 
+## Why MQTTtastic?
+
+| | MQTTtastic | Typical alternatives |
+|---|---|---|
+| **Pure KMP** | Single codebase, single API across all platforms | Wrappers around platform SDKs (Paho, Mosquitto) |
+| **MQTT 5.0 first** | Built from the ground up for 5.0 — not retrofitted from 3.1.1 | Bolt-on 5.0 support with incomplete property coverage |
+| **Coroutines-native** | `suspend` functions and `Flow` everywhere — no callbacks, no blocking | Callback-heavy APIs requiring manual coroutine bridging |
+| **Zero platform deps** | Only Ktor + kotlinx-coroutines + kotlinx-io | Bundles native C libraries or platform-specific SDKs |
+| **Immutable & validated** | `ByteString` payloads, validated topic filters, range-checked properties | Mutable byte arrays, silent truncation, unchecked inputs |
+
 ## Platform Support
 
 | Platform | Target | Transport | Status |
@@ -30,6 +43,24 @@ A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — co
 | Linux | `linuxX64`, `linuxArm64` | TCP/TLS | ✅ |
 | Windows | `mingwX64` | TCP/TLS | ✅ |
 | Browser | `wasmJs` | WebSocket | ✅ |
+
+## Architecture
+
+All protocol logic — packet encoding/decoding, the client state machine, QoS flows, and property handling — lives in **`commonMain`** as pure Kotlin. Platform source sets contain _only_ transport implementations: TCP/TLS sockets for native/JVM targets and WebSocket frames for the browser. This means every bug fix, feature, and optimization applies to all 9 targets simultaneously.
+
+```
+┌─────────────────────────────────────────────┐
+│  MqttClient              (commonMain)       │  ← public API: suspend + Flow
+│  MqttConnection / QoS state machines        │  ← protocol logic, keepalive
+│  MqttPacket / Encoder / Decoder             │  ← MQTT 5.0 wire format
+├──────────────────────┬──────────────────────┤
+│  TcpTransport        │  WebSocketTransport  │
+│  (nonWebMain)        │  (wasmJsMain)        │
+│  ktor-network + TLS  │  ktor-client-ws      │
+└──────────────────────┴──────────────────────┘
+```
+
+The `MqttTransport` interface is the sole platform abstraction boundary — it is `internal`, not part of the public API. Coroutines drive everything: `suspend` functions for operations, `SharedFlow<MqttMessage>` for incoming messages, and `StateFlow<ConnectionState>` for lifecycle observation.
 
 ## Installation
 
@@ -271,21 +302,51 @@ The library uses **Ktor 3.4.2** and **kotlinx-coroutines 1.10.2**. If your proje
 
 ## MQTT 5.0 Coverage
 
-| Feature | Status |
-|---------|--------|
-| All 15 packet types | ✅ |
-| QoS 0 / 1 / 2 state machines | ✅ |
-| Session management | ✅ |
-| Will messages & Will Delay | ✅ |
-| Topic aliases | ✅ |
-| Topic filter validation (§4.7) | ✅ |
-| Enhanced authentication (AUTH) | ✅ |
-| Flow control (Receive Maximum) | ✅ |
-| Automatic reconnection | ✅ |
-| Request/Response pattern | ✅ |
-| Configurable logging | ✅ |
-| Shared subscriptions | ✅ |
-| Server redirect | ✅ |
+### Protocol
+
+| Feature | Status | Spec Section |
+|---------|--------|--------------|
+| All 15 packet types | ✅ | §2.1 |
+| Variable Byte Integer encoding | ✅ | §1.5.5 |
+| UTF-8 string pairs | ✅ | §1.5.7 |
+
+### Quality of Service
+
+| Feature | Status | Spec Section |
+|---------|--------|--------------|
+| QoS 0 (at most once) | ✅ | §4.3.1 |
+| QoS 1 (at least once) | ✅ | §4.3.2 |
+| QoS 2 (exactly once) | ✅ | §4.3.3 |
+| Duplicate detection (DUP flag) | ✅ | §3.3.1.1 |
+
+### Session & Connection
+
+| Feature | Status | Spec Section |
+|---------|--------|--------------|
+| Session management (cleanStart) | ✅ | §3.1.2.4 |
+| Will messages & Will Delay | ✅ | §3.1.3.2 |
+| Keep-alive & PINGREQ/PINGRESP | ✅ | §3.1.2.10 |
+| Automatic reconnection | ✅ | — |
+| Server redirect | ✅ | §4.13 |
+
+### Advanced Features
+
+| Feature | Status | Spec Section |
+|---------|--------|--------------|
+| Topic aliases | ✅ | §3.3.2.3.4 |
+| Enhanced authentication (AUTH) | ✅ | §4.12 |
+| Flow control (Receive Maximum) | ✅ | §3.3.4 |
+| Request/Response pattern | ✅ | §4.10 |
+| Shared subscriptions | ✅ | §4.8.2 |
+| Subscription identifiers | ✅ | §3.8.3.1 |
+| Topic filter validation | ✅ | §4.7 |
+
+### Observability
+
+| Feature | Status | Spec Section |
+|---------|--------|--------------|
+| Configurable logging (6 levels) | ✅ | — |
+| Connection state observation | ✅ | — |
 
 ## Building
 
@@ -302,12 +363,25 @@ The library uses **Ktor 3.4.2** and **kotlinx-coroutines 1.10.2**. If your proje
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed build instructions.
 
+## Documentation
+
+| Resource | Link |
+|----------|------|
+| API Reference | [meshtastic.github.io/MQTTtastic-Client-KMP](https://meshtastic.github.io/MQTTtastic-Client-KMP) |
+| Configuration Guide | [docs/configuration.md](docs/configuration.md) |
+| Topics & QoS Guide | [docs/topics-and-qos.md](docs/topics-and-qos.md) |
+| MQTT 5.0 Specification | [OASIS MQTT v5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) |
+| Changelog | [CHANGELOG.md](CHANGELOG.md) |
+
 ## Contributing
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
 - Setting up your development environment
 - Code style and conventions
 - Submitting pull requests
+
+For vulnerability reports, see the [Security Policy](SECURITY.md).
+All participants are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
