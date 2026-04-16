@@ -122,6 +122,54 @@ class TopicValidatorTest {
         }
     }
 
+    // --- Shared subscription validation (§4.8.2) ---
+
+    @Test
+    fun validSharedSubscriptions() {
+        TopicValidator.validateTopicFilter("\$share/consumer1/sport/tennis")
+        TopicValidator.validateTopicFilter("\$share/myGroup/#")
+        TopicValidator.validateTopicFilter("\$share/g/+/temp")
+        TopicValidator.validateTopicFilter("\$share/group/topic")
+    }
+
+    @Test
+    fun sharedSubscriptionMissingFilter() {
+        assertFailsWith<IllegalArgumentException> {
+            TopicValidator.validateTopicFilter("\$share/group")
+        }
+    }
+
+    @Test
+    fun sharedSubscriptionEmptyFilter() {
+        assertFailsWith<IllegalArgumentException> {
+            TopicValidator.validateTopicFilter("\$share/group/")
+        }
+    }
+
+    @Test
+    fun sharedSubscriptionEmptyShareName() {
+        assertFailsWith<IllegalArgumentException> {
+            TopicValidator.validateTopicFilter("\$share//topic")
+        }
+    }
+
+    @Test
+    fun sharedSubscriptionShareNameWithWildcard() {
+        assertFailsWith<IllegalArgumentException> {
+            TopicValidator.validateTopicFilter("\$share/gro+up/topic")
+        }
+        assertFailsWith<IllegalArgumentException> {
+            TopicValidator.validateTopicFilter("\$share/gro#up/topic")
+        }
+    }
+
+    @Test
+    fun isSharedSubscriptionDetection() {
+        kotlin.test.assertTrue(TopicValidator.isSharedSubscription("\$share/g/t"))
+        kotlin.test.assertFalse(TopicValidator.isSharedSubscription("sport/tennis"))
+        kotlin.test.assertFalse(TopicValidator.isSharedSubscription("#"))
+    }
+
     // --- Builder DSL ---
 
     @Test

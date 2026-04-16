@@ -215,4 +215,67 @@ class ConvenienceApiTest {
         assertEquals("logged-client", config.clientId)
         assertEquals(MqttLogLevel.INFO, config.logLevel)
     }
+
+    // --- parseServerReference() ---
+
+    @Test
+    fun parseServerReferenceHostPort() {
+        val original = MqttEndpoint.Tcp("old-host", 1883, tls = false)
+        val result = parseServerReference("new-host:1884", original)
+        assertIs<MqttEndpoint.Tcp>(result)
+        assertEquals("new-host", result.host)
+        assertEquals(1884, result.port)
+        assertFalse(result.tls)
+    }
+
+    @Test
+    fun parseServerReferenceHostOnly() {
+        val original = MqttEndpoint.Tcp("old-host", 8883, tls = true)
+        val result = parseServerReference("new-host", original)
+        assertIs<MqttEndpoint.Tcp>(result)
+        assertEquals("new-host", result.host)
+        assertEquals(8883, result.port)
+        assertTrue(result.tls)
+    }
+
+    @Test
+    fun parseServerReferenceInheritsTls() {
+        val original = MqttEndpoint.Tcp("old-host", 8883, tls = true)
+        val result = parseServerReference("new-host:8883", original)
+        assertIs<MqttEndpoint.Tcp>(result)
+        assertTrue(result.tls)
+    }
+
+    @Test
+    fun parseServerReferenceUri() {
+        val original = MqttEndpoint.Tcp("old-host", 1883)
+        val result = parseServerReference("ssl://new-host:8883", original)
+        assertIs<MqttEndpoint.Tcp>(result)
+        assertEquals("new-host", result.host)
+        assertEquals(8883, result.port)
+        assertTrue(result.tls)
+    }
+
+    @Test
+    fun parseServerReferenceWsUri() {
+        val original = MqttEndpoint.Tcp("old-host", 1883)
+        val result = parseServerReference("wss://broker.example.com/mqtt", original)
+        assertIs<MqttEndpoint.WebSocket>(result)
+    }
+
+    @Test
+    fun parseServerReferenceInvalidPort() {
+        val original = MqttEndpoint.Tcp("old-host", 1883)
+        assertFailsWith<IllegalArgumentException> {
+            parseServerReference("host:notaport", original)
+        }
+    }
+
+    @Test
+    fun parseServerReferenceBareHostWithWebSocketOriginal() {
+        val original = MqttEndpoint.WebSocket("ws://old-host/mqtt")
+        assertFailsWith<IllegalArgumentException> {
+            parseServerReference("new-host", original)
+        }
+    }
 }

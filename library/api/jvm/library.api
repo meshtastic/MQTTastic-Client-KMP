@@ -25,6 +25,7 @@ public final class org/meshtastic/mqtt/ConnectionState : java/lang/Enum {
 
 public final class org/meshtastic/mqtt/MqttClient {
 	public static final field AUTH_BUFFER_CAPACITY I
+	public static final field MAX_REDIRECTS I
 	public static final field MESSAGE_BUFFER_CAPACITY I
 	public fun <init> (Lorg/meshtastic/mqtt/MqttConfig;Lkotlinx/coroutines/CoroutineScope;)V
 	public synthetic fun <init> (Lorg/meshtastic/mqtt/MqttConfig;Lkotlinx/coroutines/CoroutineScope;ILkotlin/jvm/internal/DefaultConstructorMarker;)V

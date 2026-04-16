@@ -156,6 +156,7 @@ public class MqttClient
         private var messageForwardJob: Job? = null
         private var stateForwardJob: Job? = null
         private var authForwardJob: Job? = null
+        private var redirectForwardJob: Job? = null
         private var reconnectJob: Job? = null
         private var intentionalDisconnect = false
 
@@ -169,6 +170,10 @@ public class MqttClient
          * Performs the CONNECT/CONNACK handshake. On success, starts forwarding
          * incoming messages to [messages] and connection state changes to [connectionState].
          *
+         * If the broker responds with a server redirect (reason code `USE_ANOTHER_SERVER` or
+         * `SERVER_MOVED` with a Server Reference property), the client automatically follows
+         * the redirect up to [MAX_REDIRECTS] times (§4.13).
+         *
          * @param endpoint Broker endpoint (TCP or WebSocket).
          * @throws MqttConnectionException if the broker rejects the connection.
          */
@@ -178,7 +183,7 @@ public class MqttClient
                 log.info(TAG) { "Connecting to $endpoint" }
                 intentionalDisconnect = false
                 currentEndpoint = endpoint
-                connectInternal(endpoint)
+                connectWithRedirect(endpoint, redirectsRemaining = MAX_REDIRECTS)
             }
         }
 
@@ -454,6 +459,46 @@ public class MqttClient
             log.info(TAG) { "Connected to $endpoint" }
         }
 
+        /**
+         * Attempt connection with automatic redirect following (§4.13).
+         *
+         * If the broker responds with USE_ANOTHER_SERVER (0x9C) or SERVER_MOVED (0x9D)
+         * and includes a Server Reference property, parse the reference and retry.
+         */
+        private suspend fun connectWithRedirect(
+            endpoint: MqttEndpoint,
+            redirectsRemaining: Int,
+        ) {
+            try {
+                connectInternal(endpoint)
+            } catch (e: MqttConnectionException) {
+                val isRedirect =
+                    e.reasonCode == ReasonCode.USE_ANOTHER_SERVER ||
+                        e.reasonCode == ReasonCode.SERVER_MOVED
+                val ref = e.serverReference
+
+                if (isRedirect && ref != null && redirectsRemaining > 0) {
+                    val newEndpoint =
+                        try {
+                            parseServerReference(ref, endpoint)
+                        } catch (
+                            @Suppress("SwallowedException") parseErr: IllegalArgumentException,
+                        ) {
+                            log.error(TAG) { "Failed to parse server reference '$ref': ${parseErr.message}" }
+                            throw e
+                        }
+                    log.info(TAG) {
+                        "Server redirect (${e.reasonCode}): following to $newEndpoint " +
+                            "(${redirectsRemaining - 1} redirects remaining)"
+                    }
+                    currentEndpoint = newEndpoint
+                    connectWithRedirect(newEndpoint, redirectsRemaining - 1)
+                } else {
+                    throw e
+                }
+            }
+        }
+
         private fun startForwarding(conn: MqttConnection) {
             stopForwardJobs()
 
@@ -483,15 +528,24 @@ public class MqttClient
                         _authChallenges.emit(challenge)
                     }
                 }
+
+            redirectForwardJob =
+                scope.launch {
+                    conn.serverRedirect.collect { redirect ->
+                        handleServerRedirect(redirect)
+                    }
+                }
         }
 
         private fun stopForwardJobs() {
             stateForwardJob?.cancel()
             messageForwardJob?.cancel()
             authForwardJob?.cancel()
+            redirectForwardJob?.cancel()
             stateForwardJob = null
             messageForwardJob = null
             authForwardJob = null
+            redirectForwardJob = null
         }
 
         private fun startReconnect() {
@@ -559,12 +613,89 @@ public class MqttClient
 
         private fun requireConnection(): MqttConnection = connection ?: throw IllegalStateException("Not connected")
 
+        /**
+         * Handle a server redirect received via DISCONNECT (§4.13).
+         *
+         * Parses the server reference, updates the current endpoint, and triggers
+         * reconnection to the new broker address.
+         */
+        private fun handleServerRedirect(redirect: ServerRedirect) {
+            val currentEp = currentEndpoint ?: return
+            val newEndpoint =
+                try {
+                    parseServerReference(redirect.serverReference, currentEp)
+                } catch (
+                    @Suppress("SwallowedException") e: IllegalArgumentException,
+                ) {
+                    log.error(TAG) { "Failed to parse redirect reference '${redirect.serverReference}': ${e.message}" }
+                    return
+                }
+            log.info(TAG) {
+                "Handling server redirect (${redirect.reasonCode}): reconnecting to $newEndpoint"
+            }
+            currentEndpoint = newEndpoint
+            if (config.autoReconnect && !intentionalDisconnect) {
+                startReconnect()
+            }
+        }
+
         internal companion object {
             const val MESSAGE_BUFFER_CAPACITY = 64
             const val AUTH_BUFFER_CAPACITY = 8
+            const val MAX_REDIRECTS = 5
             private const val TAG = "MqttClient"
         }
     }
+
+/**
+ * Parse a Server Reference string from CONNACK/DISCONNECT (§4.13) into an [MqttEndpoint].
+ *
+ * The spec states the Server Reference is a UTF-8 string whose value the client
+ * may use to identify another server. Common formats:
+ * - `host:port` — inherits TLS and transport type from original endpoint
+ * - URI (e.g. `tcp://host:port`, `ssl://host:port`) — fully specified
+ *
+ * @param reference The Server Reference string from the broker.
+ * @param original The original endpoint, used to inherit TLS/transport settings for `host:port` format.
+ * @throws IllegalArgumentException if the reference cannot be parsed.
+ */
+internal fun parseServerReference(
+    reference: String,
+    original: MqttEndpoint,
+): MqttEndpoint {
+    // If it looks like a URI (contains "://"), delegate to MqttEndpoint.parse()
+    if ("://" in reference) {
+        return MqttEndpoint.parse(reference)
+    }
+
+    // Otherwise, parse as "host:port" and inherit transport type from original
+    val colonIdx = reference.lastIndexOf(':')
+    val host: String
+    val port: Int
+    if (colonIdx > 0) {
+        host = reference.substring(0, colonIdx)
+        port = reference.substring(colonIdx + 1).toIntOrNull()
+            ?: throw IllegalArgumentException("Invalid port in server reference: $reference")
+    } else {
+        host = reference
+        port =
+            when (original) {
+                is MqttEndpoint.Tcp -> original.port
+
+                is MqttEndpoint.WebSocket -> throw IllegalArgumentException(
+                    "Cannot derive WebSocket URL from bare hostname: $reference",
+                )
+            }
+    }
+
+    return when (original) {
+        is MqttEndpoint.Tcp -> MqttEndpoint.Tcp(host = host, port = port, tls = original.tls)
+
+        is MqttEndpoint.WebSocket -> throw IllegalArgumentException(
+            "Cannot derive WebSocket URL from bare host:port: $reference",
+        )
+    }
+}
 
 /**
  * Creates an [MqttClient] with the given [clientId] and optional configuration.

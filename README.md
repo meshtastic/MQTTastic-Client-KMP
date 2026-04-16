@@ -275,8 +275,8 @@ The library uses **Ktor 3.4.2** and **kotlinx-coroutines 1.10.2**. If your proje
 | Automatic reconnection | ✅ |
 | Request/Response pattern | ✅ |
 | Configurable logging | ✅ |
-| Shared subscriptions | 🚧 Partial |
-| Server redirect | 🚧 Partial |
+| Shared subscriptions | ✅ |
+| Server redirect | ✅ |
 
 ## Building
 

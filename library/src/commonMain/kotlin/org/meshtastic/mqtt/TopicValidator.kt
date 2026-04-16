@@ -48,6 +48,10 @@ internal object TopicValidator {
     /**
      * Validate a topic filter for subscribing/unsubscribing (§4.7.1).
      *
+     * Supports shared subscription syntax `$share/{ShareName}/{filter}` per §4.8.2.
+     * The ShareName must not be empty or contain `/`, `+`, or `#`.
+     * The filter portion follows standard wildcard rules.
+     *
      * Wildcard rules:
      * - `#` (multi-level) must be the last character, and if not the only character,
      *   must be preceded by `/` (e.g., `sport/#` or `#`).
@@ -63,13 +67,42 @@ internal object TopicValidator {
             "Topic filter exceeds maximum length of $MAX_TOPIC_LENGTH_BYTES bytes (§1.5.4)"
         }
 
+        // Handle shared subscription prefix: $share/{ShareName}/{filter} (§4.8.2)
+        val actualFilter =
+            if (filter.startsWith("\$share/")) {
+                val afterPrefix = filter.substring(7) // Skip "$share/"
+                val slashIdx = afterPrefix.indexOf('/')
+                require(slashIdx > 0) {
+                    "Shared subscription must have format '\$share/{ShareName}/{filter}' (§4.8.2)"
+                }
+                val shareName = afterPrefix.substring(0, slashIdx)
+                require('+' !in shareName && '#' !in shareName) {
+                    "ShareName must not contain wildcard characters '+' or '#' (§4.8.2)"
+                }
+                val remaining = afterPrefix.substring(slashIdx + 1)
+                require(remaining.isNotEmpty()) {
+                    "Shared subscription filter must not be empty after '\$share/$shareName/' (§4.8.2)"
+                }
+                remaining
+            } else {
+                filter
+            }
+
+        validateWildcards(actualFilter)
+    }
+
+    /**
+     * Check if a topic filter uses the shared subscription syntax `$share/{ShareName}/{filter}`.
+     */
+    fun isSharedSubscription(filter: String): Boolean = filter.startsWith("\$share/")
+
+    /** Validate wildcard placement in the filter portion of a topic. */
+    private fun validateWildcards(filter: String) {
         val hashIdx = filter.indexOf('#')
         if (hashIdx >= 0) {
-            // '#' must be the last character
             require(hashIdx == filter.length - 1) {
                 "Multi-level wildcard '#' must be the last character in topic filter (§4.7.1.2)"
             }
-            // If not the only character, must be preceded by '/'
             if (filter.length > 1) {
                 require(filter[hashIdx - 1] == '/') {
                     "Multi-level wildcard '#' must be preceded by '/' (§4.7.1.2)"
@@ -77,17 +110,14 @@ internal object TopicValidator {
             }
         }
 
-        // Validate '+' wildcard placement
         var i = 0
         while (i < filter.length) {
             if (filter[i] == '+') {
-                // Must be at start or preceded by '/'
                 if (i > 0) {
                     require(filter[i - 1] == '/') {
                         "Single-level wildcard '+' must be preceded by '/' or be at start (§4.7.1.3)"
                     }
                 }
-                // Must be at end or followed by '/'
                 if (i < filter.length - 1) {
                     require(filter[i + 1] == '/') {
                         "Single-level wildcard '+' must be followed by '/' or be at end (§4.7.1.3)"

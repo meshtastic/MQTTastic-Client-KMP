@@ -158,6 +158,14 @@ internal class MqttConnection(
     // Flow control — limits concurrent in-flight QoS 1/2 publishes (§3.3.4)
     private var inflightSemaphore: Semaphore? = null
 
+    // Server capabilities from CONNACK properties (§3.2.2.3)
+    private var serverSharedSubscriptionAvailable: Boolean = true
+
+    private val _serverRedirect = MutableSharedFlow<ServerRedirect>(extraBufferCapacity = 1)
+
+    /** Emitted when the broker sends a DISCONNECT with server redirect reason code (§4.13). */
+    val serverRedirect: SharedFlow<ServerRedirect> = _serverRedirect.asSharedFlow()
+
     /**
      * Establish an MQTT 5.0 connection to the broker.
      *
@@ -199,6 +207,7 @@ internal class MqttConnection(
             connAck.properties.receiveMaximum?.let { serverReceiveMaximum = it }
             connAck.properties.assignedClientIdentifier?.let { assignedClientId = it }
             connAck.properties.topicAliasMaximum?.let { serverTopicAliasMaximum = it }
+            connAck.properties.sharedSubscriptionAvailable?.let { serverSharedSubscriptionAvailable = it }
 
             // Honor Server Keep Alive override (§3.2.2.3.14)
             effectiveKeepAliveSeconds =
@@ -354,6 +363,15 @@ internal class MqttConnection(
         properties: MqttProperties = MqttProperties.EMPTY,
     ): SubAck {
         check(_connectionState.value == ConnectionState.CONNECTED) { "Not connected" }
+
+        // Enforce shared subscription availability (§4.8.2)
+        if (!serverSharedSubscriptionAvailable) {
+            subscriptions.forEach { sub ->
+                require(!TopicValidator.isSharedSubscription(sub.topicFilter)) {
+                    "Server does not support shared subscriptions (§4.8.2): '${sub.topicFilter}'"
+                }
+            }
+        }
 
         val packetId = packetIdAllocator.allocate()
         val deferred = CompletableDeferred<MqttPacket>()
@@ -644,6 +662,21 @@ internal class MqttConnection(
 
             is Disconnect -> {
                 log.warn(TAG) { "Received DISCONNECT from broker: reasonCode=${packet.reasonCode}" }
+                val isRedirect =
+                    packet.reasonCode == ReasonCode.USE_ANOTHER_SERVER ||
+                        packet.reasonCode == ReasonCode.SERVER_MOVED
+                if (isRedirect && packet.properties.serverReference != null) {
+                    log.info(TAG) {
+                        "Server redirect (${packet.reasonCode}): ${packet.properties.serverReference}"
+                    }
+                    _serverRedirect.emit(
+                        ServerRedirect(
+                            reasonCode = packet.reasonCode,
+                            serverReference = packet.properties.serverReference!!,
+                            permanent = packet.reasonCode == ReasonCode.SERVER_MOVED,
+                        ),
+                    )
+                }
                 _connectionState.value = ConnectionState.DISCONNECTED
                 stopBackgroundJobs()
                 transport.close()
@@ -938,3 +971,16 @@ internal class MqttConnectionException(
     cause: Throwable? = null,
     val serverReference: String? = null,
 ) : Exception(message, cause)
+
+/**
+ * Represents a server redirect instruction received via CONNACK or DISCONNECT (§4.13).
+ *
+ * @property reasonCode Either [ReasonCode.USE_ANOTHER_SERVER] (temporary) or [ReasonCode.SERVER_MOVED] (permanent).
+ * @property serverReference The server reference string (host:port or URI).
+ * @property permanent `true` for SERVER_MOVED (0x9D), `false` for USE_ANOTHER_SERVER (0x9C).
+ */
+internal data class ServerRedirect(
+    val reasonCode: ReasonCode,
+    val serverReference: String,
+    val permanent: Boolean,
+)
