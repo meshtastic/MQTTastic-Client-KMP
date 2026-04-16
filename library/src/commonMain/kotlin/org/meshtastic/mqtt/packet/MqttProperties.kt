@@ -446,7 +446,9 @@ private fun decodeBooleanByte(
     offset: Int,
 ): Boolean {
     require(offset < bytes.size) { "Not enough bytes for boolean at offset $offset" }
-    return (bytes[offset].toInt() and 0xFF) != 0
+    val b = bytes[offset].toInt() and 0xFF
+    require(b == 0 || b == 1) { "Malformed boolean value 0x${b.toString(16)} at offset $offset (§1.5.1.4)" }
+    return b == 1
 }
 
 @Suppress("CyclomaticComplexMethod")

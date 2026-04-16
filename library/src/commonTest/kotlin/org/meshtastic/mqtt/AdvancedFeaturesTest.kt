@@ -143,7 +143,7 @@ class AdvancedFeaturesTest {
             val transport = FakeTransport()
             transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
 
-            val connection = MqttConnection(transport, defaultConfig(), this)
+            val connection = MqttConnection(transport, defaultConfig(topicAliasMaximum = 10), this)
             connection.connect(endpoint)
             advanceUntilIdle()
 

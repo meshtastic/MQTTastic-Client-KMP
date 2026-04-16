@@ -291,6 +291,7 @@ internal class MqttConnection(
      */
     suspend fun disconnect(reasonCode: ReasonCode = ReasonCode.SUCCESS) {
         log.debug(TAG) { "Disconnecting with reasonCode=$reasonCode" }
+        failAllPendingAcks()
         stopBackgroundJobs()
 
         try {
@@ -312,6 +313,7 @@ internal class MqttConnection(
      */
     suspend fun abort() {
         log.debug(TAG) { "Aborting connection (no DISCONNECT)" }
+        failAllPendingAcks()
         stopBackgroundJobs()
 
         try {
@@ -571,7 +573,8 @@ internal class MqttConnection(
         resolvedTopic: String,
         publishProperties: MqttProperties,
     ): ReasonCode {
-        inflightSemaphore?.acquire()
+        val sem = inflightSemaphore
+        sem?.acquire()
         try {
             val packetId = packetIdAllocator.allocate()
             val deferred = CompletableDeferred<MqttPacket>()
@@ -598,7 +601,7 @@ internal class MqttConnection(
                 packetIdAllocator.release(packetId)
             }
         } finally {
-            inflightSemaphore?.release()
+            sem?.release()
         }
     }
 
@@ -607,7 +610,8 @@ internal class MqttConnection(
         resolvedTopic: String,
         publishProperties: MqttProperties,
     ): ReasonCode {
-        inflightSemaphore?.acquire()
+        val sem = inflightSemaphore
+        sem?.acquire()
         try {
             val packetId = packetIdAllocator.allocate()
             val pubRecDeferred = CompletableDeferred<MqttPacket>()
@@ -627,9 +631,15 @@ internal class MqttConnection(
                 )
 
                 // Step 1: Wait for PUBREC
-                withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as PubRec
-                log.debug(TAG) { "QoS 2 received PUBREC packetId=$packetId" }
+                val pubRec = withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as PubRec
+                log.debug(TAG) { "QoS 2 received PUBREC packetId=$packetId reasonCode=${pubRec.reasonCode}" }
                 removePendingAck(packetId)
+
+                // §4.3.3: If PUBREC reason code >= 0x80, MUST NOT send PUBREL
+                if (pubRec.reasonCode.value >= 0x80) {
+                    log.warn(TAG) { "QoS 2 PUBREC error packetId=$packetId: ${pubRec.reasonCode}" }
+                    return pubRec.reasonCode
+                }
 
                 // Step 2: Send PUBREL and wait for PUBCOMP
                 val pubCompDeferred = CompletableDeferred<MqttPacket>()
@@ -645,7 +655,7 @@ internal class MqttConnection(
                 packetIdAllocator.release(packetId)
             }
         } finally {
-            inflightSemaphore?.release()
+            sem?.release()
         }
     }
 
@@ -1027,6 +1037,13 @@ internal class MqttConnection(
     private suspend fun resolveInboundTopicAlias(packet: Publish): String {
         val alias = packet.properties.topicAlias
         return if (alias != null) {
+            // §3.3.2.3.4: Topic Alias greater than Topic Alias Maximum is a Protocol Error
+            if (alias > config.topicAliasMaximum) {
+                throw MqttConnectionException(
+                    ReasonCode.TOPIC_ALIAS_INVALID,
+                    "Inbound topic alias $alias exceeds advertised maximum ${config.topicAliasMaximum} (§3.3.2.3.4)",
+                )
+            }
             aliasMutex.withLock {
                 if (packet.topicName.isNotEmpty()) {
                     inboundTopicAliases[alias] = packet.topicName
