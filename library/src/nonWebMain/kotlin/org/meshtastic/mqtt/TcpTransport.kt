@@ -74,7 +74,9 @@ internal class TcpTransport : MqttTransport {
                 socket =
                     try {
                         if (endpoint.tls) {
-                            rawSocket.tls(Dispatchers.IO)
+                            rawSocket.tls(Dispatchers.IO) {
+                                serverName = endpoint.host.takeUnless { isIpLiteral(it) }
+                            }
                         } else {
                             rawSocket
                         }
@@ -191,5 +193,20 @@ internal class TcpTransport : MqttTransport {
          * in MqttConnection's read loop. This is a transport-level safety net.
          */
         const val MAX_PACKET_REMAINING_LENGTH = 16 * 1024 * 1024 // 16 MB
+
+        /**
+         * Returns `true` if [host] looks like an IP address literal (IPv4 or IPv6)
+         * rather than a DNS hostname, so that TLS SNI is only sent for DNS names.
+         *
+         * Sending SNI for an IP literal is at best useless and at worst breaks the
+         * TLS handshake (RFC 6066 §3 forbids IP literals in SNI).
+         */
+        fun isIpLiteral(host: String): Boolean {
+            // IPv6: contains colons (e.g. "::1", "2001:db8::1")
+            if (':' in host) return true
+            // IPv4: all characters are digits or dots (e.g. "192.168.1.1")
+            if (host.isNotEmpty() && host.all { it.isDigit() || it == '.' }) return true
+            return false
+        }
     }
 }
