@@ -74,8 +74,7 @@ kotlin {
 
 wire {
     sourcePath {
-        srcDir("src/main/proto")
-        srcDir("src/main/wire-includes")
+        srcDir("../../protobufs")
     }
     kotlin {
         makeImmutableCopies = false
