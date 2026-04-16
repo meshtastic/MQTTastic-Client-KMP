@@ -19,6 +19,7 @@ package org.meshtastic.mqtt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.bytestring.ByteString
 import org.meshtastic.mqtt.packet.Auth
@@ -57,6 +59,7 @@ import org.meshtastic.mqtt.packet.Unsubscribe
 import org.meshtastic.mqtt.packet.decodePacket
 import org.meshtastic.mqtt.packet.encode
 import kotlin.concurrent.Volatile
+import kotlin.time.TimeMark
 import kotlin.time.TimeSource
 
 /**
@@ -96,6 +99,7 @@ internal class MqttConnection(
     private val config: MqttConfig,
     private val scope: CoroutineScope,
     private val log: MqttLoggerInternal = MqttLoggerInternal.NOOP,
+    private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
 
@@ -131,11 +135,11 @@ internal class MqttConnection(
 
     private var readLoopJob: Job? = null
     private var keepAliveJob: Job? = null
-    private var lastSendMark: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow()
+    private var lastSendMark: TimeMark = timeSource.markNow()
 
     @Volatile
     private var awaitingPingResp = false
-    private var pingSentMark: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow()
+    private var pingSentMark: TimeMark = timeSource.markNow()
 
     @Volatile
     private var handlingFatalError = false
@@ -610,7 +614,7 @@ internal class MqttConnection(
 
             log.trace(TAG) { "Sending ${packet.packetType} (${bytes.size} bytes)" }
             transport.send(bytes)
-            lastSendMark = TimeSource.Monotonic.markNow()
+            lastSendMark = timeSource.markNow()
         }
     }
 
@@ -820,8 +824,12 @@ internal class MqttConnection(
         ) {
             // Best-effort transport close
         }
-        failAllPendingAcks()
-        _connectionState.value = ConnectionState.DISCONNECTED
+        // Use NonCancellable to ensure cleanup completes even when the calling job
+        // (read loop or keepalive) was cancelled by stopBackgroundJobs() above.
+        withContext(NonCancellable) {
+            failAllPendingAcks()
+            _connectionState.value = ConnectionState.DISCONNECTED
+        }
     }
 
     /** Complete all pending ACK deferreds exceptionally so callers don't hang. */
@@ -869,13 +877,30 @@ internal class MqttConnection(
                         inboundQos2PacketIds.remove(packet.packetIdentifier)
                         pendingQos2Messages.remove(packet.packetIdentifier)
                     }
-                sendPacket(PubComp(packetIdentifier = packet.packetIdentifier))
-                if (deferredMessage != null) {
+                // §3.7.2.1: PACKET_IDENTIFIER_NOT_FOUND if we don't recognize this ID
+                val pubCompReasonCode =
+                    if (deferredMessage != null) {
+                        ReasonCode.SUCCESS
+                    } else {
+                        ReasonCode.PACKET_IDENTIFIER_NOT_FOUND
+                    }
+                sendPacket(
+                    PubComp(
+                        packetIdentifier = packet.packetIdentifier,
+                        reasonCode = pubCompReasonCode,
+                    ),
+                )
+                // §3.6.2.1: Only deliver message if PUBREL reason code indicates success
+                if (deferredMessage != null && packet.reasonCode.value < 0x80) {
                     _incomingMessages.emit(deferredMessage)
-                } else {
-                    // PUBREL for unknown packet ID — could be session resumption or stale
+                } else if (deferredMessage == null) {
                     log.warn(TAG) {
                         "PUBREL for unknown packetId=${packet.packetIdentifier} — no stored message"
+                    }
+                } else {
+                    log.warn(TAG) {
+                        "PUBREL error for packetId=${packet.packetIdentifier}: " +
+                            "${packet.reasonCode} — discarding message"
                     }
                 }
             }
@@ -1026,12 +1051,18 @@ internal class MqttConnection(
                             }
                         }
 
-                        val elapsedMs = sendMutex.withLock { lastSendMark.elapsedNow().inWholeMilliseconds }
-                        if (elapsedMs >= intervalMs) {
-                            log.trace(TAG) { "Sending PINGREQ (${elapsedMs}ms since last send)" }
-                            awaitingPingResp = true
-                            pingSentMark = TimeSource.Monotonic.markNow()
-                            sendPacket(PingReq)
+                        // Only send PINGREQ if we're not already awaiting a PINGRESP.
+                        // Otherwise pingSentMark would keep resetting and the timeout
+                        // could never fire (interval < deadline, always).
+                        if (!awaitingPingResp) {
+                            val elapsedMs =
+                                sendMutex.withLock { lastSendMark.elapsedNow().inWholeMilliseconds }
+                            if (elapsedMs >= intervalMs) {
+                                log.trace(TAG) { "Sending PINGREQ (${elapsedMs}ms since last send)" }
+                                awaitingPingResp = true
+                                pingSentMark = timeSource.markNow()
+                                sendPacket(PingReq)
+                            }
                         }
                     }
                 } catch (

@@ -18,6 +18,7 @@ package org.meshtastic.mqtt
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -27,6 +28,7 @@ import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.Connect
 import org.meshtastic.mqtt.packet.Disconnect
 import org.meshtastic.mqtt.packet.MqttProperties
+import org.meshtastic.mqtt.packet.PingResp
 import org.meshtastic.mqtt.packet.PubAck
 import org.meshtastic.mqtt.packet.Publish
 import org.meshtastic.mqtt.packet.SubAck
@@ -566,5 +568,58 @@ class MqttClientTest {
             )
 
             client.close()
+        }
+
+    // --- Auto-reconnect ---
+
+    @Test
+    fun autoReconnectAfterConnectionLoss() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(autoReconnect = true)
+            val client = connectedClient(transport, config, scope = this)
+
+            // Initial connect
+            client.connect(endpoint)
+            advanceUntilIdle()
+            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+
+            // Subscribe so we can verify resubscription after reconnect
+            transport.enqueuePacket(
+                SubAck(packetIdentifier = 1, reasonCodes = listOf(ReasonCode.GRANTED_QOS_1)),
+            )
+            client.subscribe("test/topic", QoS.AT_LEAST_ONCE)
+            advanceUntilIdle()
+
+            // Set up callback to enqueue CONNACK + SUBACK when reconnect calls transport.connect()
+            transport.onConnect = {
+                transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+                transport.enqueuePacket(
+                    SubAck(packetIdentifier = 2, reasonCodes = listOf(ReasonCode.GRANTED_QOS_1)),
+                )
+            }
+
+            // Simulate connection loss: set the error, then wake up the read loop with a
+            // dummy packet so it re-enters receive() and hits the error on the next call.
+            transport.receiveError = RuntimeException("Connection reset")
+            transport.enqueuePacket(PingResp)
+            advanceUntilIdle()
+
+            // Advance past reconnect base delay (100ms) to trigger reconnect attempt
+            advanceTimeBy(200)
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+
+            // Verify reconnect sent a new CONNECT
+            val connectPackets = transport.decodeSentPackets().filterIsInstance<Connect>()
+            assertTrue(
+                connectPackets.size >= 2,
+                "Should have sent at least 2 CONNECT packets (initial + reconnect)",
+            )
+
+            transport.onConnect = null
+            client.close()
+            advanceUntilIdle()
         }
 }

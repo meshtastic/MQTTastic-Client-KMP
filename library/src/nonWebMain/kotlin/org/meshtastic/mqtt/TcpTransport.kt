@@ -62,28 +62,44 @@ internal class TcpTransport : MqttTransport {
         close()
 
         val selector = SelectorManager(Dispatchers.IO)
-        val rawSocket = aSocket(selector).tcp().connect(endpoint.host, endpoint.port)
-
         try {
+            val rawSocket = aSocket(selector).tcp().connect(endpoint.host, endpoint.port)
+
             socket =
-                if (endpoint.tls) {
-                    rawSocket.tls(Dispatchers.IO)
-                } else {
-                    rawSocket
+                try {
+                    if (endpoint.tls) {
+                        rawSocket.tls(Dispatchers.IO)
+                    } else {
+                        rawSocket
+                    }
+                } catch (e: Exception) {
+                    // TLS handshake failed — close the raw socket before re-throwing
+                    try {
+                        rawSocket.close()
+                    } catch (
+                        @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                    ) {
+                        // best-effort
+                    }
+                    throw e
                 }
+
+            selectorManager = selector
+            readChannel = socket!!.openReadChannel()
+            writeChannel = socket!!.openWriteChannel(autoFlush = false)
         } catch (e: Exception) {
-            // TLS handshake failed — close the raw socket and selector to prevent leaks
+            // Any failure (TCP connect, TLS handshake, channel setup) — close selector to prevent leaks
             try {
-                rawSocket.close()
-            } finally {
-                selector.close()
+                socket?.close()
+            } catch (
+                @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+            ) {
+                // best-effort
             }
+            socket = null
+            selector.close()
             throw e
         }
-
-        selectorManager = selector
-        readChannel = socket!!.openReadChannel()
-        writeChannel = socket!!.openWriteChannel(autoFlush = false)
     }
 
     override suspend fun send(bytes: ByteArray) {

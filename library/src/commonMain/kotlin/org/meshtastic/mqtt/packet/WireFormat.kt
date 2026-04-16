@@ -26,6 +26,7 @@ internal object WireFormat {
 
     fun encodeUtf8String(value: String): ByteArray {
         val utf8 = value.encodeToByteArray()
+        require('\u0000' !in value) { "UTF-8 string must not contain null character U+0000 (§1.5.4)" }
         require(utf8.size <= 65_535) { "UTF-8 string length ${utf8.size} exceeds max 65535" }
         val result = ByteArray(2 + utf8.size)
         result[0] = (utf8.size shr 8).toByte()
@@ -45,6 +46,7 @@ internal object WireFormat {
             "Not enough bytes for UTF-8 string data: need $length at offset ${offset + 2}"
         }
         val str = bytes.decodeToString(offset + 2, offset + 2 + length)
+        require('\u0000' !in str) { "UTF-8 string must not contain null character U+0000 (§1.5.4)" }
         return str to (2 + length)
     }
 

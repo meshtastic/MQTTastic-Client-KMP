@@ -52,7 +52,9 @@ internal class WebSocketTransport : MqttTransport {
 
         val httpClient =
             HttpClient {
-                install(WebSockets)
+                install(WebSockets) {
+                    maxFrameSize = MAX_FRAME_SIZE
+                }
             }
         client = httpClient
 
@@ -74,9 +76,22 @@ internal class WebSocketTransport : MqttTransport {
         val ws = session ?: throw IllegalStateException("Not connected")
         val frame = ws.incoming.receive()
         return when (frame) {
-            is Frame.Binary -> frame.readBytes()
-            is Frame.Close -> throw IllegalStateException("WebSocket closed by server")
-            else -> throw IllegalStateException("Unexpected frame type: ${frame.frameType}")
+            is Frame.Binary -> {
+                if (frame.data.size > MAX_FRAME_SIZE) {
+                    throw IllegalArgumentException(
+                        "WebSocket frame size ${frame.data.size} exceeds safety cap $MAX_FRAME_SIZE",
+                    )
+                }
+                frame.readBytes()
+            }
+
+            is Frame.Close -> {
+                throw IllegalStateException("WebSocket closed by server")
+            }
+
+            else -> {
+                throw IllegalStateException("Unexpected frame type: ${frame.frameType}")
+            }
         }
     }
 
@@ -91,5 +106,10 @@ internal class WebSocketTransport : MqttTransport {
                 client = null
             }
         }
+    }
+
+    private companion object {
+        /** Safety cap matching TcpTransport's MAX_PACKET_REMAINING_LENGTH to prevent OOM. */
+        const val MAX_FRAME_SIZE = 16L * 1024 * 1024 // 16 MB
     }
 }

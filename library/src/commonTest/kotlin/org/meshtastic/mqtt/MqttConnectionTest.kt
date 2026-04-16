@@ -20,6 +20,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -30,6 +31,8 @@ import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.Connect
 import org.meshtastic.mqtt.packet.Disconnect
 import org.meshtastic.mqtt.packet.MqttProperties
+import org.meshtastic.mqtt.packet.PingReq
+import org.meshtastic.mqtt.packet.PingResp
 import org.meshtastic.mqtt.packet.PubAck
 import org.meshtastic.mqtt.packet.PubComp
 import org.meshtastic.mqtt.packet.PubRec
@@ -1040,14 +1043,92 @@ class MqttConnectionTest {
             // Should NOT emit any message
             assertEquals(0, received.size, "Stray PUBREL should not emit a message")
 
-            // Should still send PUBCOMP
+            // Should still send PUBCOMP with PACKET_IDENTIFIER_NOT_FOUND (§3.7.2.1)
             val pubComps = transport.decodeSentPackets().filterIsInstance<PubComp>()
             assertEquals(1, pubComps.size, "PUBCOMP should be sent for stray PUBREL")
             assertEquals(99, pubComps.first().packetIdentifier)
+            assertEquals(
+                ReasonCode.PACKET_IDENTIFIER_NOT_FOUND,
+                pubComps.first().reasonCode,
+                "PUBCOMP for unknown PUBREL must use PACKET_IDENTIFIER_NOT_FOUND (§3.7.2.1)",
+            )
 
             collectJob.cancel()
             connection.disconnect()
             advanceUntilIdle()
+        }
+
+    // --- Keepalive ---
+
+    @Test
+    fun keepaliveSendsPingreq() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(keepAliveSeconds = 10)
+            val connection = MqttConnection(transport, config, this, timeSource = testScheduler.timeSource)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+
+            // Advance precisely past the 75% keepalive interval (10s * 0.75 = 7.5s).
+            // Don't use advanceUntilIdle — it would process the entire keepalive loop to timeout.
+            advanceTimeBy(7_600)
+
+            val pingreqs = transport.decodeSentPackets().filterIsInstance<PingReq>()
+            assertEquals(1, pingreqs.size, "PINGREQ should be sent after 75% of keepalive interval")
+
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun keepalivePingrespResetsTimer() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(keepAliveSeconds = 10)
+            val connection = MqttConnection(transport, config, this, timeSource = testScheduler.timeSource)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+
+            // Trigger PINGREQ at 75% interval
+            advanceTimeBy(7_600)
+
+            val pingreqs = transport.decodeSentPackets().filterIsInstance<PingReq>()
+            assertEquals(1, pingreqs.size)
+
+            // Respond with PINGRESP and allow read loop to process it
+            transport.enqueuePacket(PingResp)
+            advanceTimeBy(100)
+
+            // Connection should still be alive
+            assertEquals(ConnectionState.CONNECTED, connection.connectionState.value)
+
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun keepalivePingrespTimeoutDisconnects() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(keepAliveSeconds = 10)
+            val connection = MqttConnection(transport, config, this, timeSource = testScheduler.timeSource)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+
+            // Advance through keepalive loop until PINGRESP timeout fires:
+            //   t=7500 → PINGREQ sent, pingSentMark set
+            //   t=15000 → elapsed=7500 < deadline=10000, no timeout yet
+            //   t=22500 → elapsed=15000 >= deadline=10000 → TIMEOUT
+            advanceTimeBy(23_000)
+
+            assertEquals(
+                ConnectionState.DISCONNECTED,
+                connection.connectionState.value,
+                "Connection should be DISCONNECTED after PINGRESP timeout",
+            )
         }
 
     companion object {

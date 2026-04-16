@@ -49,11 +49,19 @@ internal class FakeTransport : MqttTransport {
     /** When non-null, [receive] throws this instead of dequeuing. */
     var receiveError: Throwable? = null
 
+    /** Optional callback invoked after each successful [connect] — use to enqueue response packets. */
+    var onConnect: (() -> Unit)? = null
+
     // -- MqttTransport implementation --
 
     override suspend fun connect(endpoint: MqttEndpoint) {
         connectError?.let { throw it }
+        // Recreate receive channel if it was closed (supports reconnect testing)
+        if (receiveChannel.isClosedForSend) {
+            receiveChannel = Channel(Channel.UNLIMITED)
+        }
         _isConnected = true
+        onConnect?.invoke()
     }
 
     override suspend fun send(bytes: ByteArray) {
@@ -106,6 +114,7 @@ internal class FakeTransport : MqttTransport {
         connectError = null
         sendError = null
         receiveError = null
+        onConnect = null
         receiveChannel.close()
         receiveChannel = Channel(Channel.UNLIMITED)
     }
