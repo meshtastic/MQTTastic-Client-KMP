@@ -167,6 +167,14 @@ class MqttSampleViewModel {
                 }
 
                 newClient.connect(endpoint)
+
+                // Auto-subscribe to the default topic
+                if (s.subscribeTopic.isNotBlank()) {
+                    newClient.subscribe(s.subscribeTopic, s.subscribeQos)
+                    _state.update {
+                        it.copy(activeSubscriptions = it.activeSubscriptions + s.subscribeTopic)
+                    }
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(error = e.message ?: "Connection failed") }
             }
