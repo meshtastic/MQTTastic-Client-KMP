@@ -5,9 +5,9 @@
 If you discover a security vulnerability in this project, please report it
 responsibly. **Do not open a public issue.**
 
-Instead, please email the Meshtastic security team or use GitHub's
-[private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
-feature on this repository.
+Instead, please use GitHub's
+[private vulnerability reporting](https://github.com/meshtastic/MQTTtastic-Client-KMP/security/advisories/new)
+feature on this repository, or email **security@meshtastic.org**.
 
 ## Scope
 

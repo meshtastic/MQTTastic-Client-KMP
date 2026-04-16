@@ -77,7 +77,7 @@ ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed interface hie
 - `MqttPacket` — sealed interface with 15 packet type data classes (internal)
 - `MqttEncoder` — `MqttPacket.encode()` extension for all 15 types (internal)
 - `MqttDecoder` — `decodePacket(ByteArray)` for all 15 types with reserved bits validation (internal)
-- `MqttProperties` — 28-property model with encode/decode, duplicate singleton detection (internal, re-exported publicly)
+- `MqttProperties` — 28-property model with encode/decode, duplicate singleton detection (internal)
 - `MqttMessage` — MQTT message data class using `ByteString` for immutable payload + `payloadAsString()` convenience (public)
 - `PublishProperties` — MQTT 5.0 §3.3.2.3 publish properties data class with input validation (public)
 - `MqttEndpoint` — sealed interface for TCP and WebSocket endpoints with input validation + `MqttEndpoint.parse(uri)` factory (public)
@@ -180,7 +180,7 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 - **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.
-- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `MqttProperties`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, and `AuthChallenge` are public. Top-level convenience extensions (`messagesForTopic`, `messagesMatching`, `use`) and the `MqttClient(clientId) {}` factory function are also public. Everything else (including `MqttTransport`) is `internal`.
+- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, and `AuthChallenge` are public. Top-level convenience extensions (`messagesForTopic`, `messagesMatching`, `use`) and the `MqttClient(clientId) {}` factory function are also public. Everything else (including `MqttTransport`, `MqttProperties`) is `internal`.
 - **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `Mutex`-guarded counters for packet ID allocation (atomicfu is blocked by Android plugin incompatibility).
 - **Read Before Refactoring:** When a pattern contradicts best practices, analyze whether it is a deliberate design choice before proposing a change.
 </rules>
