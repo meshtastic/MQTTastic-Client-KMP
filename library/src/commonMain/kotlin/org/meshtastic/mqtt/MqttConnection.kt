@@ -54,6 +54,7 @@ import org.meshtastic.mqtt.packet.UnsubAck
 import org.meshtastic.mqtt.packet.Unsubscribe
 import org.meshtastic.mqtt.packet.decodePacket
 import org.meshtastic.mqtt.packet.encode
+import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
 
 /**
@@ -140,6 +141,8 @@ internal class MqttConnection(
     private var readLoopJob: Job? = null
     private var keepAliveJob: Job? = null
     private var lastSendMark: TimeSource.Monotonic.ValueTimeMark = TimeSource.Monotonic.markNow()
+
+    @Volatile
     private var awaitingPingResp = false
 
     // Server-assigned values from CONNACK
@@ -288,23 +291,47 @@ internal class MqttConnection(
                 transport.close()
             }
         } finally {
-            _connectionState.value = ConnectionState.DISCONNECTED
-            if (config.cleanStart) {
-                packetIdAllocator.reset()
-            }
-            aliasMutex.withLock {
-                outboundTopicAliases.clear()
-                inboundTopicAliases.clear()
-                nextOutboundAlias = 1
-                serverTopicAliasMaximum = 0
-            }
-            acksMutex.withLock {
-                inboundQos2PacketIds.clear()
-            }
-            inflightSemaphore = null
-            awaitingPingResp = false
-            log.debug(TAG) { "Disconnect complete, state reset" }
+            resetConnectionState()
         }
+    }
+
+    /**
+     * Abort the connection without sending a DISCONNECT packet.
+     *
+     * This triggers the broker to publish the client's Will Message (§3.1.2.5),
+     * since an abrupt close without a clean DISCONNECT is treated as an unexpected
+     * disconnection. Used for testing and force-close scenarios.
+     */
+    suspend fun abort() {
+        log.debug(TAG) { "Aborting connection (no DISCONNECT)" }
+        stopBackgroundJobs()
+
+        try {
+            if (transport.isConnected) {
+                transport.close()
+            }
+        } finally {
+            resetConnectionState()
+        }
+    }
+
+    private suspend fun resetConnectionState() {
+        _connectionState.value = ConnectionState.DISCONNECTED
+        if (config.cleanStart) {
+            packetIdAllocator.reset()
+        }
+        aliasMutex.withLock {
+            outboundTopicAliases.clear()
+            inboundTopicAliases.clear()
+            nextOutboundAlias = 1
+            serverTopicAliasMaximum = 0
+        }
+        acksMutex.withLock {
+            inboundQos2PacketIds.clear()
+        }
+        inflightSemaphore = null
+        awaitingPingResp = false
+        log.debug(TAG) { "Connection state reset" }
     }
 
     /**
@@ -494,29 +521,32 @@ internal class MqttConnection(
         publishProperties: MqttProperties,
     ): ReasonCode {
         inflightSemaphore?.acquire()
-        val packetId = packetIdAllocator.allocate()
-        val deferred = CompletableDeferred<MqttPacket>()
-        registerPendingAck(packetId, deferred)
-
         try {
-            log.debug(TAG) { "QoS 1 PUBLISH packetId=$packetId to '$resolvedTopic'" }
-            sendPacket(
-                Publish(
-                    topicName = resolvedTopic,
-                    payload = message.payload.toByteArray(),
-                    qos = QoS.AT_LEAST_ONCE,
-                    retain = message.retain,
-                    packetIdentifier = packetId,
-                    properties = publishProperties,
-                ),
-            )
+            val packetId = packetIdAllocator.allocate()
+            val deferred = CompletableDeferred<MqttPacket>()
+            registerPendingAck(packetId, deferred)
 
-            val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as PubAck
-            log.debug(TAG) { "Received PUBACK packetId=$packetId reasonCode=${ack.reasonCode}" }
-            return ack.reasonCode
+            try {
+                log.debug(TAG) { "QoS 1 PUBLISH packetId=$packetId to '$resolvedTopic'" }
+                sendPacket(
+                    Publish(
+                        topicName = resolvedTopic,
+                        payload = message.payload.toByteArray(),
+                        qos = QoS.AT_LEAST_ONCE,
+                        retain = message.retain,
+                        packetIdentifier = packetId,
+                        properties = publishProperties,
+                    ),
+                )
+
+                val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as PubAck
+                log.debug(TAG) { "Received PUBACK packetId=$packetId reasonCode=${ack.reasonCode}" }
+                return ack.reasonCode
+            } finally {
+                removePendingAck(packetId)
+                packetIdAllocator.release(packetId)
+            }
         } finally {
-            removePendingAck(packetId)
-            packetIdAllocator.release(packetId)
             inflightSemaphore?.release()
         }
     }
@@ -527,40 +557,43 @@ internal class MqttConnection(
         publishProperties: MqttProperties,
     ): ReasonCode {
         inflightSemaphore?.acquire()
-        val packetId = packetIdAllocator.allocate()
-        val pubRecDeferred = CompletableDeferred<MqttPacket>()
-        registerPendingAck(packetId, pubRecDeferred)
-
         try {
-            log.debug(TAG) { "QoS 2 PUBLISH packetId=$packetId to '$resolvedTopic'" }
-            sendPacket(
-                Publish(
-                    topicName = resolvedTopic,
-                    payload = message.payload.toByteArray(),
-                    qos = QoS.EXACTLY_ONCE,
-                    retain = message.retain,
-                    packetIdentifier = packetId,
-                    properties = publishProperties,
-                ),
-            )
+            val packetId = packetIdAllocator.allocate()
+            val pubRecDeferred = CompletableDeferred<MqttPacket>()
+            registerPendingAck(packetId, pubRecDeferred)
 
-            // Step 1: Wait for PUBREC
-            withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as PubRec
-            log.debug(TAG) { "QoS 2 received PUBREC packetId=$packetId" }
-            removePendingAck(packetId)
+            try {
+                log.debug(TAG) { "QoS 2 PUBLISH packetId=$packetId to '$resolvedTopic'" }
+                sendPacket(
+                    Publish(
+                        topicName = resolvedTopic,
+                        payload = message.payload.toByteArray(),
+                        qos = QoS.EXACTLY_ONCE,
+                        retain = message.retain,
+                        packetIdentifier = packetId,
+                        properties = publishProperties,
+                    ),
+                )
 
-            // Step 2: Send PUBREL and wait for PUBCOMP
-            val pubCompDeferred = CompletableDeferred<MqttPacket>()
-            registerPendingAck(packetId, pubCompDeferred)
-            log.debug(TAG) { "QoS 2 sending PUBREL packetId=$packetId" }
-            sendPacket(PubRel(packetIdentifier = packetId))
+                // Step 1: Wait for PUBREC
+                withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as PubRec
+                log.debug(TAG) { "QoS 2 received PUBREC packetId=$packetId" }
+                removePendingAck(packetId)
 
-            val pubComp = withTimeout(ACK_TIMEOUT_MS) { pubCompDeferred.await() } as PubComp
-            log.debug(TAG) { "QoS 2 received PUBCOMP packetId=$packetId reasonCode=${pubComp.reasonCode}" }
-            return pubComp.reasonCode
+                // Step 2: Send PUBREL and wait for PUBCOMP
+                val pubCompDeferred = CompletableDeferred<MqttPacket>()
+                registerPendingAck(packetId, pubCompDeferred)
+                log.debug(TAG) { "QoS 2 sending PUBREL packetId=$packetId" }
+                sendPacket(PubRel(packetIdentifier = packetId))
+
+                val pubComp = withTimeout(ACK_TIMEOUT_MS) { pubCompDeferred.await() } as PubComp
+                log.debug(TAG) { "QoS 2 received PUBCOMP packetId=$packetId reasonCode=${pubComp.reasonCode}" }
+                return pubComp.reasonCode
+            } finally {
+                removePendingAck(packetId)
+                packetIdAllocator.release(packetId)
+            }
         } finally {
-            removePendingAck(packetId)
-            packetIdAllocator.release(packetId)
             inflightSemaphore?.release()
         }
     }
@@ -772,7 +805,7 @@ internal class MqttConnection(
                         return@launch
                     }
 
-                    val elapsedMs = lastSendMark.elapsedNow().inWholeMilliseconds
+                    val elapsedMs = sendMutex.withLock { lastSendMark.elapsedNow().inWholeMilliseconds }
                     if (elapsedMs >= intervalMs) {
                         log.trace(TAG) { "Sending PINGREQ (${elapsedMs}ms since last send)" }
                         awaitingPingResp = true
