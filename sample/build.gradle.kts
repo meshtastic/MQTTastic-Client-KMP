@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.wire)
 }
 
 kotlin {
@@ -42,6 +43,8 @@ kotlin {
             implementation(compose.material3)
             implementation(compose.ui)
             implementation(project(":library"))
+            implementation(libs.wire.runtime)
+            implementation(libs.kotlinx.io.bytestring)
         }
 
         val desktopMain by getting
@@ -50,6 +53,20 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
         }
     }
+}
+
+wire {
+    sourcePath {
+        srcDir("src/main/proto")
+        srcDir("src/main/wire-includes")
+    }
+    kotlin {
+        makeImmutableCopies = false
+        boxOneOfsMinSize = 5000
+    }
+    root("meshtastic.*")
+    prune("meshtastic.MeshPacket#delayed")
+    prune("meshtastic.MeshPacket.Delayed")
 }
 
 compose.desktop {

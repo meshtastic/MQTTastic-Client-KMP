@@ -33,7 +33,10 @@ import org.meshtastic.mqtt.MqttClient
 import org.meshtastic.mqtt.MqttEndpoint
 import org.meshtastic.mqtt.MqttLogLevel
 import org.meshtastic.mqtt.MqttLogger
+import org.meshtastic.mqtt.MqttMessage
 import org.meshtastic.mqtt.QoS
+import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.ServiceEnvelope
 
 /** A received message formatted for display. */
 data class DisplayMessage(
@@ -41,6 +44,23 @@ data class DisplayMessage(
     val payload: String,
     val qos: QoS,
     val retained: Boolean,
+    /** Decoded Meshtastic metadata, if this was a ServiceEnvelope. */
+    val meshtastic: MeshtasticInfo? = null,
+)
+
+/** Decoded metadata from a Meshtastic ServiceEnvelope. */
+data class MeshtasticInfo(
+    val gatewayId: String,
+    val channelId: String,
+    val from: String,
+    val to: String,
+    val packetId: String,
+    val portnum: String?,
+    val payloadText: String?,
+    val hopLimit: Int,
+    val rxSnr: Float,
+    val rxRssi: Int,
+    val isEncrypted: Boolean,
 )
 
 /** UI state for the MQTTtastic sample app. */
@@ -153,15 +173,10 @@ class MqttSampleViewModel {
                 messagesJob?.cancel()
                 messagesJob = scope.launch {
                     newClient.messages.collect { msg ->
-                        val display = DisplayMessage(
-                            topic = msg.topic,
-                            payload = msg.payloadAsString(),
-                            qos = msg.qos,
-                            retained = msg.retain,
-                        )
+                        val display = decodeMessage(msg)
                         _state.update { current ->
                             val updated = listOf(display) + current.receivedMessages
-                            current.copy(receivedMessages = updated.take(50))
+                            current.copy(receivedMessages = updated.take(100))
                         }
                     }
                 }
@@ -250,6 +265,70 @@ class MqttSampleViewModel {
                 _state.update { it.copy(error = e.message ?: "Publish failed") }
             }
         }
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun decodeMessage(msg: MqttMessage): DisplayMessage {
+        val meshtastic = try {
+            decodeMeshtastic(msg)
+        } catch (_: Exception) {
+            null
+        }
+        return DisplayMessage(
+            topic = msg.topic,
+            payload = meshtastic?.let { formatMeshtastic(it) } ?: msg.payloadAsString(),
+            qos = msg.qos,
+            retained = msg.retain,
+            meshtastic = meshtastic,
+        )
+    }
+
+    private fun decodeMeshtastic(msg: MqttMessage): MeshtasticInfo? {
+        val bytes = msg.payload.toByteArray()
+        if (bytes.isEmpty()) return null
+
+        val envelope = ServiceEnvelope.ADAPTER.decode(bytes)
+        val packet = envelope.packet ?: return null
+
+        val isEncrypted = packet.encrypted != null && packet.encrypted.size > 0
+        val decoded = packet.decoded
+
+        val portnum = decoded?.portnum?.takeIf { it != PortNum.UNKNOWN_APP }
+        val payloadText = if (portnum == PortNum.TEXT_MESSAGE_APP && decoded != null) {
+            decoded.payload.utf8()
+        } else {
+            null
+        }
+
+        return MeshtasticInfo(
+            gatewayId = envelope.gateway_id,
+            channelId = envelope.channel_id,
+            from = "!${formatNodeId(packet.from)}",
+            to = "!${formatNodeId(packet.to)}",
+            packetId = "0x${packet.id.toUInt().toString(radix = 16)}",
+            portnum = portnum?.name,
+            payloadText = payloadText,
+            hopLimit = packet.hop_limit,
+            rxSnr = packet.rx_snr,
+            rxRssi = packet.rx_rssi,
+            isEncrypted = isEncrypted,
+        )
+    }
+
+    private fun formatNodeId(nodeNum: Int): String =
+        nodeNum.toUInt().toString(radix = 16).padStart(length = 8, padChar = '0')
+
+    private fun formatMeshtastic(info: MeshtasticInfo): String = buildString {
+        append("${info.from} → ${info.to}")
+        if (info.isEncrypted) {
+            append(" [encrypted]")
+        } else if (info.portnum != null) {
+            append(" [${info.portnum}]")
+            if (info.payloadText != null) {
+                append(": ${info.payloadText}")
+            }
+        }
+        append(" via ${info.gatewayId}")
     }
 
     fun dispose() {

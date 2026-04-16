@@ -448,32 +448,74 @@ private fun MessagesCard(
 @Composable
 private fun MessageRow(msg: DisplayMessage) {
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        val meshInfo = msg.meshtastic
+        if (meshInfo != null) {
+            // Meshtastic-decoded message
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "${meshInfo.from} → ${meshInfo.to}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (meshInfo.isEncrypted) {
+                        Badge(text = "🔒", color = MaterialTheme.colorScheme.tertiary)
+                    }
+                    meshInfo.portnum?.let { port ->
+                        Badge(text = port.replace("_APP", ""))
+                    }
+                }
+            }
+            Spacer(Modifier.height(2.dp))
             Text(
-                text = msg.topic,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.weight(1f),
+                text = msg.payload,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "ch: ${meshInfo.channelId} | gw: ${meshInfo.gatewayId}" +
+                    " | hops: ${meshInfo.hopLimit}" +
+                    if (meshInfo.rxRssi != 0) " | rssi: ${meshInfo.rxRssi}" else "",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Badge(text = "QoS ${msg.qos.ordinal}")
-                if (msg.retained) {
-                    Badge(text = "RET", color = MaterialTheme.colorScheme.tertiary)
+        } else {
+            // Generic MQTT message
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = msg.topic,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Badge(text = "QoS ${msg.qos.ordinal}")
+                    if (msg.retained) {
+                        Badge(text = "RET", color = MaterialTheme.colorScheme.tertiary)
+                    }
                 }
             }
+            Text(
+                text = msg.payload,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        Text(
-            text = msg.payload,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 

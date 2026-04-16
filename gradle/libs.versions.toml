@@ -16,6 +16,7 @@ detekt = "1.23.8"
 bcv = "0.18.1"
 dokka = "2.2.0"
 kover = "0.9.8"
+wire = "6.2.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -33,6 +34,7 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3", vers
 compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
 compose-desktop-currentOs = { module = "org.jetbrains.compose.desktop:desktop", version.ref = "compose-multiplatform" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
+wire-runtime = { module = "com.squareup.wire:wire-runtime", version.ref = "wire" }
 
 [plugins]
 android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
@@ -47,3 +49,4 @@ detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
 bcv = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "bcv" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
+wire = { id = "com.squareup.wire", version.ref = "wire" }
