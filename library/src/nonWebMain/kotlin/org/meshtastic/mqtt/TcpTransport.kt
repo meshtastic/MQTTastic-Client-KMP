@@ -52,7 +52,10 @@ internal class TcpTransport : MqttTransport {
         get() = socket?.isClosed == false
 
     override suspend fun connect(endpoint: MqttEndpoint) {
-        require(endpoint is MqttEndpoint.Tcp) { "TcpTransport requires MqttEndpoint.Tcp" }
+        require(endpoint is MqttEndpoint.Tcp) {
+            "TcpTransport only supports MqttEndpoint.Tcp. " +
+                "WebSocket endpoints (MqttEndpoint.WebSocket) are available on wasmJs only."
+        }
 
         // Close any existing connection to prevent resource leaks on reconnect
         close()
