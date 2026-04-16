@@ -45,7 +45,9 @@ data class DisplayMessage(
 
 /** UI state for the MQTTtastic sample app. */
 data class MqttSampleState(
-    val brokerUri: String = "tcp://mqtt.meshtastic.org:1883",
+    val brokerHost: String = "mqtt.meshtastic.org",
+    val brokerPort: String = "1883",
+    val useTls: Boolean = false,
     val clientId: String = "mqtttastic-sample",
     val username: String = "meshdev",
     val password: String = "large4cats",
@@ -77,8 +79,16 @@ class MqttSampleViewModel {
 
     // -- Text-field / toggle updaters --
 
-    fun updateBrokerUri(value: String) {
-        _state.update { it.copy(brokerUri = value) }
+    fun updateBrokerHost(value: String) {
+        _state.update { it.copy(brokerHost = value) }
+    }
+
+    fun updateBrokerPort(value: String) {
+        _state.update { it.copy(brokerPort = value) }
+    }
+
+    fun updateUseTls(value: Boolean) {
+        _state.update { it.copy(useTls = value) }
     }
 
     fun updateClientId(value: String) {
@@ -131,7 +141,12 @@ class MqttSampleViewModel {
         val s = _state.value
         scope.launch {
             try {
-                val endpoint = MqttEndpoint.parse(s.brokerUri)
+                val port = s.brokerPort.toIntOrNull() ?: 1883
+                val endpoint = MqttEndpoint.Tcp(
+                    host = s.brokerHost,
+                    port = port,
+                    tls = s.useTls,
+                )
                 val newClient = MqttClient(s.clientId) {
                     username = s.username.ifBlank { null }
                     s.password.ifBlank { null }?.let { password(it) }

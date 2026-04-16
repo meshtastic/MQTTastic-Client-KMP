@@ -89,12 +89,16 @@ fun App() {
 
                 // -- Connection Card --
                 ConnectionCard(
-                    brokerUri = state.brokerUri,
+                    brokerHost = state.brokerHost,
+                    brokerPort = state.brokerPort,
+                    useTls = state.useTls,
                     clientId = state.clientId,
                     username = state.username,
                     password = state.password,
                     connectionState = state.connectionState,
-                    onBrokerUriChange = viewModel::updateBrokerUri,
+                    onBrokerHostChange = viewModel::updateBrokerHost,
+                    onBrokerPortChange = viewModel::updateBrokerPort,
+                    onUseTlsChange = viewModel::updateUseTls,
                     onClientIdChange = viewModel::updateClientId,
                     onUsernameChange = viewModel::updateUsername,
                     onPasswordChange = viewModel::updatePassword,
@@ -169,12 +173,16 @@ private fun ErrorBanner(
 
 @Composable
 private fun ConnectionCard(
-    brokerUri: String,
+    brokerHost: String,
+    brokerPort: String,
+    useTls: Boolean,
     clientId: String,
     username: String,
     password: String,
     connectionState: ConnectionState,
-    onBrokerUriChange: (String) -> Unit,
+    onBrokerHostChange: (String) -> Unit,
+    onBrokerPortChange: (String) -> Unit,
+    onUseTlsChange: (Boolean) -> Unit,
     onClientIdChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
@@ -189,13 +197,25 @@ private fun ConnectionCard(
                 fontWeight = FontWeight.Bold,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = brokerUri,
-                onValueChange = onBrokerUriChange,
-                label = { Text("Broker URI") },
-                singleLine = true,
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = brokerHost,
+                    onValueChange = onBrokerHostChange,
+                    label = { Text("Host") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = brokerPort,
+                    onValueChange = onBrokerPortChange,
+                    label = { Text("Port") },
+                    singleLine = true,
+                    modifier = Modifier.width(80.dp),
+                )
+            }
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
                 value = clientId,
@@ -223,6 +243,13 @@ private fun ConnectionCard(
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                 )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = useTls, onCheckedChange = onUseTlsChange)
+                Text("TLS", style = MaterialTheme.typography.bodyMedium)
             }
             Spacer(Modifier.height(12.dp))
             Row(
