@@ -763,15 +763,12 @@ private fun MessagesFeed(
                 } else {
                     Box(modifier = Modifier.fillMaxSize()) {
                         val listState = rememberLazyListState()
-                        val isAtTop by remember {
-                            derivedStateOf {
-                                listState.firstVisibleItemIndex == 0 &&
-                                    listState.firstVisibleItemScrollOffset < 50
-                            }
+                        val userScrolledAway by remember {
+                            derivedStateOf { listState.firstVisibleItemIndex > 2 }
                         }
 
-                        LaunchedEffect(messages.firstOrNull()) {
-                            if (isAtTop) listState.animateScrollToItem(0)
+                        LaunchedEffect(messages.size) {
+                            if (!userScrolledAway) listState.scrollToItem(0)
                         }
 
                         LazyColumn(
@@ -787,7 +784,7 @@ private fun MessagesFeed(
                         }
 
                         androidx.compose.animation.AnimatedVisibility(
-                            visible = !isAtTop,
+                            visible = userScrolledAway,
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .padding(bottom = 12.dp),
