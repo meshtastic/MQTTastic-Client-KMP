@@ -4,6 +4,9 @@
   "labels": ["dependencies"],
   "semanticCommits": "disabled",
   "schedule": ["after 10pm every weekday", "before 5am every weekday", "every weekend"],
+  "platformAutomerge": true,
+  "automergeStrategy": "squash",
+  "rebaseWhen": "conflicted",
   "packageRules": [
     {
       "description": "Group Kotlin ecosystem dependencies",
@@ -43,15 +46,34 @@
       ]
     },
     {
-      "description": "Automerge patch updates",
+      "description": "Track meshtastic/protobufs submodule by tagged releases",
+      "matchDepTypes": ["gitSubmodule"],
+      "matchPackageNames": ["protobufs"],
+      "versioning": "semver",
+      "automerge": false
+    },
+    {
+      "description": "Automerge patch updates immediately via merge queue",
       "matchUpdateTypes": ["patch"],
       "automerge": true
     },
     {
-      "description": "Automerge minor updates for build tools",
+      "description": "Automerge minor updates for build tools via merge queue",
       "groupName": "Build tools",
       "matchUpdateTypes": ["minor"],
       "automerge": true
+    },
+    {
+      "description": "Stabilise minor/major non-tool deps before merging",
+      "matchUpdateTypes": ["minor", "major"],
+      "matchPackagePatterns": [
+        "^org\\.jetbrains\\.kotlin:",
+        "^org\\.jetbrains\\.kotlinx:",
+        "^io\\.ktor:",
+        "^org\\.jetbrains\\.compose",
+        "^androidx\\."
+      ],
+      "minimumReleaseAge": "3 days"
     },
     {
       "description": "Never automerge major updates",
