@@ -64,7 +64,10 @@ internal class FakeTransport : MqttTransport {
 
     override suspend fun receive(): ByteArray {
         check(_isConnected) { "Not connected" }
-        receiveError?.let { throw it }
+        receiveError?.let { error ->
+            receiveError = null // Single-shot: clear after first throw
+            throw error
+        }
         return receiveChannel.receive()
     }
 

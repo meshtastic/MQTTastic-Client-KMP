@@ -163,13 +163,15 @@ public enum class ReasonCode(
     ;
 
     public companion object {
+        private val byValue: Map<Int, ReasonCode> = entries.associateBy { it.value }
+
         /**
          * Returns the [ReasonCode] corresponding to the given [value].
          *
          * @throws IllegalArgumentException if [value] does not match any known reason code.
          */
         public fun fromValue(value: Int): ReasonCode =
-            entries.firstOrNull { it.value == value }
+            byValue[value]
                 ?: throw IllegalArgumentException("Unknown reason code: 0x${value.toString(16).uppercase().padStart(2, '0')}")
     }
 }

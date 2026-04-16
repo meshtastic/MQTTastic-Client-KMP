@@ -156,7 +156,13 @@ internal class TcpTransport : MqttTransport {
     }
 
     private companion object {
-        /** Hard safety cap for remaining length allocation (256 MB). */
-        const val MAX_PACKET_REMAINING_LENGTH = 268_435_455 // VBI max per §1.5.5
+        /**
+         * Hard safety cap for remaining length allocation.
+         *
+         * Defaults to 16 MB to prevent OOM from a malicious/broken broker.
+         * Application-level enforcement of config.maximumPacketSize happens
+         * in MqttConnection's read loop. This is a transport-level safety net.
+         */
+        const val MAX_PACKET_REMAINING_LENGTH = 16 * 1024 * 1024 // 16 MB
     }
 }

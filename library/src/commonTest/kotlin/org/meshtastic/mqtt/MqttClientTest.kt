@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import kotlinx.io.bytestring.ByteString
 import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.Connect
@@ -450,7 +451,9 @@ class MqttClientTest {
                         caughtException = e
                     }
                 }
-            advanceUntilIdle()
+            // Yield to let the connect coroutine start and reach transport.receive()
+            // without advancing virtual time past the awaitConnAck timeout
+            yield()
 
             // Cancel the coroutine — should propagate CancellationException
             connectJob.cancel()

@@ -243,22 +243,17 @@ public class MqttClient
         private val config: MqttConfig,
         scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
     ) {
-        private val transportFactory: (MqttEndpoint) -> MqttTransport = { createPlatformTransport() }
         private val log = MqttLoggerInternal(config.logger, config.logLevel)
+        private var effectiveTransportFactory: (MqttEndpoint) -> MqttTransport = { createPlatformTransport() }
 
         /** Internal constructor for testing with a pre-built transport and injected scope. */
         internal constructor(config: MqttConfig, transport: MqttTransport, scope: CoroutineScope) :
             this(config, scope) {
-            transportFactoryOverride = { transport }
+            effectiveTransportFactory = { transport }
         }
-
-        private var transportFactoryOverride: ((MqttEndpoint) -> MqttTransport)? = null
 
         @Volatile
         private var closed = false
-
-        private val effectiveTransportFactory: (MqttEndpoint) -> MqttTransport
-            get() = transportFactoryOverride ?: transportFactory
 
         private val scope = CoroutineScope(SupervisorJob(scope.coroutineContext[Job]) + scope.coroutineContext.minusKey(Job))
 
@@ -343,9 +338,9 @@ public class MqttClient
          */
         @Throws(MqttException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun connect(endpoint: MqttEndpoint) {
-            check(!closed) { "Client has been closed and cannot be reused" }
             try {
                 connectionMutex.withLock {
+                    check(!closed) { "Client has been closed and cannot be reused" }
                     // Close any existing connection to prevent resource leaks
                     connection?.let { existing ->
                         log.warn(TAG) { "Already connected — closing existing connection before reconnecting" }
@@ -555,6 +550,32 @@ public class MqttClient
         }
 
         /**
+         * Subscribe to multiple topic filters with full subscription options.
+         *
+         * Unlike [subscribe] with `Map<String, QoS>`, this overload preserves all
+         * per-topic MQTT 5.0 subscription options (noLocal, retainAsPublished, retainHandling).
+         *
+         * @param subscriptions List of [Subscription] objects with per-topic options.
+         * @throws IllegalArgumentException if any topic filter is invalid (§4.7).
+         * @throws IllegalStateException if not connected.
+         */
+        @Throws(
+            IllegalArgumentException::class,
+            IllegalStateException::class,
+            MqttException::class,
+            kotlin.coroutines.cancellation.CancellationException::class,
+        )
+        public suspend fun subscribe(subscriptions: List<Subscription>) {
+            subscriptions.forEach { TopicValidator.validateTopicFilter(it.topicFilter) }
+            log.debug(TAG) { "Subscribing to ${subscriptions.map { it.topicFilter }}" }
+            wrapConnectionErrors {
+                val subAck = requireConnection().subscribe(subscriptions, MqttProperties.EMPTY)
+                recordSuccessfulSubscriptions(subscriptions, subAck)
+            }
+            log.info(TAG) { "Subscribed to ${subscriptions.map { it.topicFilter }}" }
+        }
+
+        /**
          * Unsubscribe from one or more topic filters.
          *
          * @param topicFilters The topic filters to unsubscribe from.
@@ -759,10 +780,20 @@ public class MqttClient
                     scope.launch {
                         _connectionState.value = ConnectionState.RECONNECTING
                         var delayMs = config.reconnectBaseDelayMs
+                        var attempts = 0
 
                         log.warn(TAG) { "Connection lost, starting reconnect" }
 
                         while (isActive && !intentionalDisconnect) {
+                            // Enforce max reconnect attempts if configured
+                            if (config.maxReconnectAttempts > 0 && attempts >= config.maxReconnectAttempts) {
+                                log.error(TAG) {
+                                    "Max reconnect attempts ($attempts) exhausted — giving up"
+                                }
+                                _connectionState.value = ConnectionState.DISCONNECTED
+                                return@launch
+                            }
+
                             // Read endpoint each attempt to honor mid-flight redirects
                             val endpoint = currentEndpoint ?: return@launch
 
@@ -784,7 +815,8 @@ public class MqttClient
                             } catch (
                                 @Suppress("TooGenericExceptionCaught") e: Exception,
                             ) {
-                                log.warn(TAG, throwable = e) { "Reconnect attempt failed" }
+                                attempts++
+                                log.warn(TAG, throwable = e) { "Reconnect attempt $attempts failed" }
                                 _connectionState.value = ConnectionState.RECONNECTING
                                 delayMs = (delayMs * 2).coerceAtMost(config.reconnectMaxDelayMs)
                             }
@@ -843,6 +875,13 @@ public class MqttClient
             try {
                 block()
             } catch (e: MqttConnectionException) {
+                if (e.reasonCode == ReasonCode.PROTOCOL_ERROR) {
+                    throw MqttException.ProtocolError(
+                        reasonCode = e.reasonCode,
+                        message = e.message ?: "Protocol error",
+                        cause = e.cause,
+                    )
+                }
                 throw MqttException.ConnectionLost(
                     reasonCode = e.reasonCode,
                     message = e.message ?: "Connection lost",
@@ -1053,28 +1092,28 @@ internal fun topicMatchesFilter(
     while (fi < filterLevels.size) {
         val filterLevel = filterLevels[fi]
         when {
+            // Matches everything remaining
             filterLevel == "#" -> {
                 return true
             }
 
-            // Matches everything remaining
+            // Filter has more levels than topic
             ti >= topicLevels.size -> {
                 return false
             }
 
-            // Filter has more levels than topic
+            // Matches one level
             filterLevel == "+" -> {
                 ti++
                 fi++
             }
 
-            // Matches one level
+            // Exact match
             filterLevel == topicLevels[ti] -> {
                 ti++
                 fi++
             }
 
-            // Exact match
             else -> {
                 return false
             }

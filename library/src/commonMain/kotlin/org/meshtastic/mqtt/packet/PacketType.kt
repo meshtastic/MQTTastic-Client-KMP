@@ -44,8 +44,10 @@ internal enum class PacketType(
     ;
 
     companion object {
+        private val byValue: Map<Int, PacketType> = entries.associateBy { it.value }
+
         fun fromValue(value: Int): PacketType =
-            entries.firstOrNull { it.value == value }
+            byValue[value]
                 ?: throw IllegalArgumentException("Unknown packet type: $value")
     }
 }

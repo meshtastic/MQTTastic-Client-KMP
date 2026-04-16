@@ -299,6 +299,10 @@ private fun decodeSubAck(body: ByteArray): SubAck {
         pos++
     }
 
+    require(reasonCodes.isNotEmpty()) {
+        "SUBACK must contain at least one reason code (§3.9.3)"
+    }
+
     return SubAck(
         packetIdentifier = packetId,
         reasonCodes = reasonCodes,
@@ -346,6 +350,10 @@ private fun decodeUnsubAck(body: ByteArray): UnsubAck {
     while (pos < body.size) {
         reasonCodes += ReasonCode.fromValue(body[pos].toInt() and 0xFF)
         pos++
+    }
+
+    require(reasonCodes.isNotEmpty()) {
+        "UNSUBACK must contain at least one reason code (§3.11.3)"
     }
 
     return UnsubAck(

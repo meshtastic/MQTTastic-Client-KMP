@@ -217,8 +217,16 @@ internal data class PubComp(
 
 // --- §3.8 SUBSCRIBE ---
 
-/** A single topic subscription with subscription options per §3.8.3.1. */
-internal data class Subscription(
+/**
+ * A single topic subscription with MQTT 5.0 subscription options per §3.8.3.1.
+ *
+ * @property topicFilter The topic filter to subscribe to (e.g. "sensors/#").
+ * @property maxQos Maximum QoS level for messages on this subscription.
+ * @property noLocal If true, the server will not forward messages published by this client.
+ * @property retainAsPublished If true, retain flag from original publish is preserved.
+ * @property retainHandling Controls when retained messages are sent.
+ */
+public data class Subscription(
     val topicFilter: String,
     val maxQos: QoS = QoS.AT_MOST_ONCE,
     val noLocal: Boolean = false,
