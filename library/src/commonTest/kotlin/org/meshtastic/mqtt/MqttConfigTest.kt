@@ -49,6 +49,8 @@ class MqttConfigTest {
         assertTrue(config.autoReconnect)
         assertEquals(1000L, config.reconnectBaseDelayMs)
         assertEquals(30000L, config.reconnectMaxDelayMs)
+        assertEquals(QoS.AT_MOST_ONCE, config.defaultQos)
+        assertFalse(config.defaultRetain)
     }
 
     // --- MqttConfig keepAliveSeconds validation ---
@@ -308,5 +310,118 @@ class MqttConfigTest {
         assertTrue(copied.retain)
         assertEquals(60L, copied.willDelayInterval)
         assertEquals("text/plain", copied.contentType)
+    }
+
+    // --- MqttConfig defaultQos and defaultRetain ---
+
+    @Test
+    fun mqttConfigDefaultPublishDefaults() {
+        val config = MqttConfig()
+        assertEquals(QoS.AT_MOST_ONCE, config.defaultQos)
+        assertFalse(config.defaultRetain)
+    }
+
+    @Test
+    fun mqttConfigDefaultPublishCustom() {
+        val config = MqttConfig(defaultQos = QoS.AT_LEAST_ONCE, defaultRetain = true)
+        assertEquals(QoS.AT_LEAST_ONCE, config.defaultQos)
+        assertTrue(config.defaultRetain)
+    }
+
+    @Test
+    fun builderDefaultPublishOptions() {
+        val config =
+            MqttConfig.build {
+                clientId = "test"
+                defaultQos = QoS.EXACTLY_ONCE
+                defaultRetain = true
+            }
+        assertEquals(QoS.EXACTLY_ONCE, config.defaultQos)
+        assertTrue(config.defaultRetain)
+    }
+
+    // --- WillConfig.Builder DSL ---
+
+    @Test
+    fun willConfigBuilderDsl() {
+        val will =
+            WillConfig.build {
+                topic = "status/offline"
+                payload("device went offline")
+                qos = QoS.AT_LEAST_ONCE
+                retain = true
+                willDelayInterval = 30L
+            }
+        assertEquals("status/offline", will.topic)
+        assertEquals("device went offline", will.payload.toByteArray().decodeToString())
+        assertEquals(QoS.AT_LEAST_ONCE, will.qos)
+        assertTrue(will.retain)
+        assertEquals(30L, will.willDelayInterval)
+        assertTrue(will.payloadFormatIndicator)
+    }
+
+    @Test
+    fun willConfigBuilderBinaryPayload() {
+        val bytes = byteArrayOf(0x01, 0x02, 0x03)
+        val will =
+            WillConfig.build {
+                topic = "binary/will"
+                payload(bytes)
+            }
+        assertEquals(ByteString(0x01, 0x02, 0x03), will.payload)
+        assertFalse(will.payloadFormatIndicator)
+    }
+
+    @Test
+    fun willConfigBuilderByteStringPayload() {
+        val bs = ByteString(0xCA.toByte(), 0xFE.toByte())
+        val will =
+            WillConfig.build {
+                topic = "bs/will"
+                payload(bs)
+            }
+        assertEquals(bs, will.payload)
+    }
+
+    @Test
+    fun willConfigBuilderRejectsBlankTopic() {
+        assertFailsWith<IllegalArgumentException> {
+            WillConfig.build {
+                topic = ""
+                payload("test")
+            }
+        }
+    }
+
+    @Test
+    fun willDslInConfigBuilder() {
+        val config =
+            MqttConfig.build {
+                clientId = "sensor"
+                will {
+                    topic = "sensors/status"
+                    payload("offline")
+                    qos = QoS.AT_LEAST_ONCE
+                    retain = true
+                }
+            }
+        val will = config.will
+        assertEquals("sensors/status", will?.topic)
+        assertEquals("offline", will?.payload?.toByteArray()?.decodeToString())
+        assertEquals(QoS.AT_LEAST_ONCE, will?.qos)
+        assertTrue(will?.retain == true)
+    }
+
+    @Test
+    fun willDslOverridesDirectAssignment() {
+        val config =
+            MqttConfig.build {
+                will = WillConfig(topic = "first")
+                will {
+                    topic = "second"
+                    payload("data")
+                }
+            }
+        assertEquals("second", config.will?.topic)
     }
 }

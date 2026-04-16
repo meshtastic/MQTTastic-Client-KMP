@@ -40,45 +40,189 @@ import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscription
 
 /**
- * Public API surface for the MQTTtastic MQTT 5.0 client library.
+ * MQTT 5.0 client for Kotlin Multiplatform.
  *
- * This is the primary entry point for interacting with an MQTT broker. It wraps the
- * internal [MqttConnection] state machine with a coroutine-friendly API, providing:
+ * `MqttClient` is the primary entry point for connecting to MQTT brokers,
+ * publishing messages, and receiving subscriptions. It wraps the internal
+ * connection state machine with a coroutine-friendly, Flow-based API.
  *
- * - **Connection management** — [connect], [disconnect], and [close] with lifecycle tracking
- *   via the [connectionState] flow.
- * - **Publishing** — [publish] messages with QoS 0/1/2, optional retain, and full MQTT 5.0
- *   properties. Overloads accept [String] payloads or fully-constructed [MqttMessage] objects.
- * - **Subscribing** — [subscribe] to topic filters with per-subscription QoS, No Local,
- *   Retain As Published, and Retain Handling options.
- * - **Automatic reconnection** — configurable exponential backoff with subscription
- *   re-establishment on reconnect (when [MqttConfig.autoReconnect] is `true`).
- * - **Enhanced authentication** — AUTH packet challenge/response via [authChallenges] flow
- *   and [sendAuthResponse] (§4.12).
- * - **Request/Response** — set [PublishProperties.responseTopic] and
- *   [PublishProperties.correlationData] on any publish for the MQTT 5.0 request/response
- *   pattern (§4.10).
+ * ## Creating a client
  *
- * ## Example
+ * Use the [MqttClient] factory function with a client ID and optional
+ * configuration block (similar to Ktor's `HttpClient { }` pattern):
+ *
  * ```kotlin
- * val client = MqttClient(MqttConfig(clientId = "my-client"))
+ * val client = MqttClient("sensor-hub") {
+ *     keepAliveSeconds = 30
+ *     autoReconnect = true
+ * }
+ * ```
  *
- * // Observe connection state
- * scope.launch { client.connectionState.collect { println("State: $it") } }
+ * Or construct directly with an [MqttConfig]:
  *
- * // Collect messages
- * scope.launch { client.messages.collect { println("${it.topic}: ${it.payload}") } }
+ * ```kotlin
+ * val client = MqttClient(MqttConfig(clientId = "sensor-hub", keepAliveSeconds = 30))
+ * ```
  *
- * // Connect, subscribe, publish
- * client.connect(MqttEndpoint.Tcp("broker.example.com"))
+ * ## Connecting to a broker
+ *
+ * ```kotlin
+ * // TCP (JVM, Android, iOS, macOS, Linux, Windows)
+ * client.connect(MqttEndpoint.Tcp("broker.example.com", port = 1883))
+ *
+ * // TCP with TLS
+ * client.connect(MqttEndpoint.Tcp("broker.example.com", port = 8883, tls = true))
+ *
+ * // WebSocket (wasmJs / browser)
+ * client.connect(MqttEndpoint.WebSocket("wss://broker.example.com/mqtt"))
+ *
+ * // Parse from URI string
+ * client.connect(MqttEndpoint.parse("ssl://broker.example.com:8883"))
+ * ```
+ *
+ * ## Publishing messages
+ *
+ * ```kotlin
+ * // String payload (convenience)
+ * client.publish("sensors/temp", "22.5", qos = QoS.AT_LEAST_ONCE)
+ *
+ * // Full control with MqttMessage
+ * client.publish(MqttMessage(
+ *     topic = "sensors/data",
+ *     payload = ByteString(sensorBytes),
+ *     qos = QoS.EXACTLY_ONCE,
+ *     retain = true,
+ * ))
+ *
+ * // With MQTT 5.0 properties
+ * client.publish("commands/response", responseJson,
+ *     properties = PublishProperties(
+ *         contentType = "application/json",
+ *         messageExpiryInterval = 3600,
+ *     ),
+ * )
+ * ```
+ *
+ * ## Default publish options
+ *
+ * Set client-level defaults so you don't repeat QoS/retain on every call
+ * (similar to Ktor's `defaultRequest {}`):
+ *
+ * ```kotlin
+ * val client = MqttClient("sensor") {
+ *     defaultQos = QoS.AT_LEAST_ONCE
+ *     defaultRetain = true
+ * }
+ * client.publish("sensors/temp", "22.5")  // uses QoS 1 + retain
+ * ```
+ *
+ * ## Subscribing and receiving messages
+ *
+ * Messages arrive via the [messages] flow. Start collecting **before** subscribing
+ * to avoid missing messages:
+ *
+ * ```kotlin
+ * // Collect all messages
+ * launch { client.messages.collect { msg -> println("${msg.topic}: ${msg.payloadAsString()}") } }
+ *
+ * // Filter by exact topic
+ * launch { client.messagesForTopic("sensors/temp").collect { /* ... */ } }
+ *
+ * // Filter by wildcard pattern
+ * launch { client.messagesMatching("sensors/+/temp").collect { /* ... */ } }
+ *
+ * // Subscribe with QoS
  * client.subscribe("sensors/#", QoS.AT_LEAST_ONCE)
- * client.publish("sensors/temp", "22.5", QoS.AT_LEAST_ONCE)
  *
- * // Cleanup
+ * // Bulk subscribe
+ * client.subscribe(mapOf("sensors/#" to QoS.AT_LEAST_ONCE, "commands/#" to QoS.EXACTLY_ONCE))
+ * ```
+ *
+ * ## Connection state
+ *
+ * Observe lifecycle transitions via [connectionState]:
+ *
+ * ```kotlin
+ * client.connectionState.collect { state ->
+ *     when (state) {
+ *         ConnectionState.CONNECTED -> println("Online")
+ *         ConnectionState.RECONNECTING -> println("Reconnecting...")
+ *         ConnectionState.DISCONNECTED -> println("Offline")
+ *         else -> { /* CONNECTING */ }
+ *     }
+ * }
+ * ```
+ *
+ * ## Will messages
+ *
+ * Configure a will message using the DSL block in the config builder:
+ *
+ * ```kotlin
+ * val client = MqttClient("sensor") {
+ *     will {
+ *         topic = "sensors/status"
+ *         payload("offline")
+ *         qos = QoS.AT_LEAST_ONCE
+ *         retain = true
+ *     }
+ * }
+ * ```
+ *
+ * ## Logging
+ *
+ * ```kotlin
+ * val client = MqttClient("sensor") {
+ *     logger = MqttLogger.println()
+ *     logLevel = MqttLogLevel.DEBUG
+ * }
+ * ```
+ *
+ * ## Automatic reconnection
+ *
+ * Enabled by default. The client reconnects with exponential backoff and
+ * re-establishes subscriptions automatically:
+ *
+ * ```kotlin
+ * val client = MqttClient("sensor") {
+ *     autoReconnect = true           // default
+ *     reconnectBaseDelayMs = 1000    // initial delay
+ *     reconnectMaxDelayMs = 30000    // max backoff
+ * }
+ * ```
+ *
+ * ## Enhanced authentication (§4.12)
+ *
+ * For SASL-style challenge/response flows:
+ *
+ * ```kotlin
+ * val client = MqttClient("secure-client") {
+ *     authenticationMethod = "SCRAM-SHA-256"
+ *     authenticationData = ByteString(initialResponse)
+ * }
+ *
+ * launch { client.authChallenges.collect { challenge -> client.sendAuthResponse(processChallenge(challenge)) } }
+ * ```
+ *
+ * ## Cleanup
+ *
+ * Always close the client when done to release resources:
+ *
+ * ```kotlin
  * client.close()
  * ```
  *
- * ## Thread Safety
+ * Or use the scoped [use] extension for automatic cleanup:
+ *
+ * ```kotlin
+ * MqttClient("sensor").use(MqttEndpoint.parse("tcp://broker:1883")) { client ->
+ *     client.subscribe("sensors/#", QoS.AT_LEAST_ONCE)
+ *     client.publish("sensors/temp", "22.5")
+ *     delay(10_000)
+ * }
+ * ```
+ *
+ * ## Thread safety
+ *
  * All public methods are `suspend` functions safe to call from any coroutine.
  * Internal state is protected by mutexes — concurrent calls to [publish], [subscribe],
  * and [disconnect] are serialized correctly.
@@ -87,6 +231,9 @@ import org.meshtastic.mqtt.packet.Subscription
  * @param scope Coroutine scope for background jobs. Defaults to a new [SupervisorJob]
  *   on [Dispatchers.Default]. The client creates a child scope, so cancelling the
  *   provided scope also cancels all client operations.
+ * @see MqttConfig
+ * @see MqttEndpoint
+ * @see MqttMessage
  */
 @Suppress("TooManyFunctions")
 public class MqttClient
@@ -235,13 +382,29 @@ public class MqttClient
          * This is the primary convenience overload for string payloads. For binary
          * payloads, construct an [MqttMessage] directly with a [ByteArray] or [ByteString].
          *
+         * When [qos] or [retain] are omitted (null), the client-level defaults from
+         * [MqttConfig.defaultQos] and [MqttConfig.defaultRetain] are used — similar
+         * to Ktor's `defaultRequest {}` pattern. This lets you configure publish
+         * defaults once at client creation:
+         *
+         * ```kotlin
+         * val client = MqttClient("sensor") {
+         *     defaultQos = QoS.AT_LEAST_ONCE
+         *     defaultRetain = true
+         * }
+         * // All convenience publishes now default to QoS 1 + retain
+         * client.publish("sensors/temp", "22.5")
+         * // Override per-call when needed
+         * client.publish("sensors/temp", "22.5", qos = QoS.AT_MOST_ONCE, retain = false)
+         * ```
+         *
          * For the MQTT 5.0 request/response pattern (§4.10), set [PublishProperties.responseTopic]
          * and [PublishProperties.correlationData] in the [properties] parameter.
          *
          * @param topic The topic to publish to.
          * @param payload String payload (encoded as UTF-8).
-         * @param qos Quality of service level (default: [QoS.AT_MOST_ONCE]).
-         * @param retain Whether the message should be retained (default: false).
+         * @param qos Quality of service level, or `null` to use [MqttConfig.defaultQos].
+         * @param retain Whether the message should be retained, or `null` to use [MqttConfig.defaultRetain].
          * @param properties MQTT 5.0 publish properties (default: none).
          */
         @Throws(
@@ -253,16 +416,16 @@ public class MqttClient
         public suspend fun publish(
             topic: String,
             payload: String,
-            qos: QoS = QoS.AT_MOST_ONCE,
-            retain: Boolean = false,
+            qos: QoS? = null,
+            retain: Boolean? = null,
             properties: PublishProperties = PublishProperties(),
         ) {
             publish(
                 MqttMessage(
                     topic = topic,
                     payload = ByteString(payload.encodeToByteArray()),
-                    qos = qos,
-                    retain = retain,
+                    qos = qos ?: config.defaultQos,
+                    retain = retain ?: config.defaultRetain,
                     properties = properties,
                 ),
             )

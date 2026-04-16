@@ -32,7 +32,23 @@ import kotlinx.io.bytestring.ByteString
  *     keepAliveSeconds = 30,
  *     cleanStart = false,
  *     autoReconnect = true,
+ *     defaultQos = QoS.AT_LEAST_ONCE,
  * )
+ * ```
+ *
+ * Or using the builder DSL:
+ *
+ * ```kotlin
+ * val config = MqttConfig.build {
+ *     clientId = "sensor-hub-01"
+ *     keepAliveSeconds = 30
+ *     defaultQos = QoS.AT_LEAST_ONCE
+ *     will {
+ *         topic = "sensors/status"
+ *         payload("offline")
+ *         retain = true
+ *     }
+ * }
  * ```
  *
  * @property clientId Client identifier sent to the broker. An empty string requests the
@@ -74,6 +90,11 @@ import kotlinx.io.bytestring.ByteString
  *   Doubles after each failed attempt up to [reconnectMaxDelayMs]. Must be > 0.
  * @property reconnectMaxDelayMs Maximum delay between reconnection attempts in milliseconds.
  *   Must be ≥ [reconnectBaseDelayMs].
+ * @property defaultQos Default [QoS] level applied to convenience [MqttClient.publish] calls
+ *   when no explicit QoS is specified. Similar to Ktor's `defaultRequest {}` pattern.
+ *   Defaults to [QoS.AT_MOST_ONCE].
+ * @property defaultRetain Default retain flag applied to convenience [MqttClient.publish] calls
+ *   when no explicit retain value is specified. Defaults to `false`.
  * @property logger Optional [MqttLogger] implementation that receives log messages from the
  *   library. When `null` (default), no logging occurs and zero overhead is incurred.
  * @property logLevel Minimum log level for messages delivered to [logger]. Messages below
@@ -99,6 +120,8 @@ public data class MqttConfig(
     val autoReconnect: Boolean = true,
     val reconnectBaseDelayMs: Long = 1000,
     val reconnectMaxDelayMs: Long = 30000,
+    val defaultQos: QoS = QoS.AT_MOST_ONCE,
+    val defaultRetain: Boolean = false,
     val logger: MqttLogger? = null,
     val logLevel: MqttLogLevel = MqttLogLevel.NONE,
 ) {
@@ -139,10 +162,15 @@ public data class MqttConfig(
          * val config = MqttConfig.build {
          *     clientId = "sensor-hub-01"
          *     keepAliveSeconds = 30
-         *     cleanStart = false
+         *     defaultQos = QoS.AT_LEAST_ONCE
          *     autoReconnect = true
          *     logger = MqttLogger.println()
          *     logLevel = MqttLogLevel.DEBUG
+         *     will {
+         *         topic = "sensors/status"
+         *         payload("offline")
+         *         retain = true
+         *     }
          * }
          * ```
          */
@@ -155,6 +183,7 @@ public data class MqttConfig(
      * All properties default to the same values as the [MqttConfig] data class constructor.
      * Set only the properties you want to customize.
      */
+    @MqttDsl
     @Suppress("TooManyFunctions")
     public class Builder {
         public var clientId: String = ""
@@ -175,8 +204,33 @@ public data class MqttConfig(
         public var autoReconnect: Boolean = true
         public var reconnectBaseDelayMs: Long = 1000
         public var reconnectMaxDelayMs: Long = 30000
+        public var defaultQos: QoS = QoS.AT_MOST_ONCE
+        public var defaultRetain: Boolean = false
         public var logger: MqttLogger? = null
         public var logLevel: MqttLogLevel = MqttLogLevel.NONE
+
+        /**
+         * Configure a will message using a DSL block.
+         *
+         * The broker publishes this message when the client disconnects unexpectedly.
+         * This is the Ktor-style alternative to assigning [will] directly.
+         *
+         * ```kotlin
+         * MqttClient("sensor") {
+         *     will {
+         *         topic = "sensors/status"
+         *         payload("offline")
+         *         qos = QoS.AT_LEAST_ONCE
+         *         retain = true
+         *     }
+         * }
+         * ```
+         *
+         * @param block Configuration block applied to a [WillConfig.Builder].
+         */
+        public fun will(block: WillConfig.Builder.() -> Unit) {
+            will = WillConfig.Builder().apply(block).build()
+        }
 
         /** Build the immutable [MqttConfig] from the current builder state. */
         public fun build(): MqttConfig =
@@ -199,6 +253,8 @@ public data class MqttConfig(
                 autoReconnect = autoReconnect,
                 reconnectBaseDelayMs = reconnectBaseDelayMs,
                 reconnectMaxDelayMs = reconnectMaxDelayMs,
+                defaultQos = defaultQos,
+                defaultRetain = defaultRetain,
                 logger = logger,
                 logLevel = logLevel,
             )
@@ -284,4 +340,97 @@ public data class WillConfig(
         payloadFormatIndicator = payloadFormatIndicator,
         userProperties = userProperties,
     )
+
+    public companion object {
+        /**
+         * Build a [WillConfig] using a DSL block.
+         *
+         * ```kotlin
+         * val will = WillConfig.build {
+         *     topic = "sensors/status"
+         *     payload("offline")
+         *     qos = QoS.AT_LEAST_ONCE
+         *     retain = true
+         * }
+         * ```
+         */
+        public fun build(block: Builder.() -> Unit): WillConfig = Builder().apply(block).build()
+    }
+
+    /**
+     * Mutable builder for [WillConfig].
+     *
+     * Provides setter properties for all will fields plus convenience methods
+     * for setting the payload from different types.
+     *
+     * @see WillConfig.build
+     * @see MqttConfig.Builder.will
+     */
+    @MqttDsl
+    public class Builder {
+        /** Topic the will message will be published to. Must not be blank. */
+        public var topic: String = ""
+
+        /** Payload as an immutable [ByteString]. Use [payload] methods for string/ByteArray convenience. */
+        public var payloadBytes: ByteString = ByteString()
+
+        /** QoS level for the will message delivery. */
+        public var qos: QoS = QoS.AT_MOST_ONCE
+
+        /** If `true`, the broker retains the will message. */
+        public var retain: Boolean = false
+
+        /** Delay in seconds before publishing the will after unexpected disconnect. */
+        public var willDelayInterval: Long? = null
+
+        /** Lifetime of the will message in seconds after publication. */
+        public var messageExpiryInterval: Long? = null
+
+        /** MIME content type of the will payload (e.g. `"application/json"`). */
+        public var contentType: String? = null
+
+        /** Topic for request/response pattern in the will message. */
+        public var responseTopic: String? = null
+
+        /** Correlation data for request/response pattern in the will message. */
+        public var correlationData: ByteString? = null
+
+        /** If `true`, the will payload is UTF-8 encoded text. */
+        public var payloadFormatIndicator: Boolean = false
+
+        /** Application-defined key-value pairs sent with the will message. */
+        public var userProperties: List<Pair<String, String>> = emptyList()
+
+        /** Set the payload from a UTF-8 string. */
+        public fun payload(text: String) {
+            payloadBytes = ByteString(text.encodeToByteArray())
+            payloadFormatIndicator = true
+        }
+
+        /** Set the payload from raw bytes (copied into an immutable [ByteString]). */
+        public fun payload(bytes: ByteArray) {
+            payloadBytes = ByteString(bytes)
+        }
+
+        /** Set the payload from an immutable [ByteString]. */
+        public fun payload(byteString: ByteString) {
+            payloadBytes = byteString
+        }
+
+        /** Build the immutable [WillConfig] from the current builder state. */
+        public fun build(): WillConfig =
+            WillConfig(
+                topic = topic,
+                payload = payloadBytes,
+                qos = qos,
+                retain = retain,
+                willDelayInterval = willDelayInterval,
+                messageExpiryInterval = messageExpiryInterval,
+                contentType = contentType,
+                responseTopic = responseTopic,
+                correlationData = correlationData,
+                payloadFormatIndicator = payloadFormatIndicator,
+                userProperties = userProperties,
+            )
+    }
 }
