@@ -38,6 +38,7 @@ import kotlinx.io.bytestring.ByteString
 import org.meshtastic.mqtt.packet.MqttProperties
 import org.meshtastic.mqtt.packet.SubAck
 import org.meshtastic.mqtt.packet.Subscription
+import kotlin.concurrent.Volatile
 
 /**
  * MQTT 5.0 client for Kotlin Multiplatform.
@@ -298,12 +299,16 @@ public class MqttClient
         public val authChallenges: SharedFlow<AuthChallenge> = _authChallenges.asSharedFlow()
 
         private var connection: MqttConnection? = null
+
+        @Volatile
         private var currentEndpoint: MqttEndpoint? = null
         private var messageForwardJob: Job? = null
         private var stateForwardJob: Job? = null
         private var authForwardJob: Job? = null
         private var redirectForwardJob: Job? = null
         private var reconnectJob: Job? = null
+
+        @Volatile
         private var intentionalDisconnect = false
 
         private val subscriptionsMutex = Mutex()
@@ -684,41 +689,43 @@ public class MqttClient
             redirectForwardJob = null
         }
 
-        private fun startReconnect() {
-            if (reconnectJob?.isActive == true) return
-            reconnectJob =
-                scope.launch {
-                    _connectionState.value = ConnectionState.RECONNECTING
-                    var delayMs = config.reconnectBaseDelayMs
-                    val endpoint = currentEndpoint ?: return@launch
+        private suspend fun startReconnect() {
+            connectionMutex.withLock {
+                if (reconnectJob?.isActive == true) return
+                reconnectJob =
+                    scope.launch {
+                        _connectionState.value = ConnectionState.RECONNECTING
+                        var delayMs = config.reconnectBaseDelayMs
+                        val endpoint = currentEndpoint ?: return@launch
 
-                    log.warn(TAG) { "Connection lost, starting reconnect to $endpoint" }
+                        log.warn(TAG) { "Connection lost, starting reconnect to $endpoint" }
 
-                    while (isActive && !intentionalDisconnect) {
-                        log.debug(TAG) { "Reconnecting in ${delayMs}ms" }
-                        delay(delayMs)
-                        try {
-                            connectionMutex.withLock {
-                                if (intentionalDisconnect) return@launch
-                                connectInternal(endpoint)
-                                resubscribe()
+                        while (isActive && !intentionalDisconnect) {
+                            log.debug(TAG) { "Reconnecting in ${delayMs}ms" }
+                            delay(delayMs)
+                            try {
+                                connectionMutex.withLock {
+                                    if (intentionalDisconnect) return@launch
+                                    connectInternal(endpoint)
+                                    resubscribe()
+                                }
+                                log.info(TAG) { "Reconnected to $endpoint" }
+                                reconnectJob = null
+                                return@launch
+                            } catch (
+                                @Suppress("SwallowedException") _: CancellationException,
+                            ) {
+                                return@launch
+                            } catch (
+                                @Suppress("TooGenericExceptionCaught") e: Exception,
+                            ) {
+                                log.warn(TAG, throwable = e) { "Reconnect attempt failed" }
+                                _connectionState.value = ConnectionState.RECONNECTING
+                                delayMs = (delayMs * 2).coerceAtMost(config.reconnectMaxDelayMs)
                             }
-                            log.info(TAG) { "Reconnected to $endpoint" }
-                            reconnectJob = null
-                            return@launch
-                        } catch (
-                            @Suppress("SwallowedException") _: CancellationException,
-                        ) {
-                            return@launch
-                        } catch (
-                            @Suppress("TooGenericExceptionCaught") e: Exception,
-                        ) {
-                            log.warn(TAG, throwable = e) { "Reconnect attempt failed" }
-                            _connectionState.value = ConnectionState.RECONNECTING
-                            delayMs = (delayMs * 2).coerceAtMost(config.reconnectMaxDelayMs)
                         }
                     }
-                }
+            }
         }
 
         /** Record only successfully acknowledged subscriptions from the SUBACK response. */
@@ -769,7 +776,7 @@ public class MqttClient
          * Parses the server reference, updates the current endpoint, and triggers
          * reconnection to the new broker address.
          */
-        private fun handleServerRedirect(redirect: ServerRedirect) {
+        private suspend fun handleServerRedirect(redirect: ServerRedirect) {
             val currentEp = currentEndpoint ?: return
             val newEndpoint =
                 try {
