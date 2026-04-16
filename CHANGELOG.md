@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Enhanced authentication** — AUTH packet challenge/response flow (§4.12)
 - **Topic aliases** — bidirectional client↔server mapping (§3.3.2.3.4)
 - **Flow control** — Receive Maximum enforcement (§3.3.4)
-- **Request/Response** — `publishWithResponse` with Response Topic + Correlation Data (§4.10)
+- **Request/Response** — set `PublishProperties.responseTopic` and `correlationData` on any publish (§4.10)
 - **QoS 2 duplicate detection** — inbound packet ID tracking prevents duplicate delivery
 - **`@Throws` annotations** on all public suspend functions for JVM/Swift interop
 - **Builder DSL** — `MqttConfig.build { clientId = "x"; keepAliveSeconds = 30 }`
@@ -50,8 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `MqttClient(clientId) { ... }` — factory function combining client ID with config DSL
   - `client.messagesForTopic(topic)` — exact-match filtered message flow
   - `client.messagesMatching(filter)` — wildcard-aware message flow (`+`, `#`)
-  - `client.subscribe(qos, vararg topics)` — multi-topic subscribe at same QoS
-  - `client.publish(topic, payload, qos, properties)` — string publish with properties
+  - `client.publish(topic, payload, qos, properties)` — string publish with optional properties
   - `client.use(endpoint) { ... }` — structured connect/close lifecycle
-- 328 tests across 14 test classes covering encode/decode, client state machine, QoS flows, properties, logging, convenience APIs
+- 341 tests across 14 test classes covering encode/decode, client state machine, QoS flows, properties, logging, convenience APIs
 - Integration test suite (Docker-based Mosquitto broker)
+
+### Changed
+- **API simplification** — consolidated publish API from 4 overloads to 2 (`publish(MqttMessage)` + `publish(topic, String, qos, retain, properties)`)
+- Moved `ReasonCode` and `RetainHandling` from `org.meshtastic.mqtt.packet` to `org.meshtastic.mqtt` — consumers import from the main package
+- Made internal buffer constants (`MESSAGE_BUFFER_CAPACITY`, `AUTH_BUFFER_CAPACITY`, `MAX_REDIRECTS`) private
+
+### Removed
+- `publish(topic, ByteArray, qos, retain)` — use `publish(MqttMessage(topic, byteArrayPayload))` instead
+- `publishWithResponse(...)` — use `publish(topic, payload, properties = PublishProperties(responseTopic = ...))` instead
+- `subscribe(qos, vararg topics)` extension — use `subscribe(mapOf("a" to qos, "b" to qos))` instead

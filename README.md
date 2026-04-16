@@ -146,7 +146,6 @@ The library ships several ergonomic extensions to reduce boilerplate:
 | `msg.payloadAsString()` | `msg.payload.toByteArray().decodeToString()` |
 | `client.messagesForTopic("x")` | `client.messages.filter { it.topic == "x" }` |
 | `client.messagesMatching("x/+/y")` | Manual wildcard matching on `messages` flow |
-| `client.subscribe(qos, "a", "b")` | `client.subscribe(mapOf("a" to qos, "b" to qos))` |
 | `client.publish(topic, payload, qos, properties)` | Constructing `MqttMessage` + `PublishProperties` manually |
 
 #### Endpoint Parsing
