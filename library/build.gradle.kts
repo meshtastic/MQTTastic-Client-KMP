@@ -189,3 +189,11 @@ kover {
         }
     }
 }
+
+dokka {
+    dokkaSourceSets.named("commonMain") {
+        // Module/package docs: first-class overview page on the generated site
+        // and a narrated landing for each Kotlin package.
+        includes.from(layout.projectDirectory.file("Module.md"))
+    }
+}
