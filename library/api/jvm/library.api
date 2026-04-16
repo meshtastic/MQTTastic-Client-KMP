@@ -1,12 +1,12 @@
 public final class org/meshtastic/mqtt/AuthChallenge {
-	public fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;[B)V
+	public fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;)V
 	public final fun component1 ()Lorg/meshtastic/mqtt/ReasonCode;
 	public final fun component2 ()Ljava/lang/String;
-	public final fun component3 ()[B
-	public final fun copy (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;[B)Lorg/meshtastic/mqtt/AuthChallenge;
-	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/AuthChallenge;Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;[BILjava/lang/Object;)Lorg/meshtastic/mqtt/AuthChallenge;
+	public final fun component3 ()Lkotlinx/io/bytestring/ByteString;
+	public final fun copy (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;)Lorg/meshtastic/mqtt/AuthChallenge;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/AuthChallenge;Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Lkotlinx/io/bytestring/ByteString;ILjava/lang/Object;)Lorg/meshtastic/mqtt/AuthChallenge;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getAuthenticationData ()[B
+	public final fun getAuthenticationData ()Lkotlinx/io/bytestring/ByteString;
 	public final fun getAuthenticationMethod ()Ljava/lang/String;
 	public final fun getReasonCode ()Lorg/meshtastic/mqtt/ReasonCode;
 	public fun hashCode ()I
@@ -35,7 +35,7 @@ public final class org/meshtastic/mqtt/MqttClient {
 	public final fun publish (Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;Ljava/lang/Boolean;Lorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun publish (Lorg/meshtastic/mqtt/MqttMessage;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun publish$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;Ljava/lang/Boolean;Lorg/meshtastic/mqtt/PublishProperties;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public final fun sendAuthResponse ([BLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun sendAuthResponse (Lkotlinx/io/bytestring/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun subscribe (Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZZLorg/meshtastic/mqtt/RetainHandling;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun subscribe (Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun subscribe$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZZLorg/meshtastic/mqtt/RetainHandling;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
@@ -200,6 +200,28 @@ public final class org/meshtastic/mqtt/MqttEndpoint$WebSocket : org/meshtastic/m
 	public final fun getUrl ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class org/meshtastic/mqtt/MqttException : java/lang/Exception {
+	public synthetic fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getReasonCode ()Lorg/meshtastic/mqtt/ReasonCode;
+}
+
+public final class org/meshtastic/mqtt/MqttException$ConnectionLost : org/meshtastic/mqtt/MqttException {
+	public fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class org/meshtastic/mqtt/MqttException$ConnectionRejected : org/meshtastic/mqtt/MqttException {
+	public fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;Ljava/lang/String;)V
+	public synthetic fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getServerReference ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/MqttException$ProtocolError : org/meshtastic/mqtt/MqttException {
+	public fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 }
 
 public final class org/meshtastic/mqtt/MqttLogLevel : java/lang/Enum {

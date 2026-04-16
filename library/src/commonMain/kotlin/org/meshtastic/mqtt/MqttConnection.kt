@@ -19,6 +19,7 @@ package org.meshtastic.mqtt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -67,30 +68,8 @@ import kotlin.time.TimeSource
 public data class AuthChallenge(
     val reasonCode: ReasonCode,
     val authenticationMethod: String?,
-    val authenticationData: ByteArray?,
-) {
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is AuthChallenge) return false
-        return reasonCode == other.reasonCode &&
-            authenticationMethod == other.authenticationMethod &&
-            authenticationData.contentEqualsNullable(other.authenticationData)
-    }
-
-    override fun hashCode(): Int {
-        var result = reasonCode.hashCode()
-        result = 31 * result + (authenticationMethod?.hashCode() ?: 0)
-        result = 31 * result + (authenticationData?.contentHashCode() ?: 0)
-        return result
-    }
-}
-
-private fun ByteArray?.contentEqualsNullable(other: ByteArray?): Boolean =
-    when {
-        this === other -> true
-        this == null || other == null -> false
-        else -> this.contentEquals(other)
-    }
+    val authenticationData: ByteString?,
+)
 
 /**
  * Internal connection manager implementing the MQTT 5.0 client state machine.
@@ -122,12 +101,20 @@ internal class MqttConnection(
     /** Observable connection state. */
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-    private val _incomingMessages = MutableSharedFlow<MqttMessage>(extraBufferCapacity = INCOMING_BUFFER_CAPACITY)
+    private val _incomingMessages =
+        MutableSharedFlow<MqttMessage>(
+            extraBufferCapacity = INCOMING_BUFFER_CAPACITY,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
 
     /** Flow of incoming PUBLISH messages received from the broker. */
     val incomingMessages: SharedFlow<MqttMessage> = _incomingMessages.asSharedFlow()
 
-    private val _authChallenges = MutableSharedFlow<AuthChallenge>(extraBufferCapacity = AUTH_BUFFER_CAPACITY)
+    private val _authChallenges =
+        MutableSharedFlow<AuthChallenge>(
+            extraBufferCapacity = AUTH_BUFFER_CAPACITY,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
 
     /** Flow of authentication challenges from the broker during enhanced auth (§4.12). */
     val authChallenges: SharedFlow<AuthChallenge> = _authChallenges.asSharedFlow()
@@ -168,7 +155,11 @@ internal class MqttConnection(
     private var serverSubscriptionIdentifiersAvailable: Boolean = true
     private var serverMaximumPacketSize: Long? = null
 
-    private val _serverRedirect = MutableSharedFlow<ServerRedirect>(extraBufferCapacity = 1)
+    private val _serverRedirect =
+        MutableSharedFlow<ServerRedirect>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
 
     /** Emitted when the broker sends a DISCONNECT with server redirect reason code (§4.13). */
     val serverRedirect: SharedFlow<ServerRedirect> = _serverRedirect.asSharedFlow()
@@ -277,7 +268,7 @@ internal class MqttConnection(
                         AuthChallenge(
                             reasonCode = response.reasonCode,
                             authenticationMethod = response.properties.authenticationMethod,
-                            authenticationData = response.properties.authenticationData,
+                            authenticationData = response.properties.authenticationData?.let { ByteString(it) },
                         ),
                     )
                     // Application must call sendAuthResponse() to continue the handshake
@@ -1061,7 +1052,7 @@ internal class MqttConnection(
             AuthChallenge(
                 reasonCode = packet.reasonCode,
                 authenticationMethod = packet.properties.authenticationMethod,
-                authenticationData = packet.properties.authenticationData,
+                authenticationData = packet.properties.authenticationData?.let { ByteString(it) },
             ),
         )
     }
@@ -1089,7 +1080,10 @@ internal class MqttConnection(
 }
 
 /**
- * Exception thrown when an MQTT connection fails.
+ * Internal connection exception — wraps [MqttException.ConnectionRejected] for internal use.
+ *
+ * This is the primary exception type thrown within the connection layer.
+ * [MqttClient] catches it and re-throws the appropriate public [MqttException] subtype.
  *
  * @property reasonCode The MQTT 5.0 reason code from the broker.
  * @property serverReference Server reference from CONNACK/DISCONNECT for redirect handling (§4.13).

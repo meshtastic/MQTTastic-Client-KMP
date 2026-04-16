@@ -502,10 +502,9 @@ class AdvancedFeaturesTest {
             assertEquals(1, receivedChallenges.size)
             assertEquals(ReasonCode.CONTINUE_AUTHENTICATION, receivedChallenges[0].reasonCode)
             assertEquals("SCRAM-SHA-256", receivedChallenges[0].authenticationMethod)
-            assertTrue(
-                receivedChallenges[0].authenticationData?.contentEquals(
-                    byteArrayOf(0xAA.toByte(), 0xBB.toByte()),
-                ) == true,
+            assertEquals(
+                ByteString(byteArrayOf(0xAA.toByte(), 0xBB.toByte())),
+                receivedChallenges[0].authenticationData,
             )
 
             job.cancel()

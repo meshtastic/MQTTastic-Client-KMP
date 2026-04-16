@@ -55,6 +55,10 @@ public data class MqttMessage(
     val retain: Boolean = false,
     val properties: PublishProperties = PublishProperties(),
 ) {
+    init {
+        require(topic.isNotEmpty()) { "Topic must not be empty (§4.7)" }
+    }
+
     /**
      * Convenience constructor accepting raw bytes.
      *

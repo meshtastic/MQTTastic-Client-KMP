@@ -21,6 +21,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -270,7 +271,11 @@ public class MqttClient
          */
         public val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
-        private val _messages = MutableSharedFlow<MqttMessage>(extraBufferCapacity = MESSAGE_BUFFER_CAPACITY)
+        private val _messages =
+            MutableSharedFlow<MqttMessage>(
+                extraBufferCapacity = MESSAGE_BUFFER_CAPACITY,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST,
+            )
 
         /**
          * Flow of incoming MQTT messages from subscribed topics.
@@ -284,7 +289,11 @@ public class MqttClient
          */
         public val messages: SharedFlow<MqttMessage> = _messages.asSharedFlow()
 
-        private val _authChallenges = MutableSharedFlow<AuthChallenge>(extraBufferCapacity = AUTH_BUFFER_CAPACITY)
+        private val _authChallenges =
+            MutableSharedFlow<AuthChallenge>(
+                extraBufferCapacity = AUTH_BUFFER_CAPACITY,
+                onBufferOverflow = BufferOverflow.DROP_OLDEST,
+            )
 
         /**
          * Flow of authentication challenges from the broker during enhanced auth (§4.12).
@@ -326,29 +335,38 @@ public class MqttClient
          * the redirect up to [MAX_REDIRECTS] times (§4.13).
          *
          * @param endpoint Broker endpoint (TCP or WebSocket).
-         * @throws MqttConnectionException if the broker rejects the connection.
+         * @throws MqttException.ConnectionRejected if the broker rejects the connection.
          */
-        @Throws(MqttConnectionException::class, kotlin.coroutines.cancellation.CancellationException::class)
+        @Throws(MqttException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun connect(endpoint: MqttEndpoint) {
-            connectionMutex.withLock {
-                // Close any existing connection to prevent resource leaks
-                connection?.let { existing ->
-                    log.warn(TAG) { "Already connected — closing existing connection before reconnecting" }
-                    try {
-                        existing.disconnect()
-                    } catch (
-                        @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
-                    ) {
-                        // Best-effort close of old connection
+            try {
+                connectionMutex.withLock {
+                    // Close any existing connection to prevent resource leaks
+                    connection?.let { existing ->
+                        log.warn(TAG) { "Already connected — closing existing connection before reconnecting" }
+                        try {
+                            existing.disconnect()
+                        } catch (
+                            @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                        ) {
+                            // Best-effort close of old connection
+                        }
+                        stopForwardJobs()
+                        connection = null
                     }
-                    stopForwardJobs()
-                    connection = null
-                }
 
-                log.info(TAG) { "Connecting to $endpoint" }
-                intentionalDisconnect = false
-                currentEndpoint = endpoint
-                connectWithRedirect(endpoint, redirectsRemaining = MAX_REDIRECTS)
+                    log.info(TAG) { "Connecting to $endpoint" }
+                    intentionalDisconnect = false
+                    currentEndpoint = endpoint
+                    connectWithRedirect(endpoint, redirectsRemaining = MAX_REDIRECTS)
+                }
+            } catch (e: MqttConnectionException) {
+                throw MqttException.ConnectionRejected(
+                    reasonCode = e.reasonCode,
+                    message = e.message ?: "Connection failed",
+                    cause = e.cause,
+                    serverReference = e.serverReference,
+                )
             }
         }
 
@@ -381,18 +399,18 @@ public class MqttClient
          * @param message The message to publish, including topic, payload, QoS, and properties.
          * @throws IllegalStateException if not connected.
          * @throws IllegalArgumentException if the topic name is invalid.
-         * @throws MqttConnectionException on publish failure (QoS 1/2 only).
+         * @throws MqttException.ConnectionLost on publish failure (QoS 1/2 only).
          */
         @Throws(
             IllegalStateException::class,
             IllegalArgumentException::class,
-            MqttConnectionException::class,
+            MqttException::class,
             kotlin.coroutines.cancellation.CancellationException::class,
         )
         public suspend fun publish(message: MqttMessage) {
             TopicValidator.validateTopicName(message.topic)
             log.debug(TAG) { "Publishing to '${message.topic}' qos=${message.qos} retain=${message.retain}" }
-            requireConnection().publish(message)
+            wrapConnectionErrors { requireConnection().publish(message) }
         }
 
         /**
@@ -429,7 +447,7 @@ public class MqttClient
         @Throws(
             IllegalStateException::class,
             IllegalArgumentException::class,
-            MqttConnectionException::class,
+            MqttException::class,
             kotlin.coroutines.cancellation.CancellationException::class,
         )
         public suspend fun publish(
@@ -466,7 +484,7 @@ public class MqttClient
         @Throws(
             IllegalArgumentException::class,
             IllegalStateException::class,
-            MqttConnectionException::class,
+            MqttException::class,
             kotlin.coroutines.cancellation.CancellationException::class,
         )
         public suspend fun subscribe(
@@ -486,8 +504,10 @@ public class MqttClient
                     retainHandling = retainHandling,
                 )
             log.debug(TAG) { "Subscribing to '$topicFilter' qos=$qos" }
-            val subAck = requireConnection().subscribe(listOf(sub), MqttProperties.EMPTY)
-            recordSuccessfulSubscriptions(listOf(sub), subAck)
+            wrapConnectionErrors {
+                val subAck = requireConnection().subscribe(listOf(sub), MqttProperties.EMPTY)
+                recordSuccessfulSubscriptions(listOf(sub), subAck)
+            }
             log.info(TAG) { "Subscribed to '$topicFilter'" }
         }
 
@@ -503,7 +523,7 @@ public class MqttClient
         @Throws(
             IllegalArgumentException::class,
             IllegalStateException::class,
-            MqttConnectionException::class,
+            MqttException::class,
             kotlin.coroutines.cancellation.CancellationException::class,
         )
         public suspend fun subscribe(topicFilters: Map<String, QoS>) {
@@ -513,8 +533,10 @@ public class MqttClient
                     Subscription(topicFilter = filter, maxQos = qos)
                 }
             log.debug(TAG) { "Subscribing to ${topicFilters.keys}" }
-            val subAck = requireConnection().subscribe(subscriptions, MqttProperties.EMPTY)
-            recordSuccessfulSubscriptions(subscriptions, subAck)
+            wrapConnectionErrors {
+                val subAck = requireConnection().subscribe(subscriptions, MqttProperties.EMPTY)
+                recordSuccessfulSubscriptions(subscriptions, subAck)
+            }
             log.info(TAG) { "Subscribed to ${topicFilters.keys}" }
         }
 
@@ -524,10 +546,12 @@ public class MqttClient
          * @param topicFilters The topic filters to unsubscribe from.
          * @throws IllegalStateException if not connected.
          */
-        @Throws(IllegalStateException::class, MqttConnectionException::class, kotlin.coroutines.cancellation.CancellationException::class)
+        @Throws(IllegalStateException::class, MqttException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun unsubscribe(vararg topicFilters: String) {
             log.debug(TAG) { "Unsubscribing from ${topicFilters.toList()}" }
-            requireConnection().unsubscribe(topicFilters.toList(), MqttProperties.EMPTY)
+            wrapConnectionErrors {
+                requireConnection().unsubscribe(topicFilters.toList(), MqttProperties.EMPTY)
+            }
             subscriptionsMutex.withLock {
                 topicFilters.forEach { activeSubscriptions.remove(it) }
             }
@@ -542,9 +566,9 @@ public class MqttClient
          * @param data The authentication response data to send.
          * @throws IllegalStateException if not connected.
          */
-        @Throws(IllegalStateException::class, MqttConnectionException::class, kotlin.coroutines.cancellation.CancellationException::class)
-        public suspend fun sendAuthResponse(data: ByteArray) {
-            requireConnection().sendAuthResponse(data)
+        @Throws(IllegalStateException::class, MqttException::class, kotlin.coroutines.cancellation.CancellationException::class)
+        public suspend fun sendAuthResponse(data: ByteString) {
+            wrapConnectionErrors { requireConnection().sendAuthResponse(data.toByteArray()) }
         }
 
         /**
@@ -785,6 +809,19 @@ public class MqttClient
         }
 
         private fun requireConnection(): MqttConnection = connection ?: throw IllegalStateException("Not connected")
+
+        /** Wrap internal [MqttConnectionException] into the public [MqttException] hierarchy. */
+        private suspend inline fun wrapConnectionErrors(block: () -> Unit) {
+            try {
+                block()
+            } catch (e: MqttConnectionException) {
+                throw MqttException.ConnectionLost(
+                    reasonCode = e.reasonCode,
+                    message = e.message ?: "Connection lost",
+                    cause = e.cause,
+                )
+            }
+        }
 
         /**
          * Handle a server redirect received via DISCONNECT (§4.13).

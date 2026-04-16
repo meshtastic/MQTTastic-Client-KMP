@@ -33,13 +33,9 @@ version = "0.1.0"
 
 kotlin {
     applyDefaultHierarchyTemplate()
+    jvmToolchain(11)
 
-    // Compile to JVM 11 bytecode for maximum compatibility
-    jvm {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
-        }
-    }
+    jvm()
 
     androidLibrary {
         namespace = "org.meshtastic.mqtt"
