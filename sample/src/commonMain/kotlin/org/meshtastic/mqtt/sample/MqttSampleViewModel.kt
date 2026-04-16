@@ -183,6 +183,10 @@ class MqttSampleViewModel {
 
     fun subscribe() {
         val s = _state.value
+        if (s.subscribeTopic.isBlank()) {
+            _state.update { it.copy(error = "Topic filter cannot be empty") }
+            return
+        }
         scope.launch {
             try {
                 client?.subscribe(s.subscribeTopic, s.subscribeQos)
@@ -210,6 +214,10 @@ class MqttSampleViewModel {
 
     fun publish() {
         val s = _state.value
+        if (s.publishTopic.isBlank()) {
+            _state.update { it.copy(error = "Topic cannot be empty") }
+            return
+        }
         scope.launch {
             try {
                 client?.publish(
@@ -225,14 +233,11 @@ class MqttSampleViewModel {
     }
 
     fun dispose() {
-        scope.launch {
-            try {
-                client?.close()
-            } catch (_: Exception) {
-                // Best-effort cleanup
-            }
-            client = null
-        }
+        connectionStateJob?.cancel()
+        messagesJob?.cancel()
+        // Scope cancellation propagates to the client's internal coroutines,
+        // which closes the underlying transport connection.
         scope.cancel()
+        client = null
     }
 }
