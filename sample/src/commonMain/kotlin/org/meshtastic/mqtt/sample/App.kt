@@ -780,7 +780,7 @@ private fun MessagesFeed(
                         ) {
                             items(
                                 items = messages,
-                                key = { "${it.topic}:${it.payload.hashCode()}" },
+                                key = { it.id },
                             ) { msg ->
                                 MessageRow(msg, showRawPayload)
                             }

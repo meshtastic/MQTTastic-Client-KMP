@@ -38,6 +38,7 @@ import org.meshtastic.proto.ServiceEnvelope
 
 /** A received message formatted for display. */
 data class DisplayMessage(
+    val id: Long,
     val topic: String,
     val payload: String,
     val rawUtf8: String,
@@ -96,6 +97,7 @@ class MqttSampleViewModel {
     private var client: MqttClient? = null
     private var connectionStateJob: Job? = null
     private var messagesJob: Job? = null
+    private var nextMessageId = 0L
 
     // -- Text-field / toggle updaters --
 
@@ -286,6 +288,7 @@ class MqttSampleViewModel {
             null
         }
         return DisplayMessage(
+            id = nextMessageId++,
             topic = msg.topic,
             payload = meshtastic?.let { formatMeshtastic(it) } ?: rawUtf8,
             rawUtf8 = rawUtf8,
