@@ -933,6 +933,123 @@ class MqttConnectionTest {
             advanceUntilIdle()
         }
 
+    // --- QoS 2 inbound ordering (§4.3.3) ---
+
+    @Test
+    fun qos2InboundDeliveredOnPubRelInOrder() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            val received = mutableListOf<MqttMessage>()
+            val collectJob =
+                launch {
+                    connection.incomingMessages.collect { received.add(it) }
+                }
+            advanceUntilIdle()
+
+            // Send two QoS 2 PUBLISH packets with different packet IDs
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "order/test",
+                    payload = "first".encodeToByteArray(),
+                    qos = QoS.EXACTLY_ONCE,
+                    packetIdentifier = 1,
+                    properties = MqttProperties.EMPTY,
+                ),
+            )
+            transport.enqueuePacket(
+                Publish(
+                    topicName = "order/test",
+                    payload = "second".encodeToByteArray(),
+                    qos = QoS.EXACTLY_ONCE,
+                    packetIdentifier = 2,
+                    properties = MqttProperties.EMPTY,
+                ),
+            )
+            advanceUntilIdle()
+
+            // Neither should be delivered yet — both pending PUBREL
+            assertEquals(0, received.size, "No messages before PUBREL")
+
+            // Release second first (out of order)
+            transport.enqueuePacket(PubRel(packetIdentifier = 2))
+            advanceUntilIdle()
+            assertEquals(1, received.size)
+            assertEquals("second", received[0].payload.toByteArray().decodeToString())
+
+            // Release first
+            transport.enqueuePacket(PubRel(packetIdentifier = 1))
+            advanceUntilIdle()
+            assertEquals(2, received.size)
+            assertEquals("first", received[1].payload.toByteArray().decodeToString())
+
+            collectJob.cancel()
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    // --- Connect timeout ---
+
+    @Test
+    fun connectTimesOutWithoutConnAck() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            // Don't enqueue a CONNACK — the connection should time out
+            val exception =
+                assertFailsWith<MqttConnectionException> {
+                    connection.connect(endpoint)
+                }
+
+            assertTrue(
+                exception.message?.contains("timed out") == true,
+                "Expected timeout message, got: ${exception.message}",
+            )
+            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+        }
+
+    // --- Stray PUBREL (session resumption) ---
+
+    @Test
+    fun strayPubRelSendsPubCompWithoutEmitting() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            val received = mutableListOf<MqttMessage>()
+            val collectJob =
+                launch {
+                    connection.incomingMessages.collect { received.add(it) }
+                }
+            advanceUntilIdle()
+
+            // Send PUBREL for unknown packet ID (session resumption scenario)
+            transport.enqueuePacket(PubRel(packetIdentifier = 99))
+            advanceUntilIdle()
+
+            // Should NOT emit any message
+            assertEquals(0, received.size, "Stray PUBREL should not emit a message")
+
+            // Should still send PUBCOMP
+            val pubComps = transport.decodeSentPackets().filterIsInstance<PubComp>()
+            assertEquals(1, pubComps.size, "PUBCOMP should be sent for stray PUBREL")
+            assertEquals(99, pubComps.first().packetIdentifier)
+
+            collectJob.cancel()
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
     companion object {
         /** Timeout for waiting on async operations in tests. */
         private const val TIMEOUT_MS = 5_000L
