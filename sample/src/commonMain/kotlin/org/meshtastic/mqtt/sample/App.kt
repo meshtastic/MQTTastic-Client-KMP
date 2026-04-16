@@ -18,11 +18,7 @@
  */
 package org.meshtastic.mqtt.sample
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -72,9 +68,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -133,7 +127,7 @@ private val MeshDarkColorScheme = darkColorScheme(
 
 private val TwoPaneBreakpoint = 840.dp
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App() {
     val viewModel = remember { MqttSampleViewModel() }
@@ -141,7 +135,6 @@ fun App() {
     val state by viewModel.state.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Show errors via Snackbar
     LaunchedEffect(state.error) {
         state.error?.let {
             snackbarHostState.showSnackbar(it)
@@ -155,21 +148,16 @@ fun App() {
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "⛰",
-                                fontSize = 20.sp,
-                            )
+                            Text("⛰", fontSize = 20.sp)
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                text = "MQTTtastic",
+                                "MQTTtastic",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                     },
-                    actions = {
-                        ConnectionStatusChip(state.connectionState)
-                    },
+                    actions = { ConnectionStatusChip(state.connectionState) },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                     ),
@@ -188,9 +176,7 @@ fun App() {
             containerColor = MaterialTheme.colorScheme.background,
         ) { innerPadding ->
             BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize().padding(innerPadding),
             ) {
                 if (maxWidth >= TwoPaneBreakpoint) {
                     TwoPaneLayout(state, viewModel)
@@ -210,7 +196,6 @@ private fun TwoPaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Left pane — controls
         Column(
             modifier = Modifier
                 .weight(0.4f)
@@ -220,7 +205,6 @@ private fun TwoPaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel
         ) {
             ControlsContent(state, viewModel)
         }
-        // Right pane — messages (full height)
         MessagesFeed(
             messages = state.receivedMessages,
             onClear = viewModel::clearMessages,
@@ -231,40 +215,27 @@ private fun TwoPaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel
 
 @Composable
 private fun SinglePaneLayout(state: MqttSampleState, viewModel: MqttSampleViewModel) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 12.dp),
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        // Collapsible controls at top (compact)
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .weight(1f, fill = false),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Spacer(Modifier.height(8.dp))
-            ControlsContent(state, viewModel, defaultExpanded = false)
-            Spacer(Modifier.height(4.dp))
+        item { Spacer(Modifier.height(4.dp)) }
+        item { ControlsContent(state, viewModel) }
+        item {
+            MessagesFeed(
+                messages = state.receivedMessages,
+                onClear = viewModel::clearMessages,
+                modifier = Modifier.fillMaxWidth().height(500.dp),
+            )
         }
-        // Messages feed takes remaining space
-        MessagesFeed(
-            messages = state.receivedMessages,
-            onClear = viewModel::clearMessages,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-        )
+        item { Spacer(Modifier.height(12.dp)) }
     }
 }
 
-// -- Controls Content --
+// -- Controls --
 
 @Composable
-private fun ControlsContent(
-    state: MqttSampleState,
-    viewModel: MqttSampleViewModel,
-    defaultExpanded: Boolean = true,
-) {
+private fun ControlsContent(state: MqttSampleState, viewModel: MqttSampleViewModel) {
     ConnectionSection(
         brokerUri = state.brokerUri,
         clientId = state.clientId,
@@ -277,7 +248,6 @@ private fun ControlsContent(
         onPasswordChange = viewModel::updatePassword,
         onConnect = viewModel::connect,
         onDisconnect = viewModel::disconnect,
-        defaultExpanded = defaultExpanded,
     )
 
     SubscribeSection(
@@ -289,7 +259,6 @@ private fun ControlsContent(
         onQosChange = viewModel::updateSubscribeQos,
         onSubscribe = viewModel::subscribe,
         onUnsubscribe = viewModel::unsubscribe,
-        defaultExpanded = defaultExpanded,
     )
 
     PublishSection(
@@ -303,11 +272,10 @@ private fun ControlsContent(
         onQosChange = viewModel::updatePublishQos,
         onRetainChange = viewModel::updatePublishRetain,
         onPublish = viewModel::publish,
-        defaultExpanded = defaultExpanded,
     )
 }
 
-// -- Connection Status Chip (in top bar) --
+// -- Connection Status Chip --
 
 @Composable
 private fun ConnectionStatusChip(connectionState: ConnectionState) {
@@ -328,10 +296,7 @@ private fun ConnectionStatusChip(connectionState: ConnectionState) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Box(
-                modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
-                    .background(color),
+                modifier = Modifier.size(8.dp).clip(CircleShape).background(color),
             )
             Text(
                 text = label,
@@ -343,17 +308,14 @@ private fun ConnectionStatusChip(connectionState: ConnectionState) {
     }
 }
 
-// -- Collapsible Section Card --
+// -- Section Card wrapper --
 
 @Composable
 private fun SectionCard(
     title: String,
-    defaultExpanded: Boolean = true,
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(defaultExpanded) }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -363,39 +325,20 @@ private fun SectionCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = if (expanded) "▾" else "▸",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
                 trailing?.invoke()
             }
-            AnimatedVisibility(
-                visible = expanded,
-                enter = expandVertically(),
-                exit = shrinkVertically(),
-            ) {
-                Column(modifier = Modifier.padding(top = 12.dp)) {
-                    content()
-                }
-            }
+            Spacer(Modifier.height(12.dp))
+            content()
         }
     }
 }
@@ -415,16 +358,12 @@ private fun ConnectionSection(
     onPasswordChange: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    defaultExpanded: Boolean,
 ) {
     val isConnected = connectionState == ConnectionState.CONNECTED
     val isConnecting = connectionState == ConnectionState.CONNECTING ||
         connectionState == ConnectionState.RECONNECTING
 
-    SectionCard(
-        title = "Connection",
-        defaultExpanded = defaultExpanded,
-    ) {
+    SectionCard(title = "Connection") {
         OutlinedTextField(
             value = brokerUri,
             onValueChange = onBrokerUriChange,
@@ -432,6 +371,7 @@ private fun ConnectionSection(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
+            enabled = !isConnected && !isConnecting,
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
@@ -441,6 +381,7 @@ private fun ConnectionSection(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
+            enabled = !isConnected && !isConnecting,
         )
         Spacer(Modifier.height(8.dp))
         Row(
@@ -454,6 +395,7 @@ private fun ConnectionSection(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp),
+                enabled = !isConnected && !isConnecting,
             )
             OutlinedTextField(
                 value = password,
@@ -462,6 +404,7 @@ private fun ConnectionSection(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(14.dp),
+                enabled = !isConnected && !isConnecting,
             )
         }
         Spacer(Modifier.height(12.dp))
@@ -485,7 +428,7 @@ private fun ConnectionSection(
                 ),
             ) {
                 Text(
-                    text = if (isConnecting) "Connecting…" else "Connect",
+                    if (isConnecting) "Connecting…" else "Connect",
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -506,11 +449,9 @@ private fun SubscribeSection(
     onQosChange: (QoS) -> Unit,
     onSubscribe: () -> Unit,
     onUnsubscribe: (String) -> Unit,
-    defaultExpanded: Boolean,
 ) {
     SectionCard(
         title = "Subscribe",
-        defaultExpanded = defaultExpanded,
         trailing = {
             if (activeSubscriptions.isNotEmpty()) {
                 Surface(
@@ -613,9 +554,8 @@ private fun PublishSection(
     onQosChange: (QoS) -> Unit,
     onRetainChange: (Boolean) -> Unit,
     onPublish: () -> Unit,
-    defaultExpanded: Boolean,
 ) {
-    SectionCard(title = "Publish", defaultExpanded = defaultExpanded) {
+    SectionCard(title = "Publish") {
         OutlinedTextField(
             value = topic,
             onValueChange = onTopicChange,
@@ -685,7 +625,6 @@ private fun MessagesFeed(
         ),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -735,27 +674,22 @@ private fun MessagesFeed(
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "📡",
-                            fontSize = 32.sp,
-                        )
+                        Text("📡", fontSize = 32.sp)
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            text = "No messages yet",
+                            "No messages yet",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = "Connect and subscribe to start receiving",
+                            "Connect and subscribe to start receiving",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                         )
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                ) {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(messages) { msg ->
                         MessageRow(msg)
                     }
@@ -773,16 +707,12 @@ private fun MessageRow(msg: DisplayMessage) {
     val accentColor = meshInfo?.let { portnumColor(it) }
         ?: MaterialTheme.colorScheme.outline
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 0.dp, end = 12.dp, top = 0.dp, bottom = 0.dp),
-    ) {
-        // Color accent bar on the left edge
+    Row(modifier = Modifier.fillMaxWidth()) {
+        // Left accent bar
         Box(
             modifier = Modifier
                 .width(3.dp)
-                .height(64.dp)
+                .height(60.dp)
                 .background(accentColor),
         )
 
@@ -792,7 +722,6 @@ private fun MessageRow(msg: DisplayMessage) {
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             if (meshInfo != null) {
-                // -- Meshtastic decoded --
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -807,21 +736,14 @@ private fun MessageRow(msg: DisplayMessage) {
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (meshInfo.isEncrypted) {
-                            MeshBadge(
-                                text = "ENCRYPTED",
-                                color = MaterialTheme.colorScheme.outline,
-                            )
+                            MeshBadge("ENC", MaterialTheme.colorScheme.outline)
                         }
                         meshInfo.portnum?.let { port ->
-                            MeshBadge(
-                                text = port.replace("_APP", ""),
-                                color = accentColor,
-                            )
+                            MeshBadge(port.replace("_APP", ""), accentColor)
                         }
                     }
                 }
 
-                // Payload text for decoded messages
                 if (meshInfo.payloadText != null) {
                     Text(
                         text = meshInfo.payloadText,
@@ -833,7 +755,6 @@ private fun MessageRow(msg: DisplayMessage) {
                     )
                 }
 
-                // Metadata row
                 Text(
                     text = buildString {
                         append("via ${meshInfo.gatewayId}")
@@ -842,14 +763,13 @@ private fun MessageRow(msg: DisplayMessage) {
                         if (meshInfo.rxSnr != 0f) append(" · ${meshInfo.rxSnr} SNR")
                     },
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
+                    modifier = Modifier.padding(top = 1.dp),
                     fontSize = 10.sp,
                 )
             } else {
-                // -- Generic MQTT --
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -864,10 +784,8 @@ private fun MessageRow(msg: DisplayMessage) {
                         overflow = TextOverflow.Ellipsis,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        MeshBadge(text = "QoS ${msg.qos.ordinal}")
-                        if (msg.retained) {
-                            MeshBadge(text = "RET", color = MeshWarning)
-                        }
+                        MeshBadge("QoS ${msg.qos.ordinal}")
+                        if (msg.retained) MeshBadge("RET", MeshWarning)
                     }
                 }
                 Text(
@@ -915,16 +833,16 @@ private fun MeshBadge(
 private fun portnumColor(info: MeshtasticInfo): Color {
     if (info.isEncrypted) return Color(0xFF6B7280)
     return when (info.portnum) {
-        "TEXT_MESSAGE" -> Color(0xFF60A5FA)        // blue
-        "POSITION" -> Color(0xFF34D399)            // green
-        "NODEINFO" -> Color(0xFFA78BFA)            // purple
-        "TELEMETRY" -> Color(0xFFFBBF24)           // amber
-        "ROUTING" -> Color(0xFF9CA3AF)             // gray
-        "ADMIN" -> Color(0xFFF87171)               // red
-        "TRACEROUTE" -> Color(0xFF2DD4BF)          // teal
-        "NEIGHBORINFO" -> Color(0xFFC084FC)        // light purple
-        "MAP_REPORT" -> Color(0xFF4ADE80)          // lime
-        "STORE_FORWARD" -> Color(0xFFFB923C)       // orange
-        else -> Color(0xFF9CA3AF)                  // gray fallback
+        "TEXT_MESSAGE" -> Color(0xFF60A5FA)
+        "POSITION" -> Color(0xFF34D399)
+        "NODEINFO" -> Color(0xFFA78BFA)
+        "TELEMETRY" -> Color(0xFFFBBF24)
+        "ROUTING" -> Color(0xFF9CA3AF)
+        "ADMIN" -> Color(0xFFF87171)
+        "TRACEROUTE" -> Color(0xFF2DD4BF)
+        "NEIGHBORINFO" -> Color(0xFFC084FC)
+        "MAP_REPORT" -> Color(0xFF4ADE80)
+        "STORE_FORWARD" -> Color(0xFFFB923C)
+        else -> Color(0xFF9CA3AF)
     }
 }

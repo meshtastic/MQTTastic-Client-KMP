@@ -149,6 +149,7 @@ class MqttSampleViewModel {
 
     fun connect() {
         val s = _state.value
+        if (s.connectionState != ConnectionState.DISCONNECTED) return
         scope.launch {
             try {
                 val endpoint = MqttEndpoint.parse(s.brokerUri)
