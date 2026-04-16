@@ -176,6 +176,14 @@ internal class MqttConnection(
      */
     suspend fun connect(endpoint: MqttEndpoint): ConnAck {
         _connectionState.value = ConnectionState.CONNECTING
+
+        if (!config.cleanStart) {
+            log.warn(TAG) {
+                "cleanStart=false: client-side session persistence is not yet implemented. " +
+                    "In-flight QoS 1/2 messages may be lost across reconnects."
+            }
+        }
+
         log.debug(TAG) { "Establishing transport connection to $endpoint" }
 
         try {
@@ -233,6 +241,8 @@ internal class MqttConnection(
             return connAck
         } catch (e: MqttConnectionException) {
             throw e
+        } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            throw e // Preserve structured concurrency — do not wrap cancellation
         } catch (
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {
@@ -459,7 +469,12 @@ internal class MqttConnection(
                 ),
             )
 
-            val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as SubAck
+            val ack =
+                withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as? SubAck
+                    ?: throw MqttConnectionException(
+                        ReasonCode.PROTOCOL_ERROR,
+                        "Expected SUBACK for packetId=$packetId",
+                    )
             log.debug(TAG) { "Received SUBACK packetId=$packetId reasonCodes=${ack.reasonCodes}" }
             return ack
         } finally {
@@ -495,7 +510,12 @@ internal class MqttConnection(
                 ),
             )
 
-            val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as UnsubAck
+            val ack =
+                withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as? UnsubAck
+                    ?: throw MqttConnectionException(
+                        ReasonCode.PROTOCOL_ERROR,
+                        "Expected UNSUBACK for packetId=$packetId",
+                    )
             log.debug(TAG) { "Received UNSUBACK packetId=$packetId" }
             return ack
         } finally {
@@ -593,7 +613,12 @@ internal class MqttConnection(
                     ),
                 )
 
-                val ack = withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as PubAck
+                val ack =
+                    withTimeout(ACK_TIMEOUT_MS) { deferred.await() } as? PubAck
+                        ?: throw MqttConnectionException(
+                            ReasonCode.PROTOCOL_ERROR,
+                            "Expected PUBACK for packetId=$packetId",
+                        )
                 log.debug(TAG) { "Received PUBACK packetId=$packetId reasonCode=${ack.reasonCode}" }
                 return ack.reasonCode
             } finally {
@@ -631,7 +656,12 @@ internal class MqttConnection(
                 )
 
                 // Step 1: Wait for PUBREC
-                val pubRec = withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as PubRec
+                val pubRec =
+                    withTimeout(ACK_TIMEOUT_MS) { pubRecDeferred.await() } as? PubRec
+                        ?: throw MqttConnectionException(
+                            ReasonCode.PROTOCOL_ERROR,
+                            "Expected PUBREC for packetId=$packetId",
+                        )
                 log.debug(TAG) { "QoS 2 received PUBREC packetId=$packetId reasonCode=${pubRec.reasonCode}" }
                 removePendingAck(packetId)
 
@@ -647,7 +677,12 @@ internal class MqttConnection(
                 log.debug(TAG) { "QoS 2 sending PUBREL packetId=$packetId" }
                 sendPacket(PubRel(packetIdentifier = packetId))
 
-                val pubComp = withTimeout(ACK_TIMEOUT_MS) { pubCompDeferred.await() } as PubComp
+                val pubComp =
+                    withTimeout(ACK_TIMEOUT_MS) { pubCompDeferred.await() } as? PubComp
+                        ?: throw MqttConnectionException(
+                            ReasonCode.PROTOCOL_ERROR,
+                            "Expected PUBCOMP for packetId=$packetId",
+                        )
                 log.debug(TAG) { "QoS 2 received PUBCOMP packetId=$packetId reasonCode=${pubComp.reasonCode}" }
                 return pubComp.reasonCode
             } finally {
@@ -678,7 +713,7 @@ internal class MqttConnection(
                                     "Received packet (${bytes.size} bytes) exceeds " +
                                         "Maximum Packet Size ($maxSize) — disconnecting"
                                 }
-                                handleFatalError()
+                                handleFatalError(ReasonCode.PACKET_TOO_LARGE)
                                 return@launch
                             }
                         }
@@ -704,9 +739,19 @@ internal class MqttConnection(
     }
 
     /** Centralized fatal error handler: tear down resources and fail all pending waiters. */
-    private suspend fun handleFatalError() {
+    private suspend fun handleFatalError(reasonCode: ReasonCode = ReasonCode.UNSPECIFIED_ERROR) {
         log.error(TAG) { "Fatal error — tearing down connection" }
         stopBackgroundJobs()
+        try {
+            // §4.13: Send DISCONNECT with appropriate reason code before closing
+            if (transport.isConnected) {
+                sendPacket(Disconnect(reasonCode = reasonCode))
+            }
+        } catch (
+            @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+        ) {
+            // Best-effort DISCONNECT — transport may already be broken
+        }
         try {
             transport.close()
         } catch (
@@ -793,12 +838,12 @@ internal class MqttConnection(
                 log.error(TAG) {
                     "Protocol violation: unexpected ${packet.packetType} from broker — disconnecting"
                 }
-                handleFatalError()
+                handleFatalError(ReasonCode.PROTOCOL_ERROR)
             }
 
             is PingReq -> {
                 log.error(TAG) { "Protocol violation: received PINGREQ from broker — disconnecting" }
-                handleFatalError()
+                handleFatalError(ReasonCode.PROTOCOL_ERROR)
             }
 
             is PingResp -> {

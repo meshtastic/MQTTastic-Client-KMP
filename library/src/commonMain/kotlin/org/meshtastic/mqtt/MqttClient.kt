@@ -254,6 +254,9 @@ public class MqttClient
 
         private var transportFactoryOverride: ((MqttEndpoint) -> MqttTransport)? = null
 
+        @Volatile
+        private var closed = false
+
         private val effectiveTransportFactory: (MqttEndpoint) -> MqttTransport
             get() = transportFactoryOverride ?: transportFactory
 
@@ -339,6 +342,7 @@ public class MqttClient
          */
         @Throws(MqttException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun connect(endpoint: MqttEndpoint) {
+            check(!closed) { "Client has been closed and cannot be reused" }
             try {
                 connectionMutex.withLock {
                     // Close any existing connection to prevent resource leaks
@@ -563,6 +567,10 @@ public class MqttClient
          *
          * Collect [authChallenges] to receive challenges and call this method to respond.
          *
+         * **Note:** Enhanced authentication during the CONNECT handshake (§4.12.1) is not
+         * yet supported. Auth challenges are only delivered after the connection is established.
+         * SASL-style challenge/response during CONNECT will be supported in a future release.
+         *
          * @param data The authentication response data to send.
          * @throws IllegalStateException if not connected.
          */
@@ -580,6 +588,7 @@ public class MqttClient
          */
         public suspend fun close() {
             log.info(TAG) { "Closing client" }
+            closed = true
             connectionMutex.withLock {
                 intentionalDisconnect = true
                 reconnectJob?.cancel()
@@ -808,7 +817,10 @@ public class MqttClient
             }
         }
 
-        private fun requireConnection(): MqttConnection = connection ?: throw IllegalStateException("Not connected")
+        private fun requireConnection(): MqttConnection {
+            check(!closed) { "Client has been closed and cannot be reused" }
+            return connection ?: throw IllegalStateException("Not connected")
+        }
 
         /** Wrap internal [MqttConnectionException] into the public [MqttException] hierarchy. */
         private suspend inline fun wrapConnectionErrors(block: () -> Unit) {
@@ -1014,6 +1026,9 @@ internal fun topicMatchesFilter(
     topic: String,
     filter: String,
 ): Boolean {
+    // §4.7.2: Wildcard filters must not match $-prefixed system topics
+    if (topic.startsWith('$') && (filter.startsWith('+') || filter.startsWith('#'))) return false
+
     val topicLevels = topic.split('/')
     val filterLevels = filter.split('/')
 

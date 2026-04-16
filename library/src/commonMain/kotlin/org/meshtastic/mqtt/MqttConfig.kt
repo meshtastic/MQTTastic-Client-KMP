@@ -59,6 +59,10 @@ import kotlinx.io.bytestring.ByteString
  * @property cleanStart If `true`, the broker discards any existing session state and starts
  *   fresh. If `false`, the broker resumes the previous session (identified by [clientId])
  *   including in-flight QoS 1/2 messages and active subscriptions (§3.1.2.4).
+ *   **Note:** Client-side session persistence is not yet implemented. When `cleanStart=false`,
+ *   the broker will resume session state but the client does not persist in-flight QoS 1/2
+ *   messages across reconnects. Packet IDs are preserved, but unacknowledged messages may be
+ *   lost. Full session persistence will be added in a future release.
  * @property username Optional username for simple password-based authentication (§3.1.3.5).
  * @property password Optional password for authentication, stored as an immutable [ByteString] (§3.1.3.6).
  * @property will Optional will message configuration. If set, the broker publishes this message
