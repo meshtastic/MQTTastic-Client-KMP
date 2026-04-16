@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
@@ -71,6 +72,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +85,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import org.meshtastic.mqtt.ConnectionState
 import org.meshtastic.mqtt.QoS
 
@@ -675,6 +678,7 @@ private fun MessagesFeed(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
     ) {
+        val scope = rememberCoroutineScope()
         Column(modifier = Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
@@ -757,12 +761,48 @@ private fun MessagesFeed(
                         }
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(
-                            items = messages,
-                            key = { "${it.topic}:${it.payload.hashCode()}" },
-                        ) { msg ->
-                            MessageRow(msg, showRawPayload)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        val listState = rememberLazyListState()
+                        val isAtTop by remember {
+                            derivedStateOf {
+                                listState.firstVisibleItemIndex == 0 &&
+                                    listState.firstVisibleItemScrollOffset < 50
+                            }
+                        }
+
+                        LaunchedEffect(messages.firstOrNull()) {
+                            if (isAtTop) listState.animateScrollToItem(0)
+                        }
+
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            items(
+                                items = messages,
+                                key = { "${it.topic}:${it.payload.hashCode()}" },
+                            ) { msg ->
+                                MessageRow(msg, showRawPayload)
+                            }
+                        }
+
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !isAtTop,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 12.dp),
+                        ) {
+                            FilledTonalButton(
+                                onClick = {
+                                    scope.launch { listState.animateScrollToItem(0) }
+                                },
+                                shape = MaterialTheme.shapes.large,
+                            ) {
+                                Text(
+                                    "↑ New messages",
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
                         }
                     }
                 }
