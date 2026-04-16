@@ -52,6 +52,17 @@ When filing an issue, please include:
 - Minimal reproduction steps or code snippet
 - Expected vs actual behavior
 
+## Releasing
+
+The version is tracked in **one place only**: `VERSION_NAME` in `gradle.properties`. The library coordinate (`GROUP:POM_ARTIFACT_ID:VERSION_NAME`) and the sample Android app's `versionCode`/`versionName` are both derived from it — keep them in sync by editing this single property.
+
+To cut a release:
+
+1. Bump `VERSION_NAME` in `gradle.properties` (drop the `-SNAPSHOT` suffix if any).
+2. Move the `## [Unreleased]` entries in `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading.
+3. Commit with `chore(release): x.y.z` and tag: `git tag vx.y.z && git push --follow-tags`.
+4. The `Release` workflow will publish to Maven Central, create a GitHub Release, and attach sample artifacts (`.apk`, `.deb`, `.dmg`, `.msi`, wasmJs web zip) built across a per-OS matrix.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [GNU General Public License v3.0](LICENSE).

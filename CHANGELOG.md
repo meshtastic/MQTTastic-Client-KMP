@@ -44,7 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`@Throws` annotations** on all public suspend functions for JVM/Swift interop
 - **Builder DSL** — `MqttConfig.build { clientId = "x"; keepAliveSeconds = 30 }`
 - **Spec-compliant validation** — reserved bits in CONNECT/CONNACK/SUBSCRIBE decoded packets (§3.1.2.3, §3.2.2.1, §3.8.3.1)
-- **Build tooling** — Binary Compatibility Validator, Dokka, Kover (≥80% line coverage)
+- **Build tooling** — Binary Compatibility Validator, Dokka, Kover (≥80% line coverage), [Konsist](https://docs.konsist.lemonappdev.com/) architectural tests enforcing no `java.*`/`javax.*`/`android.*`/`platform.*` imports in `commonMain` and `internal` visibility on transport and property types
+- **Single-source versioning** — `GROUP`, `POM_ARTIFACT_ID`, and `VERSION_NAME` live in `gradle.properties` and are consumed automatically by the vanniktech maven-publish plugin; the sample Android app derives its `versionCode`/`versionName` from the same property
 - Input validation on all public types (port range, topic alias, subscription identifiers, `MqttMessage` topic must not be empty, etc.)
 - KDoc on all public API types with spec references, examples, and parameter documentation
 - **Consumer convenience APIs:**
@@ -59,4 +60,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `defaultQos` and `defaultRetain` config properties for client-level publish defaults
 - 345 tests across 17 test classes covering encode/decode, client state machine, QoS flows, properties, logging, convenience APIs
 - Integration test suite (Docker-based Mosquitto broker)
-- **CI/CD** — GitHub Actions workflows for build/test matrix and Maven Central publishing
+- **CI/CD** — GitHub Actions workflows for build/test matrix and Maven Central publishing, [CodeQL](https://codeql.github.com/) security scanning (`java-kotlin` + `actions`, weekly, `security-and-quality` queries), and a release pipeline that ships sample app artifacts (`.apk`, linux-x64/arm64 `.deb`, `.dmg`, `.msi`, and a `wasmJs` browser zip) across a per-OS runner matrix
+- **Compose compiler metrics** — opt-in reports on the sample modules via `-PenableComposeMetrics=true`
