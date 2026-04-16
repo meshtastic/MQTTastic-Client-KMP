@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-04-16
+
 ### Added
 - **Full MQTT 5.0 client** — complete implementation of all 15 packet types with encode/decode
 - **`MqttClient`** — public API with `connect`, `disconnect`, `publish`, `subscribe`, `unsubscribe`, `close`
@@ -52,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `client.messagesMatching(filter)` — wildcard-aware message flow (`+`, `#`)
   - `client.publish(topic, payload, qos, properties)` — string publish with optional properties
   - `client.use(endpoint) { ... }` — structured connect/close lifecycle
-- 341 tests across 14 test classes covering encode/decode, client state machine, QoS flows, properties, logging, convenience APIs
+- 345 tests across 17 test classes covering encode/decode, client state machine, QoS flows, properties, logging, convenience APIs
 - Integration test suite (Docker-based Mosquitto broker)
 
 ### Changed

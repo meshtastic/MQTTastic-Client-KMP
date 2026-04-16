@@ -12,3 +12,4 @@ xcuserdata
 *.gpg
 .agent_plans/
 .agent_refs/
+kotlin-js-store/
