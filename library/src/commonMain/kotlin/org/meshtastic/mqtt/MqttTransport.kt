@@ -155,6 +155,23 @@ public sealed interface MqttEndpoint {
         ): Tcp {
             // Strip any trailing path (e.g., "host:1883/mqtt" → "host:1883")
             val withoutPath = hostPort.substringBefore('/')
+
+            // Handle bracket-enclosed IPv6 addresses (e.g., "[::1]:1883")
+            if (withoutPath.startsWith('[')) {
+                val closeBracket = withoutPath.indexOf(']')
+                require(closeBracket > 0) { "Unclosed IPv6 bracket in URI: $withoutPath" }
+                val host = withoutPath.substring(1, closeBracket)
+                val afterBracket = withoutPath.substring(closeBracket + 1)
+                val port =
+                    if (afterBracket.startsWith(':')) {
+                        afterBracket.substring(1).toIntOrNull()
+                            ?: throw IllegalArgumentException("Invalid port in URI: $withoutPath")
+                    } else {
+                        defaultPort
+                    }
+                return Tcp(host = host, port = port, tls = tls)
+            }
+
             val colonIdx = withoutPath.lastIndexOf(':')
             return if (colonIdx > 0) {
                 val host = withoutPath.substring(0, colonIdx)
