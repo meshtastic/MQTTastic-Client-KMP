@@ -16,11 +16,12 @@
  */
 package org.meshtastic.mqtt.sample
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,6 +38,7 @@ import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ServiceEnvelope
 
 /** A received message formatted for display. */
+@Immutable
 data class DisplayMessage(
     val id: Long,
     val topic: String,
@@ -50,6 +52,7 @@ data class DisplayMessage(
 )
 
 /** Decoded metadata from a Meshtastic ServiceEnvelope. */
+@Immutable
 data class MeshtasticInfo(
     val gatewayId: String,
     val channelId: String,
@@ -65,6 +68,7 @@ data class MeshtasticInfo(
 )
 
 /** UI state for the MQTTtastic sample app. */
+@Immutable
 data class MqttSampleState(
     val brokerUri: String = "tls://mqtt.meshtastic.org:8883",
     val clientId: String = "mqtttastic-sample",
@@ -88,9 +92,19 @@ data class MqttSampleState(
     val error: String? = null,
 )
 
-/** Simple state-holder driving the sample Compose UI. */
-class MqttSampleViewModel {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+/**
+ * State-holder driving the sample Compose UI.
+ *
+ * Extends the multiplatform [ViewModel] so its [viewModelScope] is automatically
+ * cancelled when the host lifecycle disposes it — the canonical Modern Android
+ * Development pattern, now available on all KMP targets via
+ * `org.jetbrains.androidx.lifecycle:lifecycle-viewmodel`.
+ */
+@Stable
+class MqttSampleViewModel : ViewModel() {
+    private val exceptionHandler = CoroutineExceptionHandler { _, e ->
+        _state.update { it.copy(error = e.message ?: e::class.simpleName ?: "Unknown error") }
+    }
     private val _state = MutableStateFlow(MqttSampleState())
     val state: StateFlow<MqttSampleState> = _state.asStateFlow()
 
@@ -162,7 +176,7 @@ class MqttSampleViewModel {
     fun connect() {
         val s = _state.value
         if (s.connectionState != ConnectionState.DISCONNECTED) return
-        scope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 val endpoint = MqttEndpoint.parse(s.brokerUri)
                 val newClient = MqttClient(s.clientId) {
@@ -176,7 +190,7 @@ class MqttSampleViewModel {
 
                 // Observe connection state
                 connectionStateJob?.cancel()
-                connectionStateJob = scope.launch {
+                connectionStateJob = viewModelScope.launch(exceptionHandler) {
                     newClient.connectionState.collect { connState ->
                         _state.update { it.copy(connectionState = connState) }
                     }
@@ -184,7 +198,7 @@ class MqttSampleViewModel {
 
                 // Observe incoming messages
                 messagesJob?.cancel()
-                messagesJob = scope.launch {
+                messagesJob = viewModelScope.launch(exceptionHandler) {
                     newClient.messages.collect { msg ->
                         val display = decodeMessage(msg)
                         _state.update { current ->
@@ -213,7 +227,7 @@ class MqttSampleViewModel {
     }
 
     fun disconnect() {
-        scope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 connectionStateJob?.cancel()
                 messagesJob?.cancel()
@@ -238,7 +252,7 @@ class MqttSampleViewModel {
             _state.update { it.copy(error = "Topic filter cannot be empty") }
             return
         }
-        scope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 client?.subscribe(s.subscribeTopic, s.subscribeQos)
                 _state.update {
@@ -251,7 +265,7 @@ class MqttSampleViewModel {
     }
 
     fun unsubscribe(topic: String) {
-        scope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 client?.unsubscribe(topic)
                 _state.update {
@@ -269,7 +283,7 @@ class MqttSampleViewModel {
             _state.update { it.copy(error = "Topic cannot be empty") }
             return
         }
-        scope.launch {
+        viewModelScope.launch(exceptionHandler) {
             try {
                 client?.publish(
                     topic = s.publishTopic,
@@ -351,12 +365,12 @@ class MqttSampleViewModel {
         append(" via ${info.gatewayId}")
     }
 
-    fun dispose() {
+    override fun onCleared() {
         connectionStateJob?.cancel()
         messagesJob?.cancel()
-        // Scope cancellation propagates to the client's internal coroutines,
-        // which closes the underlying transport connection.
-        scope.cancel()
+        // viewModelScope is cancelled automatically; this cascades into the
+        // client's internal coroutines and closes the underlying transport.
         client = null
+        super.onCleared()
     }
 }

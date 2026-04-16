@@ -90,9 +90,7 @@ import androidx.compose.material3.expressiveLightColorScheme
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -109,6 +107,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.window.core.layout.WindowWidthSizeClass
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -156,8 +156,11 @@ private val MeshDarkColors = darkColorScheme(
 
 @Composable
 fun App() {
-    val viewModel = remember { MqttSampleViewModel() }
-    val state by viewModel.state.collectAsState()
+    // Canonical MAD ViewModel ownership: the viewModel { } composable scopes
+    // MqttSampleViewModel to the nearest ViewModelStoreOwner and auto-clears it
+    // (triggering onCleared → viewModelScope cancellation) on disposal.
+    val viewModel: MqttSampleViewModel = viewModel { MqttSampleViewModel() }
+    val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val adaptiveInfo = currentWindowAdaptiveInfo()
 
@@ -166,10 +169,6 @@ fun App() {
             snackbarHostState.showSnackbar(it)
             viewModel.dismissError()
         }
-    }
-
-    DisposableEffect(viewModel) {
-        onDispose { viewModel.dispose() }
     }
 
     MaterialExpressiveTheme(
@@ -626,7 +625,7 @@ private fun MessagesList(
     // Auto-scroll: when a new message arrives AND the user is already pinned to
     // the latest, keep them there. If they've scrolled into history, don't
     // yank the view away — the FAB lets them come back on their own.
-    LaunchedEffect(listState) {
+    LaunchedEffect(Unit) {
         snapshotFlow { messages.lastOrNull()?.id }
             .drop(1)
             .distinctUntilChanged()
