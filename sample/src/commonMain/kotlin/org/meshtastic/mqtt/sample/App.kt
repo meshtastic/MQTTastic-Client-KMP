@@ -1,5 +1,3 @@
-@file:Suppress("MagicNumber")
-
 /*
  * Copyright (c) 2026 Meshtastic LLC
  *
@@ -18,6 +16,8 @@
  */
 package org.meshtastic.mqtt.sample
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,7 +38,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -67,12 +66,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,16 +86,34 @@ import org.meshtastic.mqtt.QoS
 
 // -- Meshtastic-inspired dark theme --
 
+@Suppress("MagicNumber")
 private val MeshGreen = Color(0xFF67EA94)
+
+@Suppress("MagicNumber")
 private val MeshGreenDark = Color(0xFF2E7D4A)
+
+@Suppress("MagicNumber")
 private val MeshSurface = Color(0xFF1A1C1E)
+
+@Suppress("MagicNumber")
 private val MeshSurfaceContainer = Color(0xFF212325)
+
+@Suppress("MagicNumber")
 private val MeshSurfaceContainerHigh = Color(0xFF2C2E30)
+
+@Suppress("MagicNumber")
 private val MeshOnSurface = Color(0xFFE2E2E5)
+
+@Suppress("MagicNumber")
 private val MeshOnSurfaceVariant = Color(0xFF9CA3AF)
+
+@Suppress("MagicNumber")
 private val MeshError = Color(0xFFFF6B6B)
+
+@Suppress("MagicNumber")
 private val MeshWarning = Color(0xFFFFB74D)
 
+@Suppress("MagicNumber")
 private val MeshDarkColorScheme = darkColorScheme(
     primary = MeshGreen,
     onPrimary = Color(0xFF003919),
@@ -169,7 +190,7 @@ fun App() {
                         snackbarData = data,
                         containerColor = MaterialTheme.colorScheme.errorContainer,
                         contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = MaterialTheme.shapes.medium,
                     )
                 }
             },
@@ -288,7 +309,7 @@ private fun ConnectionStatusChip(connectionState: ConnectionState) {
         ConnectionState.DISCONNECTED -> MeshError to "Disconnected"
     }
     Surface(
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.large,
         color = color.copy(alpha = 0.15f),
         modifier = Modifier.padding(end = 8.dp),
     ) {
@@ -320,7 +341,7 @@ private fun SectionCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
@@ -361,9 +382,16 @@ private fun ConnectionSection(
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    val isConnected = connectionState == ConnectionState.CONNECTED
-    val isConnecting = connectionState == ConnectionState.CONNECTING ||
-        connectionState == ConnectionState.RECONNECTING
+    val currentConnectionState by rememberUpdatedState(connectionState)
+    val isConnected by remember {
+        derivedStateOf { currentConnectionState == ConnectionState.CONNECTED }
+    }
+    val isConnecting by remember {
+        derivedStateOf {
+            currentConnectionState == ConnectionState.CONNECTING ||
+                currentConnectionState == ConnectionState.RECONNECTING
+        }
+    }
 
     SectionCard(title = "Connection") {
         OutlinedTextField(
@@ -372,7 +400,7 @@ private fun ConnectionSection(
             label = { Text("Broker URI") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            shape = MaterialTheme.shapes.medium,
             enabled = !isConnected && !isConnecting,
         )
         Spacer(Modifier.height(8.dp))
@@ -382,7 +410,7 @@ private fun ConnectionSection(
             label = { Text("Client ID") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            shape = MaterialTheme.shapes.medium,
             enabled = !isConnected && !isConnecting,
         )
         Spacer(Modifier.height(8.dp))
@@ -396,7 +424,7 @@ private fun ConnectionSection(
                 label = { Text("Username") },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 enabled = !isConnected && !isConnecting,
             )
             OutlinedTextField(
@@ -405,34 +433,40 @@ private fun ConnectionSection(
                 label = { Text("Password") },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
                 enabled = !isConnected && !isConnecting,
             )
         }
         Spacer(Modifier.height(12.dp))
-        if (isConnected) {
-            OutlinedButton(
-                onClick = onDisconnect,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Text("Disconnect")
-            }
-        } else {
-            Button(
-                onClick = onConnect,
-                enabled = !isConnecting,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MeshGreen,
-                    contentColor = Color(0xFF003919),
-                ),
-            ) {
-                Text(
-                    if (isConnecting) "Connecting…" else "Connect",
-                    fontWeight = FontWeight.Bold,
-                )
+        @Suppress("MagicNumber")
+        AnimatedContent(
+            targetState = isConnected,
+            label = "connect-button",
+        ) { connected ->
+            if (connected) {
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                ) {
+                    Text("Disconnect")
+                }
+            } else {
+                Button(
+                    onClick = onConnect,
+                    enabled = !isConnecting,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MeshGreen,
+                        contentColor = Color(0xFF003919),
+                    ),
+                ) {
+                    Text(
+                        if (isConnecting) "Connecting…" else "Connect",
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
@@ -457,7 +491,7 @@ private fun SubscribeSection(
         trailing = {
             if (activeSubscriptions.isNotEmpty()) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = MaterialTheme.shapes.small,
                     color = MeshGreen.copy(alpha = 0.15f),
                 ) {
                     Text(
@@ -477,7 +511,7 @@ private fun SubscribeSection(
             label = { Text("Topic Filter") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            shape = MaterialTheme.shapes.medium,
         )
         Spacer(Modifier.height(8.dp))
         Row(
@@ -497,42 +531,48 @@ private fun SubscribeSection(
             FilledTonalButton(
                 onClick = onSubscribe,
                 enabled = enabled,
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.medium,
             ) {
                 Text("Subscribe")
             }
         }
 
-        if (activeSubscriptions.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            activeSubscriptions.forEach { topic ->
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+        AnimatedVisibility(visible = activeSubscriptions.isNotEmpty()) {
+            Column {
+                Spacer(Modifier.height(8.dp))
+                activeSubscriptions.forEach { topic ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
-                        Text(
-                            text = topic,
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = FontFamily.Monospace,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        IconButton(
-                            onClick = { onUnsubscribe(topic) },
-                            modifier = Modifier.size(28.dp),
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
-                                "✕",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp,
+                                text = topic,
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
+                            IconButton(
+                                onClick = { onUnsubscribe(topic) },
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .semantics {
+                                        contentDescription = "Unsubscribe from $topic"
+                                    },
+                            ) {
+                                Text(
+                                    "✕",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp,
+                                )
+                            }
                         }
                     }
                 }
@@ -564,7 +604,7 @@ private fun PublishSection(
             label = { Text("Topic") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            shape = MaterialTheme.shapes.medium,
         )
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
@@ -573,7 +613,7 @@ private fun PublishSection(
             label = { Text("Payload") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            shape = MaterialTheme.shapes.medium,
         )
         Spacer(Modifier.height(8.dp))
         Row(
@@ -604,7 +644,7 @@ private fun PublishSection(
             onClick = onPublish,
             enabled = enabled,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
+            shape = MaterialTheme.shapes.medium,
         ) {
             Text("Send", fontWeight = FontWeight.SemiBold)
         }
@@ -622,7 +662,7 @@ private fun MessagesFeed(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
+        shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
@@ -646,7 +686,7 @@ private fun MessagesFeed(
                     )
                     if (totalCount > 0) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.small,
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                         ) {
                             Text(
@@ -671,30 +711,39 @@ private fun MessagesFeed(
                 thickness = 0.5.dp,
             )
 
-            if (messages.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📡", fontSize = 32.sp)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "No messages yet",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            "Connect and subscribe to start receiving",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        )
+            AnimatedContent(
+                targetState = messages.isEmpty(),
+                label = "messages-content",
+            ) { isEmpty ->
+                if (isEmpty) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("📡", fontSize = 32.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "No messages yet",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                "Connect and subscribe to start receiving",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    .copy(alpha = 0.6f),
+                            )
+                        }
                     }
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(messages) { msg ->
-                        MessageRow(msg)
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(
+                            items = messages,
+                            key = { "${it.topic}:${it.payload.hashCode()}" },
+                        ) { msg ->
+                            MessageRow(msg)
+                        }
                     }
                 }
             }
@@ -817,7 +866,7 @@ private fun MeshBadge(
     color: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Surface(
-        shape = RoundedCornerShape(6.dp),
+        shape = MaterialTheme.shapes.extraSmall,
         color = color.copy(alpha = 0.12f),
     ) {
         Text(
@@ -833,19 +882,35 @@ private fun MeshBadge(
 
 // -- Helpers --
 
+// Portnum-specific accent colors for Meshtastic message types
+private object PortnumColors {
+    @Suppress("MagicNumber") val ENCRYPTED = Color(0xFF6B7280)
+    @Suppress("MagicNumber") val TEXT_MESSAGE = Color(0xFF60A5FA)
+    @Suppress("MagicNumber") val POSITION = Color(0xFF34D399)
+    @Suppress("MagicNumber") val NODEINFO = Color(0xFFA78BFA)
+    @Suppress("MagicNumber") val TELEMETRY = Color(0xFFFBBF24)
+    @Suppress("MagicNumber") val ROUTING = Color(0xFF9CA3AF)
+    @Suppress("MagicNumber") val ADMIN = Color(0xFFF87171)
+    @Suppress("MagicNumber") val TRACEROUTE = Color(0xFF2DD4BF)
+    @Suppress("MagicNumber") val NEIGHBORINFO = Color(0xFFC084FC)
+    @Suppress("MagicNumber") val MAP_REPORT = Color(0xFF4ADE80)
+    @Suppress("MagicNumber") val STORE_FORWARD = Color(0xFFFB923C)
+    @Suppress("MagicNumber") val DEFAULT = Color(0xFF9CA3AF)
+}
+
 private fun portnumColor(info: MeshtasticInfo): Color {
-    if (info.isEncrypted) return Color(0xFF6B7280)
+    if (info.isEncrypted) return PortnumColors.ENCRYPTED
     return when (info.portnum) {
-        "TEXT_MESSAGE" -> Color(0xFF60A5FA)
-        "POSITION" -> Color(0xFF34D399)
-        "NODEINFO" -> Color(0xFFA78BFA)
-        "TELEMETRY" -> Color(0xFFFBBF24)
-        "ROUTING" -> Color(0xFF9CA3AF)
-        "ADMIN" -> Color(0xFFF87171)
-        "TRACEROUTE" -> Color(0xFF2DD4BF)
-        "NEIGHBORINFO" -> Color(0xFFC084FC)
-        "MAP_REPORT" -> Color(0xFF4ADE80)
-        "STORE_FORWARD" -> Color(0xFFFB923C)
-        else -> Color(0xFF9CA3AF)
+        "TEXT_MESSAGE" -> PortnumColors.TEXT_MESSAGE
+        "POSITION" -> PortnumColors.POSITION
+        "NODEINFO" -> PortnumColors.NODEINFO
+        "TELEMETRY" -> PortnumColors.TELEMETRY
+        "ROUTING" -> PortnumColors.ROUTING
+        "ADMIN" -> PortnumColors.ADMIN
+        "TRACEROUTE" -> PortnumColors.TRACEROUTE
+        "NEIGHBORINFO" -> PortnumColors.NEIGHBORINFO
+        "MAP_REPORT" -> PortnumColors.MAP_REPORT
+        "STORE_FORWARD" -> PortnumColors.STORE_FORWARD
+        else -> PortnumColors.DEFAULT
     }
 }
