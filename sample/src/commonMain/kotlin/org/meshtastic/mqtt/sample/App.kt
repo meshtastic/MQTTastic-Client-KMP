@@ -91,9 +91,13 @@ fun App() {
                 ConnectionCard(
                     brokerUri = state.brokerUri,
                     clientId = state.clientId,
+                    username = state.username,
+                    password = state.password,
                     connectionState = state.connectionState,
                     onBrokerUriChange = viewModel::updateBrokerUri,
                     onClientIdChange = viewModel::updateClientId,
+                    onUsernameChange = viewModel::updateUsername,
+                    onPasswordChange = viewModel::updatePassword,
                     onConnect = viewModel::connect,
                     onDisconnect = viewModel::disconnect,
                 )
@@ -167,9 +171,13 @@ private fun ErrorBanner(
 private fun ConnectionCard(
     brokerUri: String,
     clientId: String,
+    username: String,
+    password: String,
     connectionState: ConnectionState,
     onBrokerUriChange: (String) -> Unit,
     onClientIdChange: (String) -> Unit,
+    onUsernameChange: (String) -> Unit,
+    onPasswordChange: (String) -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -196,6 +204,26 @@ private fun ConnectionCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = username,
+                    onValueChange = onUsernameChange,
+                    label = { Text("Username") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = onPasswordChange,
+                    label = { Text("Password") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

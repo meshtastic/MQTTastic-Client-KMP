@@ -131,6 +131,7 @@ public final class org/meshtastic/mqtt/MqttConfig$Builder {
 	public final fun getUserProperties ()Ljava/util/List;
 	public final fun getUsername ()Ljava/lang/String;
 	public final fun getWill ()Lorg/meshtastic/mqtt/WillConfig;
+	public final fun password (Ljava/lang/String;)V
 	public final fun setAuthenticationData (Lkotlinx/io/bytestring/ByteString;)V
 	public final fun setAuthenticationMethod (Ljava/lang/String;)V
 	public final fun setAutoReconnect (Z)V

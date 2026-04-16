@@ -45,15 +45,17 @@ data class DisplayMessage(
 
 /** UI state for the MQTTtastic sample app. */
 data class MqttSampleState(
-    val brokerUri: String = "tcp://localhost:1883",
+    val brokerUri: String = "tcp://mqtt.meshtastic.org:1883",
     val clientId: String = "mqtttastic-sample",
+    val username: String = "meshdev",
+    val password: String = "large4cats",
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     // subscribe
-    val subscribeTopic: String = "test/#",
+    val subscribeTopic: String = "msh/US/2/e/LongFast/#",
     val subscribeQos: QoS = QoS.AT_MOST_ONCE,
     val activeSubscriptions: Set<String> = emptySet(),
     // publish
-    val publishTopic: String = "test/hello",
+    val publishTopic: String = "msh/US/2/e/LongFast/!mqtttastic",
     val publishMessage: String = "Hello from MQTTtastic!",
     val publishQos: QoS = QoS.AT_MOST_ONCE,
     val publishRetain: Boolean = false,
@@ -81,6 +83,14 @@ class MqttSampleViewModel {
 
     fun updateClientId(value: String) {
         _state.update { it.copy(clientId = value) }
+    }
+
+    fun updateUsername(value: String) {
+        _state.update { it.copy(username = value) }
+    }
+
+    fun updatePassword(value: String) {
+        _state.update { it.copy(password = value) }
     }
 
     fun updateSubscribeTopic(value: String) {
@@ -123,6 +133,8 @@ class MqttSampleViewModel {
             try {
                 val endpoint = MqttEndpoint.parse(s.brokerUri)
                 val newClient = MqttClient(s.clientId) {
+                    username = s.username.ifBlank { null }
+                    s.password.ifBlank { null }?.let { password(it) }
                     logger = MqttLogger.println()
                     logLevel = MqttLogLevel.DEBUG
                     autoReconnect = true

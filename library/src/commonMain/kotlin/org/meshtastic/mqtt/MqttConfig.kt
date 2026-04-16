@@ -210,6 +210,24 @@ public data class MqttConfig(
         public var logLevel: MqttLogLevel = MqttLogLevel.NONE
 
         /**
+         * Set the password from a plain [String].
+         *
+         * Convenience alternative to assigning [password] as a [ByteString] directly.
+         *
+         * ```kotlin
+         * MqttClient("sensor") {
+         *     username = "meshdev"
+         *     password("large4cats")
+         * }
+         * ```
+         *
+         * @param value The password string, encoded as UTF-8 bytes.
+         */
+        public fun password(value: String) {
+            password = ByteString(value.encodeToByteArray())
+        }
+
+        /**
          * Configure a will message using a DSL block.
          *
          * The broker publishes this message when the client disconnects unexpectedly.

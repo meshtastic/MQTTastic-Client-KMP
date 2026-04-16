@@ -424,4 +424,31 @@ class MqttConfigTest {
             }
         assertEquals("second", config.will?.topic)
     }
+
+    // --- password(String) convenience ---
+
+    @Test
+    fun passwordStringConvenienceSetsByteString() {
+        val config =
+            MqttConfig
+                .Builder()
+                .apply {
+                    clientId = "test"
+                    password("large4cats")
+                }.build()
+        assertEquals(ByteString("large4cats".encodeToByteArray()), config.password)
+    }
+
+    @Test
+    fun passwordStringConvenienceOverwritesDirectAssignment() {
+        val config =
+            MqttConfig
+                .Builder()
+                .apply {
+                    clientId = "test"
+                    password = ByteString("old".encodeToByteArray())
+                    password("new")
+                }.build()
+        assertEquals(ByteString("new".encodeToByteArray()), config.password)
+    }
 }
