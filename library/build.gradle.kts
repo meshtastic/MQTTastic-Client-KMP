@@ -25,8 +25,8 @@ plugins {
     alias(libs.plugins.kover)
 }
 
-group = "org.meshtastic"
-version = "0.1.0"
+// group + version are inherited from gradle.properties (GROUP / VERSION_NAME)
+// via the vanniktech.mavenPublish plugin — single source of truth for the whole project.
 
 kotlin {
     applyDefaultHierarchyTemplate()
@@ -128,7 +128,7 @@ mavenPublishing {
     publishToMavenCentral()
     signAllPublications()
 
-    coordinates(group.toString(), "mqtt-client", version.toString())
+    // Coordinates (GROUP, POM_ARTIFACT_ID, VERSION_NAME) come from gradle.properties.
 
     pom {
         name = "MQTTtastic Client"

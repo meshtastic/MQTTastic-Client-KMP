@@ -1,3 +1,4 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 
 plugins {
@@ -85,5 +86,35 @@ wire {
 compose.desktop {
     application {
         mainClass = "MainKt"
+        // Sample app — ProGuard adds no value and trips on wire-runtime's Android-only classes.
+        buildTypes.release.proguard {
+            isEnabled.set(false)
+        }
+        nativeDistributions {
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            packageName = "mqtt-sample"
+            // jpackage requires the first component to be >= 1 (macOS CFBundleShortVersionString rule).
+            // Library follows 0.x SemVer; coerce to 1.x.y for the installer metadata only.
+            packageVersion = providers.gradleProperty("VERSION_NAME").get().let { v ->
+                val parts = v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
+                val major = parts.getOrElse(0) { 0 }.coerceAtLeast(1)
+                val minor = parts.getOrElse(1) { 0 }
+                val patch = parts.getOrElse(2) { 0 }
+                "$major.$minor.$patch"
+            }
+            description = "MQTTtastic sample — a reference MQTT 5.0 client built on MQTTtastic-Client-KMP."
+            vendor = "Meshtastic"
+        }
+    }
+}
+
+// Opt-in Compose compiler metrics + stability reports.
+// Enable with `-PenableComposeMetrics=true`; outputs land in
+// `sample/build/compose-metrics/` and `sample/build/compose-reports/`.
+// See https://developer.android.com/develop/ui/compose/performance/stability/diagnose
+if (providers.gradleProperty("enableComposeMetrics").orNull.toBoolean()) {
+    composeCompiler {
+        metricsDestination = layout.buildDirectory.dir("compose-metrics")
+        reportsDestination = layout.buildDirectory.dir("compose-reports")
     }
 }
