@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "MQTTtastic-Client-KMP"
 include(":library")
+include(":sample")
+include(":sample:androidApp")
