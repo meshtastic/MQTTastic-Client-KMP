@@ -1,0 +1,198 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  publish:
+    name: Publish to Maven Central
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'false'
+
+      - name: Validate before publish
+        run: ./gradlew spotlessCheck detekt jvmTest apiCheck --stacktrace
+
+      - name: Stage signed artifacts locally
+        run: ./gradlew publishToMavenLocal --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: Collect Maven artifacts for attestation
+        shell: bash
+        run: |
+          mkdir -p maven-staging
+          cd ~/.m2/repository
+          find org/meshtastic -type f \
+            -not -name "maven-metadata*" \
+            -not -name "*.md5" \
+            -not -name "*.sha1" \
+            -not -name "*.sha256" \
+            -not -name "*.sha512" \
+            | while IFS= read -r f; do
+              mkdir -p "${{ github.workspace }}/maven-staging/$(dirname "$f")"
+              cp "$f" "${{ github.workspace }}/maven-staging/$f"
+            done
+          echo "Staged $(find "${{ github.workspace }}/maven-staging" -type f | wc -l) files for attestation"
+
+      - name: Attest Maven artifacts
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: maven-staging/**/*
+
+      - name: Publish to Maven Central
+        run: ./gradlew publishAllPublicationsToMavenCentralRepository --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.OSSRH_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.OSSRH_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+
+  sample-artifacts:
+    name: Build sample (${{ matrix.label }})
+    needs: [publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x64
+            tasks: >-
+              :sample:androidApp:assembleRelease
+              :sample:packageReleaseDistributionForCurrentOS
+              :sample:wasmJsBrowserDistribution
+            artifact_glob: |
+              sample/androidApp/build/outputs/apk/release/*.apk
+              sample/build/compose/binaries/main-release/deb/*.deb
+            web_zip: true
+          - os: macos-15
+            label: macos-arm64
+            tasks: :sample:packageReleaseDistributionForCurrentOS
+            artifact_glob: |
+              sample/build/compose/binaries/main-release/dmg/*.dmg
+            web_zip: false
+          - os: windows-latest
+            label: windows-x64
+            tasks: :sample:packageReleaseDistributionForCurrentOS
+            artifact_glob: |
+              sample/build/compose/binaries/main-release/msi/*.msi
+            web_zip: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'false'
+
+      - name: Build sample artifacts
+        shell: bash
+        run: ./gradlew ${{ matrix.tasks }} --stacktrace
+
+      - name: Zip wasmJs browser distribution
+        if: matrix.web_zip == true
+        shell: bash
+        run: |
+          cd sample/build/dist/wasmJs/productionExecutable
+          zip -r "${GITHUB_WORKSPACE}/mqtt-sample-web-wasmjs.zip" .
+
+      - name: Collect release assets
+        id: collect
+        shell: bash
+        run: |
+          mkdir -p release-assets
+          while IFS= read -r pattern; do
+            [ -z "$pattern" ] && continue
+            # shellcheck disable=SC2086
+            for f in $pattern; do
+              [ -e "$f" ] || continue
+              if [ -d "$f" ]; then continue; fi
+              cp "$f" release-assets/
+            done
+          done <<< "${{ matrix.artifact_glob }}"
+          if [ "${{ matrix.web_zip }}" = "true" ] && [ -f "mqtt-sample-web-wasmjs.zip" ]; then
+            cp mqtt-sample-web-wasmjs.zip release-assets/
+          fi
+          ls -la release-assets/
+          echo "count=$(ls release-assets/ | wc -l)" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to GitHub Release
+        if: steps.collect.outputs.count != '0'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: release-assets/*
+          fail_on_unmatched_files: false
+
+      - name: Attest sample artifacts
+        if: steps.collect.outputs.count != '0'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: release-assets/*
+
+  sbom:
+    name: SBOM & Provenance
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Generate SBOM (CycloneDX + SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+          upload-artifact: true
+          upload-release-assets: true
+
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: true
+          upload-release-assets: true
+
+      - name: Attest build provenance for release assets
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            sbom.cdx.json
+            sbom.spdx.json
