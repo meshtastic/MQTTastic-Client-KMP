@@ -299,17 +299,21 @@ internal data class UnsubAck(
 // --- §3.12 PINGREQ ---
 
 /** PINGREQ packet — client keepalive ping (§3.12). No variable header or payload. */
-internal data object PingReq : MqttPacket {
+internal object PingReq : MqttPacket {
     override val packetType: PacketType get() = PacketType.PINGREQ
     override val properties: MqttProperties get() = MqttProperties.EMPTY
+
+    override fun toString(): String = "PingReq"
 }
 
 // --- §3.13 PINGRESP ---
 
 /** PINGRESP packet — server keepalive ping response (§3.13). No variable header or payload. */
-internal data object PingResp : MqttPacket {
+internal object PingResp : MqttPacket {
     override val packetType: PacketType get() = PacketType.PINGRESP
     override val properties: MqttProperties get() = MqttProperties.EMPTY
+
+    override fun toString(): String = "PingResp"
 }
 
 // --- §3.14 DISCONNECT ---
