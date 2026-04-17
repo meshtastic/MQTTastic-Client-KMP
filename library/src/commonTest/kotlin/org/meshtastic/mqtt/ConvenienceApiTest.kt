@@ -220,7 +220,7 @@ class ConvenienceApiTest {
                 autoReconnect = false
             }
         // Just verify it constructs without error — can't introspect config from outside
-        assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+        assertEquals(ConnectionState.Disconnected.Idle, client.connectionState.value)
     }
 
     // --- MqttConfig.build {} ---

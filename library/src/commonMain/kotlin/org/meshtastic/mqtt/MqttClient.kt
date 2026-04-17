@@ -147,9 +147,9 @@ import kotlin.concurrent.Volatile
  * ```kotlin
  * client.connectionState.collect { state ->
  *     when (state) {
- *         ConnectionState.CONNECTED -> println("Online")
- *         ConnectionState.RECONNECTING -> println("Reconnecting...")
- *         ConnectionState.DISCONNECTED -> println("Offline")
+ *         is ConnectionState.Connected -> println("Online")
+ *         is ConnectionState.Reconnecting -> println("Reconnecting...")
+ *         is ConnectionState.Disconnected -> println("Offline")
  *         else -> { /* CONNECTING */ }
  *     }
  * }
@@ -257,13 +257,13 @@ public class MqttClient
 
         private val scope = CoroutineScope(SupervisorJob(scope.coroutineContext[Job]) + scope.coroutineContext.minusKey(Job))
 
-        private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
+        private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected.Idle)
 
         /**
          * Observable connection lifecycle state.
          *
          * Emits [ConnectionState] transitions as the client connects, disconnects,
-         * and reconnects. Starts as [ConnectionState.DISCONNECTED].
+         * and reconnects. Starts as [ConnectionState.Disconnected.Idle].
          *
          * @see ConnectionState
          */
@@ -364,12 +364,16 @@ public class MqttClient
                     connectWithRedirect(endpoint, redirectsRemaining = MAX_REDIRECTS)
                 }
             } catch (e: MqttConnectionException) {
-                throw MqttException.ConnectionRejected(
-                    reasonCode = e.reasonCode,
-                    message = e.message ?: "Connection failed",
-                    cause = e.cause,
-                    serverReference = e.serverReference,
-                )
+                val rejected =
+                    MqttException.ConnectionRejected(
+                        reasonCode = e.reasonCode,
+                        message = e.message ?: "Connection failed",
+                        cause = e.cause,
+                        serverReference = e.serverReference,
+                    )
+                // Forwarding hasn't started yet (connection==null on failure), so we own the state.
+                _connectionState.value = ConnectionState.Disconnected(reason = rejected)
+                throw rejected
             }
         }
 
@@ -396,7 +400,7 @@ public class MqttClient
                 } finally {
                     stopForwardJobs()
                     connection = null
-                    _connectionState.value = ConnectionState.DISCONNECTED
+                    _connectionState.value = ConnectionState.Disconnected.Idle
                     log.info(TAG) { "Disconnected" }
                 }
             }
@@ -635,7 +639,7 @@ public class MqttClient
                 } finally {
                     stopForwardJobs()
                     connection = null
-                    _connectionState.value = ConnectionState.DISCONNECTED
+                    _connectionState.value = ConnectionState.Disconnected.Idle
                 }
             }
             scope.coroutineContext[Job]?.cancel()
@@ -667,7 +671,7 @@ public class MqttClient
                 } finally {
                     stopForwardJobs()
                     connection = null
-                    _connectionState.value = ConnectionState.DISCONNECTED
+                    _connectionState.value = ConnectionState.Disconnected.Idle
                 }
             }
             scope.coroutineContext[Job]?.cancel()
@@ -731,7 +735,7 @@ public class MqttClient
                 scope.launch {
                     conn.connectionState.collect { state ->
                         _connectionState.value = state
-                        if (state == ConnectionState.DISCONNECTED &&
+                        if (state is ConnectionState.Disconnected &&
                             config.autoReconnect &&
                             !intentionalDisconnect
                         ) {
@@ -778,9 +782,13 @@ public class MqttClient
                 if (reconnectJob?.isActive == true) return
                 reconnectJob =
                     scope.launch {
-                        _connectionState.value = ConnectionState.RECONNECTING
+                        // Carry forward the cause from the just-observed Disconnected state, if any.
+                        var lastError: MqttException? =
+                            (_connectionState.value as? ConnectionState.Disconnected)?.reason
                         var delayMs = config.reconnectBaseDelayMs
                         var attempts = 0
+                        _connectionState.value =
+                            ConnectionState.Reconnecting(attempt = attempts, lastError = lastError)
 
                         log.warn(TAG) { "Connection lost, starting reconnect" }
 
@@ -790,7 +798,8 @@ public class MqttClient
                                 log.error(TAG) {
                                     "Max reconnect attempts ($attempts) exhausted — giving up"
                                 }
-                                _connectionState.value = ConnectionState.DISCONNECTED
+                                _connectionState.value =
+                                    ConnectionState.Disconnected(reason = lastError)
                                 return@launch
                             }
 
@@ -816,8 +825,10 @@ public class MqttClient
                                 @Suppress("TooGenericExceptionCaught") e: Exception,
                             ) {
                                 attempts++
+                                lastError = e.toMqttException()
                                 log.warn(TAG, throwable = e) { "Reconnect attempt $attempts failed" }
-                                _connectionState.value = ConnectionState.RECONNECTING
+                                _connectionState.value =
+                                    ConnectionState.Reconnecting(attempt = attempts, lastError = lastError)
                                 delayMs = (delayMs * 2).coerceAtMost(config.reconnectMaxDelayMs)
                             }
                         }

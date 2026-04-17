@@ -13,14 +13,49 @@ public final class org/meshtastic/mqtt/AuthChallenge {
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class org/meshtastic/mqtt/ConnectionState : java/lang/Enum {
-	public static final field CONNECTED Lorg/meshtastic/mqtt/ConnectionState;
-	public static final field CONNECTING Lorg/meshtastic/mqtt/ConnectionState;
-	public static final field DISCONNECTED Lorg/meshtastic/mqtt/ConnectionState;
-	public static final field RECONNECTING Lorg/meshtastic/mqtt/ConnectionState;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/mqtt/ConnectionState;
-	public static fun values ()[Lorg/meshtastic/mqtt/ConnectionState;
+public abstract class org/meshtastic/mqtt/ConnectionState {
+}
+
+public final class org/meshtastic/mqtt/ConnectionState$Connected : org/meshtastic/mqtt/ConnectionState {
+	public static final field INSTANCE Lorg/meshtastic/mqtt/ConnectionState$Connected;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ConnectionState$Connecting : org/meshtastic/mqtt/ConnectionState {
+	public static final field INSTANCE Lorg/meshtastic/mqtt/ConnectionState$Connecting;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ConnectionState$Disconnected : org/meshtastic/mqtt/ConnectionState {
+	public static final field Companion Lorg/meshtastic/mqtt/ConnectionState$Disconnected$Companion;
+	public fun <init> ()V
+	public fun <init> (Lorg/meshtastic/mqtt/MqttException;)V
+	public synthetic fun <init> (Lorg/meshtastic/mqtt/MqttException;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lorg/meshtastic/mqtt/MqttException;
+	public final fun copy (Lorg/meshtastic/mqtt/MqttException;)Lorg/meshtastic/mqtt/ConnectionState$Disconnected;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ConnectionState$Disconnected;Lorg/meshtastic/mqtt/MqttException;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ConnectionState$Disconnected;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Lorg/meshtastic/mqtt/MqttException;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ConnectionState$Disconnected$Companion {
+	public final fun getIdle ()Lorg/meshtastic/mqtt/ConnectionState$Disconnected;
+}
+
+public final class org/meshtastic/mqtt/ConnectionState$Reconnecting : org/meshtastic/mqtt/ConnectionState {
+	public fun <init> (ILorg/meshtastic/mqtt/MqttException;)V
+	public synthetic fun <init> (ILorg/meshtastic/mqtt/MqttException;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Lorg/meshtastic/mqtt/MqttException;
+	public final fun copy (ILorg/meshtastic/mqtt/MqttException;)Lorg/meshtastic/mqtt/ConnectionState$Reconnecting;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ConnectionState$Reconnecting;ILorg/meshtastic/mqtt/MqttException;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ConnectionState$Reconnecting;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAttempt ()I
+	public final fun getLastError ()Lorg/meshtastic/mqtt/MqttException;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class org/meshtastic/mqtt/MqttClient {

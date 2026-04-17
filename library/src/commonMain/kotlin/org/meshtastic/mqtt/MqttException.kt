@@ -80,3 +80,37 @@ public sealed class MqttException(
         cause: Throwable? = null,
     ) : MqttException(reasonCode, message, cause)
 }
+
+/**
+ * Coerce an arbitrary [Throwable] into a public [MqttException] for inclusion in
+ * [ConnectionState.Disconnected.reason] or [ConnectionState.Reconnecting.lastError].
+ *
+ * Pass-through for existing [MqttException] instances. Maps internal
+ * `MqttConnectionException` to its public counterpart. All other throwables become
+ * [MqttException.ConnectionLost] with [defaultReasonCode].
+ *
+ * Cancellation must be re-thrown by callers before reaching this helper —
+ * structured concurrency must be preserved.
+ */
+internal fun Throwable.toMqttException(defaultReasonCode: ReasonCode = ReasonCode.UNSPECIFIED_ERROR): MqttException =
+    when (this) {
+        is MqttException -> {
+            this
+        }
+
+        is MqttConnectionException -> {
+            MqttException.ConnectionLost(
+                reasonCode = this.reasonCode,
+                message = this.message ?: "Connection error",
+                cause = this.cause,
+            )
+        }
+
+        else -> {
+            MqttException.ConnectionLost(
+                reasonCode = defaultReasonCode,
+                message = this.message ?: this::class.simpleName ?: "Unknown error",
+                cause = this,
+            )
+        }
+    }

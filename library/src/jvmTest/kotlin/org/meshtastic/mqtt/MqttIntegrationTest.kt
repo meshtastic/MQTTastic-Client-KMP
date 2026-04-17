@@ -83,14 +83,14 @@ class MqttIntegrationTest {
             try {
                 client.connect(endpoint)
                 withTimeout(5_000) {
-                    while (client.connectionState.value != ConnectionState.CONNECTED) {
+                    while (client.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
-                assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+                assertEquals(ConnectionState.Connected, client.connectionState.value)
 
                 client.disconnect()
-                assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+                assertEquals(ConnectionState.Disconnected.Idle, client.connectionState.value)
             } finally {
                 client.close()
             }
@@ -106,7 +106,7 @@ class MqttIntegrationTest {
             try {
                 client.connect(endpoint)
                 withTimeout(5_000) {
-                    while (client.connectionState.value != ConnectionState.CONNECTED) {
+                    while (client.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -134,7 +134,7 @@ class MqttIntegrationTest {
                 // Connect subscriber and subscribe
                 subscriber.connect(endpoint)
                 withTimeout(5_000) {
-                    while (subscriber.connectionState.value != ConnectionState.CONNECTED) {
+                    while (subscriber.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -151,7 +151,7 @@ class MqttIntegrationTest {
                 // Connect publisher and publish
                 publisher.connect(endpoint)
                 withTimeout(5_000) {
-                    while (publisher.connectionState.value != ConnectionState.CONNECTED) {
+                    while (publisher.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -184,7 +184,7 @@ class MqttIntegrationTest {
             try {
                 subscriber.connect(endpoint)
                 withTimeout(5_000) {
-                    while (subscriber.connectionState.value != ConnectionState.CONNECTED) {
+                    while (subscriber.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -199,7 +199,7 @@ class MqttIntegrationTest {
 
                 publisher.connect(endpoint)
                 withTimeout(5_000) {
-                    while (publisher.connectionState.value != ConnectionState.CONNECTED) {
+                    while (publisher.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -230,7 +230,7 @@ class MqttIntegrationTest {
             try {
                 client.connect(endpoint)
                 withTimeout(5_000) {
-                    while (client.connectionState.value != ConnectionState.CONNECTED) {
+                    while (client.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -275,7 +275,7 @@ class MqttIntegrationTest {
                 // Publish a retained message
                 publisher.connect(endpoint)
                 withTimeout(5_000) {
-                    while (publisher.connectionState.value != ConnectionState.CONNECTED) {
+                    while (publisher.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -291,7 +291,7 @@ class MqttIntegrationTest {
             try {
                 subscriber.connect(endpoint)
                 withTimeout(5_000) {
-                    while (subscriber.connectionState.value != ConnectionState.CONNECTED) {
+                    while (subscriber.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -318,7 +318,7 @@ class MqttIntegrationTest {
                 try {
                     cleaner.connect(endpoint)
                     withTimeout(5_000) {
-                        while (cleaner.connectionState.value != ConnectionState.CONNECTED) {
+                        while (cleaner.connectionState.value != ConnectionState.Connected) {
                             delay(50)
                         }
                     }
@@ -351,7 +351,7 @@ class MqttIntegrationTest {
                 // Subscribe to the will topic
                 subscriber.connect(endpoint)
                 withTimeout(5_000) {
-                    while (subscriber.connectionState.value != ConnectionState.CONNECTED) {
+                    while (subscriber.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -384,7 +384,7 @@ class MqttIntegrationTest {
                 try {
                     willClient.connect(endpoint)
                     withTimeout(5_000) {
-                        while (willClient.connectionState.value != ConnectionState.CONNECTED) {
+                        while (willClient.connectionState.value != ConnectionState.Connected) {
                             delay(50)
                         }
                     }
@@ -420,7 +420,7 @@ class MqttIntegrationTest {
             try {
                 subscriber.connect(endpoint)
                 withTimeout(5_000) {
-                    while (subscriber.connectionState.value != ConnectionState.CONNECTED) {
+                    while (subscriber.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }
@@ -441,7 +441,7 @@ class MqttIntegrationTest {
 
                 publisher.connect(endpoint)
                 withTimeout(5_000) {
-                    while (publisher.connectionState.value != ConnectionState.CONNECTED) {
+                    while (publisher.connectionState.value != ConnectionState.Connected) {
                         delay(50)
                     }
                 }

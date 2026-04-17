@@ -30,6 +30,7 @@ import org.meshtastic.mqtt.packet.Subscribe
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -212,7 +213,11 @@ class AdvancedFeaturesTest {
             advanceUntilIdle()
 
             // The connection should be torn down due to TOPIC_ALIAS_INVALID
-            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+            val state = connection.connectionState.value
+            assertIs<ConnectionState.Disconnected>(state)
+            val reason = state.reason
+            assertIs<MqttException.ConnectionLost>(reason)
+            assertEquals(ReasonCode.TOPIC_ALIAS_INVALID, reason.reasonCode)
         }
 
     @Test
@@ -243,7 +248,7 @@ class AdvancedFeaturesTest {
 
             assertEquals(1, receivedMessages.size)
             assertEquals("sensor/temp", receivedMessages[0].topic)
-            assertEquals(ConnectionState.CONNECTED, connection.connectionState.value)
+            assertEquals(ConnectionState.Connected, connection.connectionState.value)
 
             job.cancel()
             connection.disconnect()

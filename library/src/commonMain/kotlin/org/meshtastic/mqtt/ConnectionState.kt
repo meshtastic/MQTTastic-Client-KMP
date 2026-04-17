@@ -17,23 +17,46 @@
 package org.meshtastic.mqtt
 
 /**
- * Observable connection lifecycle states for [MqttClient].
+ * Observable connection lifecycle state for [MqttClient].
  *
  * Collect [MqttClient.connectionState] as a [kotlinx.coroutines.flow.StateFlow] to
- * observe state transitions and react to connectivity changes in your application.
+ * observe state transitions and react to connectivity changes — including the
+ * underlying cause when a connection drops or a reconnect attempt fails.
  *
- * Typical lifecycle: [DISCONNECTED] → [CONNECTING] → [CONNECTED] → [DISCONNECTED].
+ * Typical lifecycle: [Disconnected] → [Connecting] → [Connected] → [Disconnected].
  * When auto-reconnect is enabled and a connection drops unexpectedly:
- * [CONNECTED] → [RECONNECTING] → [CONNECTED] (or [DISCONNECTED] on permanent failure).
+ * [Connected] → [Reconnecting] → [Connected] (or [Disconnected] on permanent failure).
+ *
+ * ## Example — react to disconnect reasons
+ * ```kotlin
+ * client.connectionState.collect { state ->
+ *     when (state) {
+ *         is ConnectionState.Connected -> println("Online")
+ *         is ConnectionState.Connecting -> println("Connecting...")
+ *         is ConnectionState.Reconnecting -> println("Reconnecting (attempt ${state.attempt})")
+ *         is ConnectionState.Disconnected -> when (val reason = state.reason) {
+ *             null -> println("Offline")
+ *             else -> println("Offline: ${reason.reasonCode} — ${reason.message}")
+ *         }
+ *     }
+ * }
+ * ```
+ *
+ * ## Migration from 0.1.x
+ * In 0.1.x `ConnectionState` was an enum with `CONNECTING`/`CONNECTED`/`DISCONNECTED`/
+ * `RECONNECTING` constants. Replace equality checks (`state == ConnectionState.CONNECTED`)
+ * with `is` checks (`state is ConnectionState.Connected`).
  */
-public enum class ConnectionState {
+public sealed class ConnectionState {
     /**
      * Actively establishing a connection to the broker.
      *
      * The CONNECT packet has been (or is about to be) sent and the client
      * is awaiting a CONNACK response.
      */
-    CONNECTING,
+    public object Connecting : ConnectionState() {
+        override fun toString(): String = "Connecting"
+    }
 
     /**
      * Successfully connected to the broker and ready for publish/subscribe operations.
@@ -41,25 +64,48 @@ public enum class ConnectionState {
      * The CONNECT/CONNACK handshake completed with [org.meshtastic.mqtt.packet.ReasonCode.SUCCESS].
      * The background read loop and keepalive timer are active.
      */
-    CONNECTED,
-
-    /**
-     * Not connected to any broker.
-     *
-     * Either no connection has been attempted, or the last connection was
-     * closed — either by [MqttClient.disconnect]/[MqttClient.close] or
-     * due to a broker-initiated DISCONNECT.
-     */
-    DISCONNECTED,
+    public object Connected : ConnectionState() {
+        override fun toString(): String = "Connected"
+    }
 
     /**
      * Attempting to re-establish a lost connection.
      *
      * Entered automatically when the connection drops unexpectedly and
-     * [MqttConfig.autoReconnect] is `true`. Uses exponential backoff
-     * between attempts (configurable via [MqttConfig.reconnectBaseDelayMs]
-     * and [MqttConfig.reconnectMaxDelayMs]). Subscriptions are automatically
+     * [MqttConfig.autoReconnect] is `true`. Uses exponential backoff between
+     * attempts (configurable via [MqttConfig.reconnectBaseDelayMs] and
+     * [MqttConfig.reconnectMaxDelayMs]). Subscriptions are automatically
      * re-established on successful reconnection.
+     *
+     * @property attempt 1-based count of reconnect attempts performed so far.
+     *   `0` indicates the reconnect loop has just started and no attempt has
+     *   been made yet.
+     * @property lastError The most recent failure that triggered or extended
+     *   reconnection, or `null` if reconnect was triggered by a graceful
+     *   transport drop with no exception.
      */
-    RECONNECTING,
+    public data class Reconnecting(
+        val attempt: Int,
+        val lastError: MqttException? = null,
+    ) : ConnectionState()
+
+    /**
+     * Not connected to any broker.
+     *
+     * Either no connection has been attempted, the last connection was closed
+     * by [MqttClient.disconnect]/[MqttClient.close], or it was lost due to a
+     * broker-initiated DISCONNECT or transport failure.
+     *
+     * @property reason The error that caused the disconnect, or `null` for an
+     *   intentional disconnect via [MqttClient.disconnect]/[MqttClient.close]
+     *   and for the initial state before any connection has been attempted.
+     */
+    public data class Disconnected(
+        val reason: MqttException? = null,
+    ) : ConnectionState() {
+        public companion object {
+            /** Stable singleton for the initial idle / "no reason" state. */
+            public val Idle: Disconnected = Disconnected(reason = null)
+        }
+    }
 }

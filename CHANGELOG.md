@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+- **`ConnectionState` is now a `sealed class`** (was an `enum`) so disconnect / reconnect events
+  carry diagnostic context. Pattern-match with `is` instead of `==`:
+  - `Connecting` (object)
+  - `Connected` (object)
+  - `Reconnecting(attempt, lastError)` — current attempt count and last failure observed
+  - `Disconnected(reason)` — `reason: MqttException?`. Use `Disconnected.Idle` for the
+    no-reason singleton (idle/initial/intentional-close states).
+- **Migration:** `state == ConnectionState.CONNECTED` → `state is ConnectionState.Connected`,
+  `state == ConnectionState.DISCONNECTED` → `state is ConnectionState.Disconnected`.
+
+### Added
+- `ConnectionState.Disconnected.reason`: surfaces the failure that caused an unexpected
+  disconnect — `MqttException.ConnectionRejected` for broker rejections,
+  `MqttException.ConnectionLost` for transport-side / protocol-violation tear-downs,
+  including the server's `ReasonCode` from a server-initiated DISCONNECT (§4.13).
+- `ConnectionState.Reconnecting.lastError`: the most recent reconnect attempt failure,
+  enabling consumers to render meaningful "retrying — DNS failed (3/10)" UX.
+
 ## [0.1.0] - 2026-04-16
 
 ### Added
