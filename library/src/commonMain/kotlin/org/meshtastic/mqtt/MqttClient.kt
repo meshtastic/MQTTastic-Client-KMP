@@ -927,7 +927,11 @@ public class MqttClient
             }
         }
 
-        private companion object {
+        /**
+         * Companion object — entry point for static helpers like [probe] (a one-shot
+         * connectivity diagnostic that does not require constructing a long-lived client).
+         */
+        public companion object {
             private const val MESSAGE_BUFFER_CAPACITY = 64
             private const val AUTH_BUFFER_CAPACITY = 8
             private const val MAX_REDIRECTS = 5

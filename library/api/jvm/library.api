@@ -59,6 +59,7 @@ public final class org/meshtastic/mqtt/ConnectionState$Reconnecting : org/meshta
 }
 
 public final class org/meshtastic/mqtt/MqttClient {
+	public static final field Companion Lorg/meshtastic/mqtt/MqttClient$Companion;
 	public fun <init> (Lorg/meshtastic/mqtt/MqttConfig;Lkotlinx/coroutines/CoroutineScope;)V
 	public synthetic fun <init> (Lorg/meshtastic/mqtt/MqttConfig;Lkotlinx/coroutines/CoroutineScope;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun close (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -76,6 +77,9 @@ public final class org/meshtastic/mqtt/MqttClient {
 	public final fun subscribe (Ljava/util/Map;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun subscribe$default (Lorg/meshtastic/mqtt/MqttClient;Ljava/lang/String;Lorg/meshtastic/mqtt/QoS;ZZLorg/meshtastic/mqtt/RetainHandling;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun unsubscribe ([Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/mqtt/MqttClient$Companion {
 }
 
 public final class org/meshtastic/mqtt/MqttClientKt {
@@ -311,6 +315,132 @@ public final class org/meshtastic/mqtt/MqttMessage {
 	public final fun getTopic ()Ljava/lang/String;
 	public fun hashCode ()I
 	public final fun payloadAsString ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeKt {
+	public static final field DEFAULT_PROBE_TIMEOUT_MS J
+	public static final fun probe (Lorg/meshtastic/mqtt/MqttClient$Companion;Lorg/meshtastic/mqtt/MqttEndpoint;JLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun probe$default (Lorg/meshtastic/mqtt/MqttClient$Companion;Lorg/meshtastic/mqtt/MqttEndpoint;JLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public abstract class org/meshtastic/mqtt/ProbeResult {
+}
+
+public final class org/meshtastic/mqtt/ProbeResult$DnsFailure : org/meshtastic/mqtt/ProbeResult {
+	public fun <init> (Ljava/lang/Throwable;)V
+	public final fun component1 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/Throwable;)Lorg/meshtastic/mqtt/ProbeResult$DnsFailure;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeResult$DnsFailure;Ljava/lang/Throwable;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeResult$DnsFailure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeResult$Other : org/meshtastic/mqtt/ProbeResult {
+	public fun <init> (Ljava/lang/Throwable;)V
+	public final fun component1 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/Throwable;)Lorg/meshtastic/mqtt/ProbeResult$Other;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeResult$Other;Ljava/lang/Throwable;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeResult$Other;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeResult$Rejected : org/meshtastic/mqtt/ProbeResult {
+	public fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lorg/meshtastic/mqtt/ReasonCode;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/String;)Lorg/meshtastic/mqtt/ProbeResult$Rejected;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeResult$Rejected;Lorg/meshtastic/mqtt/ReasonCode;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeResult$Rejected;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getReasonCode ()Lorg/meshtastic/mqtt/ReasonCode;
+	public final fun getServerReference ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeResult$Success : org/meshtastic/mqtt/ProbeResult {
+	public fun <init> (Lorg/meshtastic/mqtt/ProbeServerInfo;)V
+	public final fun component1 ()Lorg/meshtastic/mqtt/ProbeServerInfo;
+	public final fun copy (Lorg/meshtastic/mqtt/ProbeServerInfo;)Lorg/meshtastic/mqtt/ProbeResult$Success;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeResult$Success;Lorg/meshtastic/mqtt/ProbeServerInfo;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getServerInfo ()Lorg/meshtastic/mqtt/ProbeServerInfo;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeResult$TcpFailure : org/meshtastic/mqtt/ProbeResult {
+	public fun <init> (Ljava/lang/Throwable;)V
+	public final fun component1 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/Throwable;)Lorg/meshtastic/mqtt/ProbeResult$TcpFailure;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeResult$TcpFailure;Ljava/lang/Throwable;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeResult$TcpFailure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeResult$Timeout : org/meshtastic/mqtt/ProbeResult {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Lorg/meshtastic/mqtt/ProbeResult$Timeout;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeResult$Timeout;JILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeResult$Timeout;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDurationMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeResult$TlsFailure : org/meshtastic/mqtt/ProbeResult {
+	public fun <init> (Ljava/lang/Throwable;)V
+	public final fun component1 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/Throwable;)Lorg/meshtastic/mqtt/ProbeResult$TlsFailure;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeResult$TlsFailure;Ljava/lang/Throwable;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeResult$TlsFailure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/mqtt/ProbeServerInfo {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/Integer;
+	public final fun component11 ()Ljava/lang/String;
+	public final fun component12 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Integer;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ljava/lang/Boolean;
+	public final fun component5 ()Ljava/lang/Boolean;
+	public final fun component6 ()Ljava/lang/Boolean;
+	public final fun component7 ()Ljava/lang/Boolean;
+	public final fun component8 ()Ljava/lang/Long;
+	public final fun component9 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;)Lorg/meshtastic/mqtt/ProbeServerInfo;
+	public static synthetic fun copy$default (Lorg/meshtastic/mqtt/ProbeServerInfo;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Long;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/mqtt/ProbeServerInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAssignedClientIdentifier ()Ljava/lang/String;
+	public final fun getMaximumPacketSize ()Ljava/lang/Long;
+	public final fun getMaximumQosOrdinal ()Ljava/lang/Integer;
+	public final fun getReceiveMaximum ()Ljava/lang/Integer;
+	public final fun getResponseInformation ()Ljava/lang/String;
+	public final fun getRetainAvailable ()Ljava/lang/Boolean;
+	public final fun getServerKeepAliveSeconds ()Ljava/lang/Integer;
+	public final fun getServerReference ()Ljava/lang/String;
+	public final fun getSharedSubscriptionAvailable ()Ljava/lang/Boolean;
+	public final fun getSubscriptionIdentifiersAvailable ()Ljava/lang/Boolean;
+	public final fun getTopicAliasMaximum ()Ljava/lang/Integer;
+	public final fun getWildcardSubscriptionAvailable ()Ljava/lang/Boolean;
+	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 

@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `state == ConnectionState.DISCONNECTED` → `state is ConnectionState.Disconnected`.
 
 ### Added
+- `MqttClient.probe(endpoint, timeoutMs, configure)` — one-shot connectivity diagnostic
+  that performs a CONNECT/CONNACK handshake against an `MqttEndpoint`, classifies the
+  outcome into a public `ProbeResult` sealed class (`Success`, `Rejected`, `DnsFailure`,
+  `TcpFailure`, `TlsFailure`, `Timeout`, `Other`), and tears the transient connection
+  back down. Designed for "Test Connection" affordances in consumer settings UIs.
+- `ProbeResult` and `ProbeServerInfo` public types — `Success.serverInfo` exposes a
+  curated subset of broker CONNACK properties (`assignedClientIdentifier`,
+  `serverKeepAliveSeconds`, `maximumQosOrdinal`, `retainAvailable`, etc.) for capability
+  diagnostics without leaking the internal `MqttProperties` shape.
+- `DEFAULT_PROBE_TIMEOUT_MS` (5 000 ms) — public default for the probe wall-clock budget.
 - `ConnectionState.Disconnected.reason`: surfaces the failure that caused an unexpected
   disconnect — `MqttException.ConnectionRejected` for broker rejections,
   `MqttException.ConnectionLost` for transport-side / protocol-violation tear-downs,
