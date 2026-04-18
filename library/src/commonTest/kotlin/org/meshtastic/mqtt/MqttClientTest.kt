@@ -75,7 +75,7 @@ class MqttClientTest {
             client.connect(endpoint)
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
 
             val sentConnect = transport.decodeSentPackets().first()
             assertIs<Connect>(sentConnect)
@@ -84,7 +84,7 @@ class MqttClientTest {
             client.disconnect()
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Disconnected.Idle, client.connectionState.value)
 
             val sentDisconnect = transport.decodeSentPackets().last()
             assertIs<Disconnect>(sentDisconnect)
@@ -308,12 +308,12 @@ class MqttClientTest {
             client.connect(endpoint)
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
 
             client.close()
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Disconnected.Idle, client.connectionState.value)
             // close() should have sent DISCONNECT and closed the transport
             val sentDisconnect = transport.decodeSentPackets().last()
             assertIs<Disconnect>(sentDisconnect)
@@ -355,17 +355,17 @@ class MqttClientTest {
             client.connect(endpoint)
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
 
             // Manual disconnect should NOT trigger reconnect even with autoReconnect=true
             client.disconnect()
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Disconnected.Idle, client.connectionState.value)
 
             // Give time for a reconnect to potentially trigger (it shouldn't)
             advanceUntilIdle()
-            assertEquals(ConnectionState.DISCONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Disconnected.Idle, client.connectionState.value)
 
             client.close()
         }
@@ -582,7 +582,7 @@ class MqttClientTest {
             // Initial connect
             client.connect(endpoint)
             advanceUntilIdle()
-            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
 
             // Subscribe so we can verify resubscription after reconnect
             transport.enqueuePacket(
@@ -609,7 +609,7 @@ class MqttClientTest {
             advanceTimeBy(200)
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.CONNECTED, client.connectionState.value)
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
 
             // Verify reconnect sent a new CONNECT
             val connectPackets = transport.decodeSentPackets().filterIsInstance<Connect>()

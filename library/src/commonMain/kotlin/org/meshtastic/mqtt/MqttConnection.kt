@@ -101,7 +101,7 @@ internal class MqttConnection(
     private val log: MqttLoggerInternal = MqttLoggerInternal.NOOP,
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
-    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
+    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected.Idle)
 
     /** Observable connection state. */
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -187,7 +187,7 @@ internal class MqttConnection(
      * @throws MqttConnectionException if the broker rejects the connection.
      */
     suspend fun connect(endpoint: MqttEndpoint): ConnAck {
-        _connectionState.value = ConnectionState.CONNECTING
+        _connectionState.value = ConnectionState.Connecting
 
         if (!config.cleanStart) {
             log.warn(TAG) {
@@ -210,7 +210,7 @@ internal class MqttConnection(
             if (connAck.reasonCode != ReasonCode.SUCCESS) {
                 log.error(TAG) { "Connection refused: ${connAck.reasonCode}" }
                 transport.close()
-                _connectionState.value = ConnectionState.DISCONNECTED
+                _connectionState.value = ConnectionState.Disconnected.Idle
                 val serverRef = connAck.properties.serverReference
                 throw MqttConnectionException(
                     connAck.reasonCode,
@@ -265,7 +265,7 @@ internal class MqttConnection(
                     (assignedClientId?.let { ", assignedClientId=$it" } ?: "")
             }
 
-            _connectionState.value = ConnectionState.CONNECTED
+            _connectionState.value = ConnectionState.Connected
             startReadLoop()
             startKeepAlive()
 
@@ -282,7 +282,7 @@ internal class MqttConnection(
             ) {
                 // Best-effort transport close
             }
-            _connectionState.value = ConnectionState.DISCONNECTED
+            _connectionState.value = ConnectionState.Disconnected.Idle
             throw MqttConnectionException(
                 ReasonCode.UNSPECIFIED_ERROR,
                 "Connection timed out: no CONNACK received within ${ACK_TIMEOUT_MS}ms",
@@ -301,7 +301,7 @@ internal class MqttConnection(
             ) {
                 // Best-effort transport close on handshake failure
             }
-            _connectionState.value = ConnectionState.DISCONNECTED
+            _connectionState.value = ConnectionState.Disconnected.Idle
             throw MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, "Connection failed: ${e.message}", e)
         }
     }
@@ -386,7 +386,8 @@ internal class MqttConnection(
     }
 
     private suspend fun resetConnectionState() {
-        _connectionState.value = ConnectionState.DISCONNECTED
+        // Caller-initiated graceful disconnect — no failure reason.
+        _connectionState.value = ConnectionState.Disconnected.Idle
         if (config.cleanStart) {
             packetIdAllocator.reset()
         }
@@ -423,7 +424,7 @@ internal class MqttConnection(
      * @return Reason code from the acknowledgement, or `null` for QoS 0.
      */
     suspend fun publish(message: MqttMessage): ReasonCode? {
-        check(_connectionState.value == ConnectionState.CONNECTED) { "Not connected" }
+        check(_connectionState.value is ConnectionState.Connected) { "Not connected" }
 
         // Enforce server Maximum QoS (§3.2.2.3.4)
         require(message.qos <= serverMaximumQos) {
@@ -478,7 +479,7 @@ internal class MqttConnection(
         subscriptions: List<Subscription>,
         properties: MqttProperties = MqttProperties.EMPTY,
     ): SubAck {
-        check(_connectionState.value == ConnectionState.CONNECTED) { "Not connected" }
+        check(_connectionState.value is ConnectionState.Connected) { "Not connected" }
 
         // Enforce shared subscription availability (§4.8.2)
         if (!serverSharedSubscriptionAvailable) {
@@ -546,7 +547,7 @@ internal class MqttConnection(
         topicFilters: List<String>,
         properties: MqttProperties = MqttProperties.EMPTY,
     ): UnsubAck {
-        check(_connectionState.value == ConnectionState.CONNECTED) { "Not connected" }
+        check(_connectionState.value is ConnectionState.Connected) { "Not connected" }
 
         val packetId = packetIdAllocator.allocate()
         val deferred = CompletableDeferred<MqttPacket>()
@@ -783,7 +784,7 @@ internal class MqttConnection(
                 ) {
                     if (isActive) {
                         log.error(TAG, throwable = e) { "Read loop error: ${e.message}" }
-                        handleFatalError()
+                        handleFatalError(cause = e)
                     }
                 }
                 log.debug(TAG) { "Read loop stopped" }
@@ -791,17 +792,30 @@ internal class MqttConnection(
     }
 
     /** Centralized fatal error handler: tear down resources and fail all pending waiters. */
-    private suspend fun handleFatalError(reasonCode: ReasonCode = ReasonCode.UNSPECIFIED_ERROR) {
+    private suspend fun handleFatalError(
+        reasonCode: ReasonCode = ReasonCode.UNSPECIFIED_ERROR,
+        cause: Throwable? = null,
+    ) {
         // Guard against re-entrant calls (e.g., handlePacket → handleFatalError → sendPacket fails)
         if (handlingFatalError) return
         handlingFatalError = true
+
+        // Coerce the cause to a public MqttException to derive the reason code and reason value.
+        val mappedReason: MqttException? = cause?.toMqttException(defaultReasonCode = reasonCode)
+        // Prefer the explicit reasonCode argument; fall back to the cause's reasonCode if present.
+        val effectiveReasonCode =
+            if (reasonCode == ReasonCode.UNSPECIFIED_ERROR && mappedReason != null) {
+                mappedReason.reasonCode
+            } else {
+                reasonCode
+            }
 
         log.error(TAG) { "Fatal error — tearing down connection" }
         stopBackgroundJobs()
         try {
             // §4.13: Send DISCONNECT with appropriate reason code before closing
             if (transport.isConnected) {
-                sendPacket(Disconnect(reasonCode = reasonCode))
+                sendPacket(Disconnect(reasonCode = effectiveReasonCode))
             }
         } catch (
             @Suppress("SwallowedException") _: kotlin.coroutines.cancellation.CancellationException,
@@ -827,7 +841,13 @@ internal class MqttConnection(
         // (read loop or keepalive) was cancelled by stopBackgroundJobs() above.
         withContext(NonCancellable) {
             failAllPendingAcks()
-            _connectionState.value = ConnectionState.DISCONNECTED
+            val reason =
+                mappedReason
+                    ?: MqttException.ConnectionLost(
+                        reasonCode = effectiveReasonCode,
+                        message = "Connection lost (${effectiveReasonCode.name})",
+                    )
+            _connectionState.value = ConnectionState.Disconnected(reason = reason)
         }
     }
 
@@ -929,7 +949,14 @@ internal class MqttConnection(
                 stopBackgroundJobs()
                 transport.close()
                 failAllPendingAcks()
-                _connectionState.value = ConnectionState.DISCONNECTED
+                _connectionState.value =
+                    ConnectionState.Disconnected(
+                        reason =
+                            MqttException.ConnectionLost(
+                                reasonCode = packet.reasonCode,
+                                message = "Server initiated disconnect (${packet.reasonCode})",
+                            ),
+                    )
             }
 
             is ConnAck, is Connect, is Subscribe, is Unsubscribe -> {

@@ -328,9 +328,9 @@ private typealias ColumnScope = androidx.compose.foundation.layout.ColumnScope
 
 @Composable
 private fun ConnectionCard(state: MqttSampleState, viewModel: MqttSampleViewModel) {
-    val connected = state.connectionState == ConnectionState.CONNECTED
-    val connecting = state.connectionState == ConnectionState.CONNECTING ||
-        state.connectionState == ConnectionState.RECONNECTING
+    val connected = state.connectionState is ConnectionState.Connected
+    val connecting = state.connectionState is ConnectionState.Connecting ||
+        state.connectionState is ConnectionState.Reconnecting
     SectionCard(title = "Connection") {
         OutlinedTextField(
             value = state.brokerUri,
@@ -383,10 +383,10 @@ private fun ConnectionCard(state: MqttSampleState, viewModel: MqttSampleViewMode
             }
             Text(
                 when (state.connectionState) {
-                    ConnectionState.CONNECTED -> "Disconnect"
-                    ConnectionState.CONNECTING -> "Connecting…"
-                    ConnectionState.RECONNECTING -> "Reconnecting…"
-                    ConnectionState.DISCONNECTED -> "Connect"
+                    is ConnectionState.Connected -> "Disconnect"
+                    is ConnectionState.Connecting -> "Connecting…"
+                    is ConnectionState.Reconnecting -> "Reconnecting…"
+                    is ConnectionState.Disconnected -> "Connect"
                 },
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
@@ -416,7 +416,7 @@ private fun SubscribeCard(state: MqttSampleState, viewModel: MqttSampleViewModel
         QosChipRow(state.subscribeQos, viewModel::updateSubscribeQos)
         FilledTonalButton(
             onClick = viewModel::subscribe,
-            enabled = state.connectionState == ConnectionState.CONNECTED,
+            enabled = state.connectionState is ConnectionState.Connected,
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
         ) { Text("Subscribe", fontWeight = FontWeight.SemiBold) }
@@ -470,7 +470,7 @@ private fun PublishCard(state: MqttSampleState, viewModel: MqttSampleViewModel) 
         }
         FilledTonalButton(
             onClick = viewModel::publish,
-            enabled = state.connectionState == ConnectionState.CONNECTED,
+            enabled = state.connectionState is ConnectionState.Connected,
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.large,
         ) { Text("Send", fontWeight = FontWeight.SemiBold) }
@@ -521,8 +521,8 @@ private fun MessagesPane(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             if (state.receivedMessages.isEmpty()) {
                 EmptyMessages(
-                    connecting = state.connectionState == ConnectionState.CONNECTING ||
-                        state.connectionState == ConnectionState.RECONNECTING,
+                    connecting = state.connectionState is ConnectionState.Connecting ||
+                        state.connectionState is ConnectionState.Reconnecting,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -789,10 +789,10 @@ private fun QosRetainBadges(msg: DisplayMessage) {
 @Composable
 private fun ConnectionChip(connectionState: ConnectionState) {
     val (label, color) = when (connectionState) {
-        ConnectionState.CONNECTED -> "Connected" to MeshGreen
-        ConnectionState.CONNECTING -> "Connecting" to MeshWarning
-        ConnectionState.RECONNECTING -> "Reconnecting" to MeshWarning
-        ConnectionState.DISCONNECTED -> "Offline" to MaterialTheme.colorScheme.outline
+        is ConnectionState.Connected -> "Connected" to MeshGreen
+        is ConnectionState.Connecting -> "Connecting" to MeshWarning
+        is ConnectionState.Reconnecting -> "Reconnecting" to MeshWarning
+        is ConnectionState.Disconnected -> "Offline" to MaterialTheme.colorScheme.outline
     }
     Surface(
         shape = MaterialTheme.shapes.small,
@@ -878,7 +878,7 @@ fun MqttTopBarPreview() {
     MaterialExpressiveTheme(colorScheme = MeshDarkColors) {
         Surface {
             MqttTopBar(
-                connectionState = ConnectionState.CONNECTED,
+                connectionState = ConnectionState.Connected,
                 scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(rememberTopAppBarState())
             )
         }

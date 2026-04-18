@@ -82,7 +82,7 @@ class MqttConnectionTest {
             advanceUntilIdle()
 
             assertEquals(ReasonCode.SUCCESS, connAck.reasonCode)
-            assertEquals(ConnectionState.CONNECTED, connection.connectionState.value)
+            assertEquals(ConnectionState.Connected, connection.connectionState.value)
 
             val sentPacket = transport.decodeSentPackets().first()
             assertIs<Connect>(sentPacket)
@@ -186,7 +186,7 @@ class MqttConnectionTest {
                     connection.connect(endpoint)
                 }
             assertEquals(ReasonCode.BAD_USER_NAME_OR_PASSWORD, ex.reasonCode)
-            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+            assertEquals(ConnectionState.Disconnected.Idle, connection.connectionState.value)
         }
 
     @Test
@@ -201,7 +201,7 @@ class MqttConnectionTest {
             connection.connect(endpoint)
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.CONNECTED, connection.connectionState.value)
+            assertEquals(ConnectionState.Connected, connection.connectionState.value)
 
             connection.disconnect()
             advanceUntilIdle()
@@ -222,7 +222,7 @@ class MqttConnectionTest {
             connection.disconnect()
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+            assertEquals(ConnectionState.Disconnected.Idle, connection.connectionState.value)
 
             val disconnectPackets = transport.decodeSentPackets().filterIsInstance<Disconnect>()
             assertEquals(1, disconnectPackets.size)
@@ -543,7 +543,11 @@ class MqttConnectionTest {
             transport.enqueuePacket(Disconnect(reasonCode = ReasonCode.SERVER_SHUTTING_DOWN))
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+            val state = connection.connectionState.value
+            assertIs<ConnectionState.Disconnected>(state)
+            val reason = state.reason
+            assertIs<MqttException.ConnectionLost>(reason)
+            assertEquals(ReasonCode.SERVER_SHUTTING_DOWN, reason.reasonCode)
         }
 
     // --- PubRel from server (incoming QoS 2) ---
@@ -803,7 +807,9 @@ class MqttConnectionTest {
             advanceUntilIdle()
 
             // The connection should be in DISCONNECTED state due to the protocol error
-            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+            val state = connection.connectionState.value
+            assertIs<ConnectionState.Disconnected>(state)
+            assertIs<MqttException.ConnectionLost>(state.reason)
         }
 
     // --- Safe ACK casts — wrong packet type for pending ACK ---
@@ -871,8 +877,12 @@ class MqttConnectionTest {
             )
             advanceUntilIdle()
 
-            // Connection should be torn down
-            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+            // Connection should be torn down with PROTOCOL_ERROR reason
+            val state = connection.connectionState.value
+            assertIs<ConnectionState.Disconnected>(state)
+            val reason = state.reason
+            assertIs<MqttException.ConnectionLost>(reason)
+            assertEquals(ReasonCode.PROTOCOL_ERROR, reason.reasonCode)
 
             // Verify a DISCONNECT was sent with PROTOCOL_ERROR reason code
             val disconnects = transport.decodeSentPackets().filterIsInstance<Disconnect>()
@@ -1014,7 +1024,7 @@ class MqttConnectionTest {
                 exception.message?.contains("timed out") == true,
                 "Expected timeout message, got: ${exception.message}",
             )
-            assertEquals(ConnectionState.DISCONNECTED, connection.connectionState.value)
+            assertEquals(ConnectionState.Disconnected.Idle, connection.connectionState.value)
         }
 
     // --- Stray PUBREL (session resumption) ---
@@ -1102,7 +1112,7 @@ class MqttConnectionTest {
             advanceTimeBy(100)
 
             // Connection should still be alive
-            assertEquals(ConnectionState.CONNECTED, connection.connectionState.value)
+            assertEquals(ConnectionState.Connected, connection.connectionState.value)
 
             connection.disconnect()
             advanceUntilIdle()
@@ -1124,11 +1134,12 @@ class MqttConnectionTest {
             //   t=22500 → elapsed=15000 >= deadline=10000 → TIMEOUT
             advanceTimeBy(23_000)
 
-            assertEquals(
-                ConnectionState.DISCONNECTED,
-                connection.connectionState.value,
+            val state = connection.connectionState.value
+            assertIs<ConnectionState.Disconnected>(
+                state,
                 "Connection should be DISCONNECTED after PINGRESP timeout",
             )
+            assertIs<MqttException.ConnectionLost>(state.reason)
         }
 
     companion object {

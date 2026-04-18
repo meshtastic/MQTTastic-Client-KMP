@@ -74,7 +74,7 @@ data class MqttSampleState(
     val clientId: String = "mqtttastic-sample",
     val username: String = "meshdev",
     val password: String = "large4cats",
-    val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
+    val connectionState: ConnectionState = ConnectionState.Disconnected.Idle,
     // subscribe
     val subscribeTopic: String = "msh/US/2/e/LongFast/#",
     val subscribeQos: QoS = QoS.AT_MOST_ONCE,
@@ -175,7 +175,7 @@ class MqttSampleViewModel : ViewModel() {
 
     fun connect() {
         val s = _state.value
-        if (s.connectionState != ConnectionState.DISCONNECTED) return
+        if (s.connectionState !is ConnectionState.Disconnected) return
         viewModelScope.launch(exceptionHandler) {
             try {
                 val endpoint = MqttEndpoint.parse(s.brokerUri)
@@ -236,7 +236,7 @@ class MqttSampleViewModel : ViewModel() {
                 client = null
                 _state.update {
                     it.copy(
-                        connectionState = ConnectionState.DISCONNECTED,
+                        connectionState = ConnectionState.Disconnected.Idle,
                         activeSubscriptions = emptySet(),
                     )
                 }
