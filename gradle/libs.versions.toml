@@ -1,6 +1,6 @@
 [versions]
 agp = "9.2.0"
-kotlin = "2.3.20"
+kotlin = "2.3.21"
 ktor = "3.4.3"
 coroutines = "1.10.2"
 kotlinx-io = "0.9.0"
