@@ -23,12 +23,17 @@ import org.meshtastic.mqtt.packet.decodePacket
 import org.meshtastic.mqtt.packet.encode
 
 /**
- * In-memory [MqttTransport] for unit testing the MQTT 5.0 client state machine.
+ * In-memory [MqttTransport] for unit testing the MQTT client state machine.
  *
  * Provides helpers to enqueue broker responses, inspect client-sent packets,
  * and simulate connection errors — all without touching the network.
+ *
+ * @param version The protocol version used for encoding/decoding packets in
+ *   test helpers. Defaults to [MqttProtocolVersion.V5_0].
  */
-internal class FakeTransport : MqttTransport {
+internal class FakeTransport(
+    private val version: MqttProtocolVersion = MqttProtocolVersion.V5_0,
+) : MqttTransport {
     private var _isConnected = false
     override val isConnected: Boolean get() = _isConnected
 
@@ -95,14 +100,14 @@ internal class FakeTransport : MqttTransport {
 
     /** Encode and enqueue an [MqttPacket] for the client to receive. */
     fun enqueuePacket(packet: MqttPacket) {
-        enqueueReceive(packet.encode())
+        enqueueReceive(packet.encode(version))
     }
 
     /** Decode all sent byte arrays back into [MqttPacket] objects. */
-    fun decodeSentPackets(): List<MqttPacket> = _sentPackets.map { decodePacket(it) }
+    fun decodeSentPackets(): List<MqttPacket> = _sentPackets.map { decodePacket(it, version) }
 
     /** Decode the most recently sent packet. */
-    fun lastSentPacket(): MqttPacket = decodePacket(_sentPackets.last())
+    fun lastSentPacket(): MqttPacket = decodePacket(_sentPackets.last(), version)
 
     /** Clear the sent-packet history. */
     fun clearSent() {

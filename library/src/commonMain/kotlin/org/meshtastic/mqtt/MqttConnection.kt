@@ -101,6 +101,9 @@ internal class MqttConnection(
     private val log: MqttLoggerInternal = MqttLoggerInternal.NOOP,
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
+    /** The MQTT protocol version for this connection. */
+    private val version: MqttProtocolVersion get() = config.protocolVersion
+
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected.Idle)
 
     /** Observable connection state. */
@@ -221,42 +224,47 @@ internal class MqttConnection(
 
             log.debug(TAG) { "Received CONNACK: reasonCode=${connAck.reasonCode}" }
 
-            // Store server-assigned values from CONNACK properties
-            connAck.properties.receiveMaximum?.let { serverReceiveMaximum = it }
-            connAck.properties.assignedClientIdentifier?.let { assignedClientId = it }
-            connAck.properties.topicAliasMaximum?.let { serverTopicAliasMaximum = it }
-            connAck.properties.sharedSubscriptionAvailable?.let { serverSharedSubscriptionAvailable = it }
-            connAck.properties.maximumQos?.let { value ->
-                serverMaximumQos =
-                    when (value) {
-                        0 -> {
-                            QoS.AT_MOST_ONCE
-                        }
+            if (version.supportsProperties) {
+                // Store server-assigned values from CONNACK properties
+                connAck.properties.receiveMaximum?.let { serverReceiveMaximum = it }
+                connAck.properties.assignedClientIdentifier?.let { assignedClientId = it }
+                connAck.properties.topicAliasMaximum?.let { serverTopicAliasMaximum = it }
+                connAck.properties.sharedSubscriptionAvailable?.let { serverSharedSubscriptionAvailable = it }
+                connAck.properties.maximumQos?.let { value ->
+                    serverMaximumQos =
+                        when (value) {
+                            0 -> {
+                                QoS.AT_MOST_ONCE
+                            }
 
-                        1 -> {
-                            QoS.AT_LEAST_ONCE
-                        }
+                            1 -> {
+                                QoS.AT_LEAST_ONCE
+                            }
 
-                        else -> {
-                            log.warn(TAG) { "Invalid Maximum QoS value $value in CONNACK, treating as protocol error" }
-                            throw MqttConnectionException(
-                                ReasonCode.PROTOCOL_ERROR,
-                                "Invalid Maximum QoS value $value in CONNACK (§3.2.2.3.4)",
-                            )
+                            else -> {
+                                log.warn(TAG) { "Invalid Maximum QoS value $value in CONNACK, treating as protocol error" }
+                                throw MqttConnectionException(
+                                    ReasonCode.PROTOCOL_ERROR,
+                                    "Invalid Maximum QoS value $value in CONNACK (§3.2.2.3.4)",
+                                )
+                            }
                         }
-                    }
+                }
+                connAck.properties.retainAvailable?.let { serverRetainAvailable = it }
+                connAck.properties.wildcardSubscriptionAvailable?.let { serverWildcardSubscriptionAvailable = it }
+                connAck.properties.subscriptionIdentifiersAvailable?.let { serverSubscriptionIdentifiersAvailable = it }
+                connAck.properties.maximumPacketSize?.let { serverMaximumPacketSize = it }
+
+                // Honor Server Keep Alive override (§3.2.2.3.14)
+                effectiveKeepAliveSeconds =
+                    connAck.properties.serverKeepAlive ?: config.keepAliveSeconds
+
+                // Initialize flow control semaphore based on server's Receive Maximum (§3.3.4)
+                inflightSemaphore = Semaphore(serverReceiveMaximum)
+            } else {
+                // MQTT 3.1.1: no properties in CONNACK, use config values
+                effectiveKeepAliveSeconds = config.keepAliveSeconds
             }
-            connAck.properties.retainAvailable?.let { serverRetainAvailable = it }
-            connAck.properties.wildcardSubscriptionAvailable?.let { serverWildcardSubscriptionAvailable = it }
-            connAck.properties.subscriptionIdentifiersAvailable?.let { serverSubscriptionIdentifiersAvailable = it }
-            connAck.properties.maximumPacketSize?.let { serverMaximumPacketSize = it }
-
-            // Honor Server Keep Alive override (§3.2.2.3.14)
-            effectiveKeepAliveSeconds =
-                connAck.properties.serverKeepAlive ?: config.keepAliveSeconds
-
-            // Initialize flow control semaphore based on server's Receive Maximum (§3.3.4)
-            inflightSemaphore = Semaphore(serverReceiveMaximum)
 
             log.debug(TAG) {
                 "Session established: keepAlive=${effectiveKeepAliveSeconds}s, " +
@@ -315,7 +323,7 @@ internal class MqttConnection(
         withTimeout(ACK_TIMEOUT_MS) {
             while (true) {
                 val responseBytes = transport.receive()
-                val response = decodePacket(responseBytes)
+                val response = decodePacket(responseBytes, version)
 
                 when (response) {
                     is ConnAck -> {
@@ -323,6 +331,13 @@ internal class MqttConnection(
                     }
 
                     is Auth -> {
+                        // AUTH is only valid in MQTT 5.0
+                        if (!version.supportsProperties) {
+                            throw MqttConnectionException(
+                                ReasonCode.PROTOCOL_ERROR,
+                                "Received AUTH packet during MQTT 3.1.1 handshake",
+                            )
+                        }
                         _authChallenges.emit(
                             AuthChallenge(
                                 reasonCode = response.reasonCode,
@@ -356,6 +371,8 @@ internal class MqttConnection(
 
         try {
             if (transport.isConnected) {
+                // MQTT 3.1.1: DISCONNECT has no variable header/payload — always send empty
+                // MQTT 5.0: send with reason code and optional properties
                 sendPacket(Disconnect(reasonCode = reasonCode))
                 transport.close()
             }
@@ -438,8 +455,13 @@ internal class MqttConnection(
             }
         }
 
-        val publishProperties = buildPublishProperties(message.properties)
-        val (resolvedTopic, resolvedProperties) = applyOutboundTopicAlias(message.topic, publishProperties)
+        val publishProperties = if (version.supportsProperties) buildPublishProperties(message.properties) else MqttProperties.EMPTY
+        val (resolvedTopic, resolvedProperties) =
+            if (version.supportsProperties) {
+                applyOutboundTopicAlias(message.topic, publishProperties)
+            } else {
+                message.topic to MqttProperties.EMPTY
+            }
 
         return when (message.qos) {
             QoS.AT_MOST_ONCE -> {
@@ -481,28 +503,46 @@ internal class MqttConnection(
     ): SubAck {
         check(_connectionState.value is ConnectionState.Connected) { "Not connected" }
 
-        // Enforce shared subscription availability (§4.8.2)
-        if (!serverSharedSubscriptionAvailable) {
-            subscriptions.forEach { sub ->
-                require(!TopicValidator.isSharedSubscription(sub.topicFilter)) {
-                    "Server does not support shared subscriptions (§4.8.2): '${sub.topicFilter}'"
+        if (version.supportsProperties) {
+            // Enforce shared subscription availability (§4.8.2)
+            if (!serverSharedSubscriptionAvailable) {
+                subscriptions.forEach { sub ->
+                    require(!TopicValidator.isSharedSubscription(sub.topicFilter)) {
+                        "Server does not support shared subscriptions (§4.8.2): '${sub.topicFilter}'"
+                    }
                 }
             }
-        }
 
-        // Enforce wildcard subscription availability (§3.2.2.3.12)
-        if (!serverWildcardSubscriptionAvailable) {
-            subscriptions.forEach { sub ->
-                require(!TopicValidator.containsWildcards(sub.topicFilter)) {
-                    "Server does not support wildcard subscriptions (§3.2.2.3.12): '${sub.topicFilter}'"
+            // Enforce wildcard subscription availability (§3.2.2.3.12)
+            if (!serverWildcardSubscriptionAvailable) {
+                subscriptions.forEach { sub ->
+                    require(!TopicValidator.containsWildcards(sub.topicFilter)) {
+                        "Server does not support wildcard subscriptions (§3.2.2.3.12): '${sub.topicFilter}'"
+                    }
                 }
             }
-        }
 
-        // Enforce subscription identifier availability (§3.2.2.3.14)
-        if (!serverSubscriptionIdentifiersAvailable) {
-            require(properties.subscriptionIdentifier.isEmpty()) {
-                "Server does not support subscription identifiers (§3.2.2.3.14)"
+            // Enforce subscription identifier availability (§3.2.2.3.14)
+            if (!serverSubscriptionIdentifiersAvailable) {
+                require(properties.subscriptionIdentifier.isEmpty()) {
+                    "Server does not support subscription identifiers (§3.2.2.3.14)"
+                }
+            }
+        } else {
+            // MQTT 3.1.1: validate no 5.0-only subscription options
+            subscriptions.forEach { sub ->
+                require(!sub.noLocal) {
+                    "noLocal subscription option is not supported in MQTT 3.1.1"
+                }
+                require(!sub.retainAsPublished) {
+                    "retainAsPublished subscription option is not supported in MQTT 3.1.1"
+                }
+                require(sub.retainHandling == RetainHandling.SEND_AT_SUBSCRIBE) {
+                    "retainHandling subscription option is not supported in MQTT 3.1.1"
+                }
+            }
+            require(properties == MqttProperties.EMPTY) {
+                "Subscribe properties are not supported in MQTT 3.1.1"
             }
         }
 
@@ -602,7 +642,7 @@ internal class MqttConnection(
     /** Send a packet over the transport, guarded by [sendMutex] for wire-level serialization. */
     private suspend fun sendPacket(packet: MqttPacket) {
         sendMutex.withLock {
-            val bytes = packet.encode()
+            val bytes = packet.encode(version)
 
             // Enforce broker's Maximum Packet Size on outbound packets (§3.2.2.3.6)
             serverMaximumPacketSize?.let { maxSize ->
@@ -771,7 +811,7 @@ internal class MqttConnection(
                             }
                         }
 
-                        val packet = decodePacket(bytes)
+                        val packet = decodePacket(bytes, version)
                         log.debug(TAG) { "Received ${packet.packetType}" }
                         handlePacket(packet)
                     }
@@ -813,9 +853,12 @@ internal class MqttConnection(
         log.error(TAG) { "Fatal error — tearing down connection" }
         stopBackgroundJobs()
         try {
-            // §4.13: Send DISCONNECT with appropriate reason code before closing
             if (transport.isConnected) {
-                sendPacket(Disconnect(reasonCode = effectiveReasonCode))
+                if (version.supportsProperties) {
+                    // §4.13: Send DISCONNECT with appropriate reason code before closing
+                    sendPacket(Disconnect(reasonCode = effectiveReasonCode))
+                }
+                // MQTT 3.1.1: no DISCONNECT with reason code — just close the transport
             }
         } catch (
             @Suppress("SwallowedException") _: kotlin.coroutines.cancellation.CancellationException,
@@ -929,6 +972,12 @@ internal class MqttConnection(
             }
 
             is Disconnect -> {
+                if (!version.supportsProperties) {
+                    // MQTT 3.1.1: server should never send DISCONNECT
+                    log.error(TAG) { "Protocol violation: received DISCONNECT from broker in MQTT 3.1.1" }
+                    handleFatalError(ReasonCode.PROTOCOL_ERROR)
+                    return
+                }
                 log.warn(TAG) { "Received DISCONNECT from broker: reasonCode=${packet.reasonCode}" }
                 val isRedirect =
                     packet.reasonCode == ReasonCode.USE_ANOTHER_SERVER ||
@@ -977,6 +1026,12 @@ internal class MqttConnection(
             }
 
             is Auth -> {
+                if (!version.supportsProperties) {
+                    // MQTT 3.1.1: AUTH packet does not exist
+                    log.error(TAG) { "Protocol violation: received AUTH packet in MQTT 3.1.1" }
+                    handleFatalError(ReasonCode.PROTOCOL_ERROR)
+                    return
+                }
                 log.debug(TAG) { "Received AUTH: reasonCode=${packet.reasonCode}" }
                 handleAuthPacket(packet)
             }
@@ -1119,20 +1174,25 @@ internal class MqttConnection(
     @Suppress("CyclomaticComplexMethod")
     private fun buildConnectPacket(): Connect {
         val connectProperties =
-            MqttProperties(
-                sessionExpiryInterval = config.sessionExpiryInterval,
-                receiveMaximum = if (config.receiveMaximum != DEFAULT_RECEIVE_MAXIMUM) config.receiveMaximum else null,
-                maximumPacketSize = config.maximumPacketSize,
-                topicAliasMaximum = if (config.topicAliasMaximum != 0) config.topicAliasMaximum else null,
-                requestResponseInformation = if (config.requestResponseInformation) true else null,
-                requestProblemInformation = if (!config.requestProblemInformation) false else null,
-                userProperties = config.userProperties,
-                authenticationMethod = config.authenticationMethod,
-                authenticationData = config.authenticationData?.toByteArray(),
-            )
+            if (version.supportsProperties) {
+                MqttProperties(
+                    sessionExpiryInterval = config.sessionExpiryInterval,
+                    receiveMaximum = if (config.receiveMaximum != DEFAULT_RECEIVE_MAXIMUM) config.receiveMaximum else null,
+                    maximumPacketSize = config.maximumPacketSize,
+                    topicAliasMaximum = if (config.topicAliasMaximum != 0) config.topicAliasMaximum else null,
+                    requestResponseInformation = if (config.requestResponseInformation) true else null,
+                    requestProblemInformation = if (!config.requestProblemInformation) false else null,
+                    userProperties = config.userProperties,
+                    authenticationMethod = config.authenticationMethod,
+                    authenticationData = config.authenticationData?.toByteArray(),
+                )
+            } else {
+                MqttProperties.EMPTY
+            }
 
         val willConfig = config.will
         return Connect(
+            protocolLevel = version.protocolLevel,
             cleanStart = config.cleanStart,
             keepAliveSeconds = config.keepAliveSeconds,
             clientId = config.clientId,
@@ -1140,7 +1200,12 @@ internal class MqttConnection(
             willPayload = willConfig?.payload?.toByteArray(),
             willQos = willConfig?.qos ?: QoS.AT_MOST_ONCE,
             willRetain = willConfig?.retain ?: false,
-            willProperties = willConfig?.let { buildWillProperties(it) } ?: MqttProperties.EMPTY,
+            willProperties =
+                if (version.supportsProperties) {
+                    willConfig?.let { buildWillProperties(it) } ?: MqttProperties.EMPTY
+                } else {
+                    MqttProperties.EMPTY
+                },
             username = config.username,
             password = config.password?.toByteArray(),
             properties = connectProperties,

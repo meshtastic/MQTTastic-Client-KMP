@@ -16,34 +16,85 @@
  */
 package org.meshtastic.mqtt.packet
 
+import org.meshtastic.mqtt.MqttProtocolVersion
 import org.meshtastic.mqtt.QoS
 import org.meshtastic.mqtt.ReasonCode
 
 /**
- * Encode any [MqttPacket] subclass into its complete MQTT 5.0 wire format bytes.
+ * Encode any [MqttPacket] subclass into its complete MQTT wire format bytes.
  *
  * The result includes the fixed header (packet type + flags + remaining length VBI)
- * followed by the variable header and payload per the OASIS MQTT 5.0 specification.
+ * followed by the variable header and payload per the OASIS MQTT specification.
+ *
+ * @param version The MQTT protocol version to encode for. Determines whether properties,
+ *   reason codes, and 5.0-only packets are included.
  */
 @Suppress("CyclomaticComplexMethod")
-internal fun MqttPacket.encode(): ByteArray {
+internal fun MqttPacket.encode(version: MqttProtocolVersion = MqttProtocolVersion.V5_0): ByteArray {
     val (flags, variableHeaderAndPayload) =
         when (this) {
-            is Connect -> encodeConnect()
-            is ConnAck -> encodeConnAck()
-            is Publish -> encodePublish()
-            is PubAck -> encodePubAckLike(PacketType.PUBACK, packetIdentifier, reasonCode, properties)
-            is PubRec -> encodePubAckLike(PacketType.PUBREC, packetIdentifier, reasonCode, properties)
-            is PubRel -> encodePubAckLike(PacketType.PUBREL, packetIdentifier, reasonCode, properties)
-            is PubComp -> encodePubAckLike(PacketType.PUBCOMP, packetIdentifier, reasonCode, properties)
-            is Subscribe -> encodeSubscribe()
-            is SubAck -> encodeSubAck()
-            is Unsubscribe -> encodeUnsubscribe()
-            is UnsubAck -> encodeUnsubAck()
-            PingReq -> encodePing(PacketType.PINGREQ)
-            PingResp -> encodePing(PacketType.PINGRESP)
-            is Disconnect -> encodeDisconnect()
-            is Auth -> encodeAuth()
+            is Connect -> {
+                encodeConnect(version)
+            }
+
+            is ConnAck -> {
+                encodeConnAck(version)
+            }
+
+            is Publish -> {
+                encodePublish(version)
+            }
+
+            is PubAck -> {
+                encodePubAckLike(PacketType.PUBACK, packetIdentifier, reasonCode, properties, version)
+            }
+
+            is PubRec -> {
+                encodePubAckLike(PacketType.PUBREC, packetIdentifier, reasonCode, properties, version)
+            }
+
+            is PubRel -> {
+                encodePubAckLike(PacketType.PUBREL, packetIdentifier, reasonCode, properties, version)
+            }
+
+            is PubComp -> {
+                encodePubAckLike(PacketType.PUBCOMP, packetIdentifier, reasonCode, properties, version)
+            }
+
+            is Subscribe -> {
+                encodeSubscribe(version)
+            }
+
+            is SubAck -> {
+                encodeSubAck(version)
+            }
+
+            is Unsubscribe -> {
+                encodeUnsubscribe(version)
+            }
+
+            is UnsubAck -> {
+                encodeUnsubAck(version)
+            }
+
+            PingReq -> {
+                encodePing(PacketType.PINGREQ)
+            }
+
+            PingResp -> {
+                encodePing(PacketType.PINGRESP)
+            }
+
+            is Disconnect -> {
+                encodeDisconnect(version)
+            }
+
+            is Auth -> {
+                require(version == MqttProtocolVersion.V5_0) {
+                    "AUTH packets are not supported in MQTT 3.1.1"
+                }
+                encodeAuth()
+            }
         }
 
     val fixedHeaderByte = (packetType.value shl 4) or flags
@@ -53,7 +104,7 @@ internal fun MqttPacket.encode(): ByteArray {
 
 // --- §3.1 CONNECT ---
 
-private fun Connect.encodeConnect(): Pair<Int, ByteArray> {
+private fun Connect.encodeConnect(version: MqttProtocolVersion): Pair<Int, ByteArray> {
     val parts = mutableListOf<ByteArray>()
 
     // Variable header
@@ -73,12 +124,16 @@ private fun Connect.encodeConnect(): Pair<Int, ByteArray> {
     parts += byteArrayOf(connectFlags.toByte())
 
     parts += WireFormat.encodeTwoByteInt(keepAliveSeconds)
-    parts += properties.encode()
+    if (version.supportsProperties) {
+        parts += properties.encode()
+    }
 
     // Payload
     parts += WireFormat.encodeUtf8String(clientId)
     if (willTopic != null) {
-        parts += willProperties.encode()
+        if (version.supportsProperties) {
+            parts += willProperties.encode()
+        }
         parts += WireFormat.encodeUtf8String(willTopic)
         parts += WireFormat.encodeBinaryData(willPayload ?: byteArrayOf())
     }
@@ -90,17 +145,22 @@ private fun Connect.encodeConnect(): Pair<Int, ByteArray> {
 
 // --- §3.2 CONNACK ---
 
-private fun ConnAck.encodeConnAck(): Pair<Int, ByteArray> {
+private fun ConnAck.encodeConnAck(version: MqttProtocolVersion): Pair<Int, ByteArray> {
     val parts = mutableListOf<ByteArray>()
     parts += byteArrayOf(if (sessionPresent) 0x01 else 0x00)
-    parts += byteArrayOf(reasonCode.value.toByte())
-    parts += properties.encode()
+    if (version.supportsProperties) {
+        parts += byteArrayOf(reasonCode.value.toByte())
+        parts += properties.encode()
+    } else {
+        // MQTT 3.1.1: single return code byte (§3.2.2.3)
+        parts += byteArrayOf(connAckReturnCodeFromReasonCode(reasonCode).toByte())
+    }
     return 0b0000 to joinByteArrays(parts)
 }
 
 // --- §3.3 PUBLISH ---
 
-private fun Publish.encodePublish(): Pair<Int, ByteArray> {
+private fun Publish.encodePublish(version: MqttProtocolVersion): Pair<Int, ByteArray> {
     val flags =
         (if (dup) 0b1000 else 0) or
             (qos.value shl 1) or
@@ -111,7 +171,9 @@ private fun Publish.encodePublish(): Pair<Int, ByteArray> {
     if (qos != QoS.AT_MOST_ONCE) {
         parts += WireFormat.encodeTwoByteInt(packetIdentifier!!)
     }
-    parts += properties.encode()
+    if (version.supportsProperties) {
+        parts += properties.encode()
+    }
     parts += payload
 
     return flags to joinByteArrays(parts)
@@ -124,8 +186,14 @@ private fun encodePubAckLike(
     packetId: Int,
     rc: ReasonCode,
     props: MqttProperties,
+    version: MqttProtocolVersion,
 ): Pair<Int, ByteArray> {
     val flags = type.requiredFlags ?: 0
+
+    // MQTT 3.1.1: only packet ID, no reason code or properties (§3.4)
+    if (!version.supportsProperties) {
+        return flags to WireFormat.encodeTwoByteInt(packetId)
+    }
 
     // Short form: if reason code is SUCCESS and no properties, just packet ID
     if (rc == ReasonCode.SUCCESS && props == MqttProperties.EMPTY) {
@@ -144,19 +212,26 @@ private fun encodePubAckLike(
 
 // --- §3.8 SUBSCRIBE ---
 
-private fun Subscribe.encodeSubscribe(): Pair<Int, ByteArray> {
+private fun Subscribe.encodeSubscribe(version: MqttProtocolVersion): Pair<Int, ByteArray> {
     val parts = mutableListOf<ByteArray>()
     parts += WireFormat.encodeTwoByteInt(packetIdentifier)
-    parts += properties.encode()
+    if (version.supportsProperties) {
+        parts += properties.encode()
+    }
 
     for (sub in subscriptions) {
         parts += WireFormat.encodeUtf8String(sub.topicFilter)
-        val options =
-            (sub.retainHandling.value shl 4) or
-                (if (sub.retainAsPublished) 0x08 else 0) or
-                (if (sub.noLocal) 0x04 else 0) or
-                sub.maxQos.value
-        parts += byteArrayOf(options.toByte())
+        if (version.supportsProperties) {
+            val options =
+                (sub.retainHandling.value shl 4) or
+                    (if (sub.retainAsPublished) 0x08 else 0) or
+                    (if (sub.noLocal) 0x04 else 0) or
+                    sub.maxQos.value
+            parts += byteArrayOf(options.toByte())
+        } else {
+            // MQTT 3.1.1: subscription options byte contains only QoS (§3.8.3.1)
+            parts += byteArrayOf(sub.maxQos.value.toByte())
+        }
     }
 
     return 0b0010 to joinByteArrays(parts)
@@ -164,20 +239,29 @@ private fun Subscribe.encodeSubscribe(): Pair<Int, ByteArray> {
 
 // --- §3.9 SUBACK ---
 
-private fun SubAck.encodeSubAck(): Pair<Int, ByteArray> {
+private fun SubAck.encodeSubAck(version: MqttProtocolVersion): Pair<Int, ByteArray> {
     val parts = mutableListOf<ByteArray>()
     parts += WireFormat.encodeTwoByteInt(packetIdentifier)
-    parts += properties.encode()
-    parts += ByteArray(reasonCodes.size) { reasonCodes[it].value.toByte() }
+    if (version.supportsProperties) {
+        parts += properties.encode()
+    }
+    if (version.supportsProperties) {
+        parts += ByteArray(reasonCodes.size) { reasonCodes[it].value.toByte() }
+    } else {
+        // MQTT 3.1.1 SUBACK return codes: 0x00, 0x01, 0x02 (granted QoS), 0x80 (failure)
+        parts += ByteArray(reasonCodes.size) { subAckReturnCodeFromReasonCode(reasonCodes[it]).toByte() }
+    }
     return 0b0000 to joinByteArrays(parts)
 }
 
 // --- §3.10 UNSUBSCRIBE ---
 
-private fun Unsubscribe.encodeUnsubscribe(): Pair<Int, ByteArray> {
+private fun Unsubscribe.encodeUnsubscribe(version: MqttProtocolVersion): Pair<Int, ByteArray> {
     val parts = mutableListOf<ByteArray>()
     parts += WireFormat.encodeTwoByteInt(packetIdentifier)
-    parts += properties.encode()
+    if (version.supportsProperties) {
+        parts += properties.encode()
+    }
     for (filter in topicFilters) {
         parts += WireFormat.encodeUtf8String(filter)
     }
@@ -186,11 +270,14 @@ private fun Unsubscribe.encodeUnsubscribe(): Pair<Int, ByteArray> {
 
 // --- §3.11 UNSUBACK ---
 
-private fun UnsubAck.encodeUnsubAck(): Pair<Int, ByteArray> {
+private fun UnsubAck.encodeUnsubAck(version: MqttProtocolVersion): Pair<Int, ByteArray> {
     val parts = mutableListOf<ByteArray>()
     parts += WireFormat.encodeTwoByteInt(packetIdentifier)
-    parts += properties.encode()
-    parts += ByteArray(reasonCodes.size) { reasonCodes[it].value.toByte() }
+    if (version.supportsProperties) {
+        parts += properties.encode()
+        parts += ByteArray(reasonCodes.size) { reasonCodes[it].value.toByte() }
+    }
+    // MQTT 3.1.1: UNSUBACK has no payload beyond packet identifier (§3.11)
     return 0b0000 to joinByteArrays(parts)
 }
 
@@ -203,7 +290,12 @@ private fun encodePing(type: PacketType): Pair<Int, ByteArray> {
 
 // --- §3.14 DISCONNECT ---
 
-private fun Disconnect.encodeDisconnect(): Pair<Int, ByteArray> {
+private fun Disconnect.encodeDisconnect(version: MqttProtocolVersion): Pair<Int, ByteArray> {
+    // MQTT 3.1.1: DISCONNECT has no variable header or payload (§3.14)
+    if (!version.supportsProperties) {
+        return 0b0000 to byteArrayOf()
+    }
+
     // Short form: if reason code is SUCCESS and no properties, empty body
     if (reasonCode == ReasonCode.SUCCESS && properties == MqttProperties.EMPTY) {
         return 0b0000 to byteArrayOf()
@@ -243,3 +335,24 @@ private fun joinByteArrays(parts: List<ByteArray>): ByteArray {
     }
     return result
 }
+
+/** Map a [ReasonCode] to an MQTT 3.1.1 CONNACK return code byte (§3.2.2.3). */
+internal fun connAckReturnCodeFromReasonCode(rc: ReasonCode): Int =
+    when (rc) {
+        ReasonCode.SUCCESS -> 0
+        ReasonCode.UNSUPPORTED_PROTOCOL_VERSION -> 1
+        ReasonCode.CLIENT_IDENTIFIER_NOT_VALID -> 2
+        ReasonCode.SERVER_UNAVAILABLE -> 3
+        ReasonCode.BAD_USER_NAME_OR_PASSWORD -> 4
+        ReasonCode.NOT_AUTHORIZED -> 5
+        else -> 5 // Map unknown failures to "Not authorized" as a safe fallback
+    }
+
+/** Map a [ReasonCode] to an MQTT 3.1.1 SUBACK return code byte (§3.9.3). */
+internal fun subAckReturnCodeFromReasonCode(rc: ReasonCode): Int =
+    when (rc) {
+        ReasonCode.SUCCESS -> 0x00
+        ReasonCode.GRANTED_QOS_1 -> 0x01
+        ReasonCode.GRANTED_QOS_2 -> 0x02
+        else -> 0x80 // Failure
+    }

@@ -111,7 +111,13 @@ internal suspend fun runProbe(
     val connection = MqttConnection(transport, config, probeScope)
     return try {
         val connAck = withTimeout(timeoutMs) { connection.connect(endpoint) }
-        ProbeResult.Success(serverInfo = connAck.properties.toProbeServerInfo())
+        val serverInfo =
+            if (config.protocolVersion.supportsProperties) {
+                connAck.properties.toProbeServerInfo()
+            } else {
+                ProbeServerInfo() // Empty info for MQTT 3.1.1
+            }
+        ProbeResult.Success(serverInfo = serverInfo)
     } catch (e: TimeoutCancellationException) {
         ProbeResult.Timeout(durationMs = timeoutMs)
     } catch (e: CancellationException) {
