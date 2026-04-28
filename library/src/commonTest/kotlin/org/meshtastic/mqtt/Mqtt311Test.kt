@@ -682,4 +682,136 @@ class Mqtt311Test {
         assertEquals(MqttProtocolVersion.V5_0, MqttProtocolVersion.fromProtocolLevel(5))
         assertFailsWith<IllegalArgumentException> { MqttProtocolVersion.fromProtocolLevel(3) }
     }
+
+    // ===== Version negotiation =====
+
+    @Test
+    fun negotiateVersionDefaultIsTrue() {
+        val config = MqttConfig(clientId = "test")
+        assertEquals(true, config.negotiateVersion)
+        assertEquals(MqttProtocolVersion.V5_0, config.protocolVersion)
+    }
+
+    @Test
+    fun negotiateVersionCanBeDisabled() {
+        val config = MqttConfig(clientId = "test", negotiateVersion = false)
+        assertEquals(false, config.negotiateVersion)
+    }
+
+    @Test
+    fun v311CompatibilityValidation() {
+        // Should pass — no 5.0-only features
+        val basic = MqttConfig(clientId = "test")
+        basic.validateV311Compatibility()
+
+        // Should fail — sessionExpiryInterval is 5.0-only
+        val withExpiry = MqttConfig(clientId = "test", sessionExpiryInterval = 60L)
+        assertFailsWith<IllegalArgumentException> {
+            withExpiry.validateV311Compatibility()
+        }
+
+        // Should fail — enhanced auth is 5.0-only
+        val withAuth = MqttConfig(clientId = "test", authenticationMethod = "SCRAM")
+        assertFailsWith<IllegalArgumentException> {
+            withAuth.validateV311Compatibility()
+        }
+    }
+
+    @Test
+    fun versionFallbackOnUnsupportedProtocol() =
+        runTest {
+            // Simulate: first transport rejects V5 with UNSUPPORTED_PROTOCOL_VERSION,
+            // second transport accepts V3.1.1
+            val v5Transport = FakeTransport(MqttProtocolVersion.V5_0)
+            val v311Transport = FakeTransport(MqttProtocolVersion.V3_1_1)
+            val transports = mutableListOf(v5Transport, v311Transport)
+
+            // Enqueue rejection for V5
+            v5Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+            // Enqueue success for V3.1.1
+            v311Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = true,
+                )
+            val client = MqttClient(config, this) { transports.removeAt(0) }
+
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
+            assertEquals(MqttProtocolVersion.V3_1_1, client.negotiatedProtocolVersion)
+
+            // Verify the V3.1.1 CONNECT used protocolLevel 4
+            val sentConnect = v311Transport.decodeSentPackets().first() as Connect
+            assertEquals(4, sentConnect.protocolLevel)
+
+            client.close()
+        }
+
+    @Test
+    fun noFallbackWhenNegotiateVersionDisabled() =
+        runTest {
+            val transport = FakeTransport(MqttProtocolVersion.V5_0)
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = false,
+                )
+            val client = MqttClient(config, transport, this)
+
+            assertFailsWith<MqttException.ConnectionRejected> {
+                client.connect(endpoint)
+            }
+            assertEquals(MqttProtocolVersion.V5_0, client.negotiatedProtocolVersion)
+
+            client.close()
+        }
+
+    @Test
+    fun noFallbackWhenAlreadyV311() =
+        runTest {
+            val transport = FakeTransport(MqttProtocolVersion.V3_1_1)
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+
+            val config = v311Config()
+            val client = MqttClient(config, transport, this)
+
+            assertFailsWith<MqttException.ConnectionRejected> {
+                client.connect(endpoint)
+            }
+
+            client.close()
+        }
+
+    @Test
+    fun noFallbackWhenIncompatibleConfig() =
+        runTest {
+            val v5Transport = FakeTransport(MqttProtocolVersion.V5_0)
+            v5Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+
+            // Config has sessionExpiryInterval — can't fall back to 3.1.1
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = true,
+                    sessionExpiryInterval = 60L,
+                )
+            val client = MqttClient(config, v5Transport, this)
+
+            assertFailsWith<MqttException.ConnectionRejected> {
+                client.connect(endpoint)
+            }
+            // Should still be V5 — fallback was not attempted
+            assertEquals(MqttProtocolVersion.V5_0, client.negotiatedProtocolVersion)
+
+            client.close()
+        }
 }

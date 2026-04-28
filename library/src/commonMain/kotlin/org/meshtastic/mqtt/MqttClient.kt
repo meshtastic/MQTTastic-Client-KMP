@@ -252,6 +252,15 @@ public class MqttClient
             effectiveTransportFactory = { transport }
         }
 
+        /** Internal constructor for testing with a transport factory and injected scope. */
+        internal constructor(
+            config: MqttConfig,
+            scope: CoroutineScope,
+            transportFactory: (MqttEndpoint) -> MqttTransport,
+        ) : this(config, scope) {
+            effectiveTransportFactory = transportFactory
+        }
+
         @Volatile
         private var closed = false
 
@@ -310,6 +319,19 @@ public class MqttClient
 
         @Volatile
         private var currentEndpoint: MqttEndpoint? = null
+
+        /**
+         * The protocol version actually in use after connection negotiation.
+         *
+         * - Before connection: matches [MqttConfig.protocolVersion].
+         * - After connection: reflects the version that the broker accepted
+         *   (may be [MqttProtocolVersion.V3_1_1] if fallback occurred).
+         * - Reset on explicit [connect] calls; preserved across auto-reconnects.
+         */
+        @Volatile
+        public var negotiatedProtocolVersion: MqttProtocolVersion = config.protocolVersion
+            private set
+
         private var messageForwardJob: Job? = null
         private var stateForwardJob: Job? = null
         private var authForwardJob: Job? = null
@@ -361,6 +383,7 @@ public class MqttClient
                     log.info(TAG) { "Connecting to $endpoint" }
                     intentionalDisconnect = false
                     currentEndpoint = endpoint
+                    negotiatedProtocolVersion = config.protocolVersion
                     connectWithRedirect(endpoint, redirectsRemaining = MAX_REDIRECTS)
                 }
             } catch (e: MqttConnectionException) {
@@ -680,9 +703,59 @@ public class MqttClient
         // --- Private helpers ---
 
         private suspend fun connectInternal(endpoint: MqttEndpoint) {
+            val effectiveVersion = negotiatedProtocolVersion
+            val effectiveConfig =
+                if (effectiveVersion != config.protocolVersion) {
+                    config.copy(protocolVersion = effectiveVersion)
+                } else {
+                    config
+                }
+
             val transport = effectiveTransportFactory(endpoint)
-            val conn = MqttConnection(transport, config, scope, log)
-            conn.connect(endpoint)
+            val conn = MqttConnection(transport, effectiveConfig, scope, log)
+
+            try {
+                conn.connect(endpoint)
+            } catch (e: MqttConnectionException) {
+                // Version fallback: if broker rejected V5_0, try V3_1_1 on a fresh transport
+                if (
+                    e.reasonCode == ReasonCode.UNSUPPORTED_PROTOCOL_VERSION &&
+                    effectiveVersion == MqttProtocolVersion.V5_0 &&
+                    config.negotiateVersion
+                ) {
+                    log.info(TAG) {
+                        "Broker rejected MQTT 5.0 — falling back to MQTT 3.1.1"
+                    }
+                    // Validate the config is compatible with 3.1.1 before retrying
+                    try {
+                        config.validateV311Compatibility()
+                    } catch (validationErr: IllegalArgumentException) {
+                        log.error(TAG) {
+                            "Cannot fall back to MQTT 3.1.1: ${validationErr.message}"
+                        }
+                        throw e // Re-throw original rejection
+                    }
+                    try {
+                        transport.close()
+                    } catch (
+                        @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                    ) {
+                        // Best-effort close
+                    }
+
+                    negotiatedProtocolVersion = MqttProtocolVersion.V3_1_1
+                    val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
+                    val fallbackTransport = effectiveTransportFactory(endpoint)
+                    val fallbackConn = MqttConnection(fallbackTransport, fallbackConfig, scope, log)
+                    fallbackConn.connect(endpoint)
+                    connection = fallbackConn
+                    startForwarding(fallbackConn)
+                    log.info(TAG) { "Connected to $endpoint (MQTT 3.1.1 via fallback)" }
+                    return
+                }
+                throw e
+            }
+
             connection = conn
             startForwarding(conn)
             log.info(TAG) { "Connected to $endpoint" }

@@ -177,19 +177,35 @@ client.close()
 
 ### MQTT 3.1.1 Support
 
-To connect to an MQTT 3.1.1 broker, set `protocolVersion` in your config:
+By default, the client automatically negotiates the protocol version. It connects with MQTT 5.0 first and, if the broker rejects it with `UNSUPPORTED_PROTOCOL_VERSION`, seamlessly retries with MQTT 3.1.1 on a fresh connection — no configuration needed:
 
 ```kotlin
+// Auto-negotiation is on by default — works with both 5.0 and 3.1.1 brokers
 val client = MqttClient("my-client") {
-    protocolVersion = MqttProtocolVersion.V3_1_1
     keepAliveSeconds = 30
 }
 
-client.use(MqttEndpoint.parse("tcp://legacy-broker:1883")) { c ->
+client.use(MqttEndpoint.parse("tcp://any-broker:1883")) { c ->
+    // After connect, check which version was negotiated:
+    println("Connected with ${c.negotiatedProtocolVersion}")
     c.subscribe("sensors/#")
     c.messagesForTopic("sensors/#").collect { msg ->
         println("Received: ${msg.payloadAsString()}")
     }
+}
+```
+
+To force a specific version or disable negotiation:
+
+```kotlin
+// Force MQTT 3.1.1 (no negotiation)
+val v311Client = MqttClient("my-client") {
+    protocolVersion = MqttProtocolVersion.V3_1_1
+}
+
+// Force MQTT 5.0 only (disable fallback)
+val v5OnlyClient = MqttClient("my-client") {
+    negotiateVersion = false
 }
 ```
 
@@ -200,7 +216,7 @@ MQTT 3.1.1 mode automatically:
 - Sends a body-less DISCONNECT on close
 - Skips topic aliases and flow control (Receive Maximum)
 
-5.0-only config options (`sessionExpiryInterval`, `authenticationMethod`) are rejected at config-build time when `V3_1_1` is selected. The default protocol version is `V5_0` — existing code is unaffected.
+5.0-only config options (`sessionExpiryInterval`, `authenticationMethod`) are rejected at config-build time when `V3_1_1` is explicitly selected. When using auto-negotiation, fallback is skipped if the config uses 5.0-only features — the original rejection is re-thrown so you know the broker doesn't support your configuration.
 
 ### Convenience APIs
 
