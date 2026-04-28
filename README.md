@@ -85,7 +85,7 @@ repositories {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("org.meshtastic:mqtt-client:0.2.0")
+            implementation("org.meshtastic:mqtt-client:0.3.0")
         }
     }
 }
@@ -105,7 +105,7 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                implementation 'org.meshtastic:mqtt-client:0.2.0'
+                implementation 'org.meshtastic:mqtt-client:0.3.0'
             }
         }
     }
@@ -118,7 +118,7 @@ kotlin {
 
 ```kotlin
 dependencies {
-    implementation("org.meshtastic:mqtt-client:0.2.0")
+    implementation("org.meshtastic:mqtt-client:0.3.0")
 }
 ```
 </details>
