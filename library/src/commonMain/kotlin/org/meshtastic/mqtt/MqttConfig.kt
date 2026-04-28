@@ -187,10 +187,47 @@ public data class MqttConfig(
         require(authenticationData == null) {
             "Enhanced authentication (authenticationData) is not supported in MQTT 3.1.1"
         }
+        require(userProperties.isEmpty()) {
+            "userProperties are not supported in MQTT 3.1.1"
+        }
+        require(maximumPacketSize == null) {
+            "maximumPacketSize is not supported in MQTT 3.1.1"
+        }
+        require(topicAliasMaximum == 0) {
+            "topicAliasMaximum is not supported in MQTT 3.1.1"
+        }
+        require(!requestResponseInformation) {
+            "requestResponseInformation is not supported in MQTT 3.1.1"
+        }
+        // receiveMaximum default (65535) is fine — it means "no limit" which is 3.1.1 behavior
+        require(receiveMaximum == 65535) {
+            "receiveMaximum is not supported in MQTT 3.1.1 (must be default 65535)"
+        }
         // §3.1.2.3: In 3.1.1, password flag requires username flag
         if (password != null) {
             require(username != null) {
                 "MQTT 3.1.1 requires username when password is set (§3.1.2.3)"
+            }
+        }
+        // Validate will properties are 3.1.1 compatible (no 5.0-only will properties)
+        will?.let { w ->
+            require(w.willDelayInterval == null) {
+                "willDelayInterval is not supported in MQTT 3.1.1"
+            }
+            require(w.messageExpiryInterval == null) {
+                "will messageExpiryInterval is not supported in MQTT 3.1.1"
+            }
+            require(w.contentType == null) {
+                "will contentType is not supported in MQTT 3.1.1"
+            }
+            require(w.responseTopic == null) {
+                "will responseTopic is not supported in MQTT 3.1.1"
+            }
+            require(w.correlationData == null) {
+                "will correlationData is not supported in MQTT 3.1.1"
+            }
+            require(!w.payloadFormatIndicator) {
+                "will payloadFormatIndicator is not supported in MQTT 3.1.1"
             }
         }
     }

@@ -743,11 +743,12 @@ public class MqttClient
                         // Best-effort close
                     }
 
-                    negotiatedProtocolVersion = MqttProtocolVersion.V3_1_1
                     val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
                     val fallbackTransport = effectiveTransportFactory(endpoint)
                     val fallbackConn = MqttConnection(fallbackTransport, fallbackConfig, scope, log)
                     fallbackConn.connect(endpoint)
+                    // Only set after successful connect — don't leave stale state on failure
+                    negotiatedProtocolVersion = MqttProtocolVersion.V3_1_1
                     connection = fallbackConn
                     startForwarding(fallbackConn)
                     log.info(TAG) { "Connected to $endpoint (MQTT 3.1.1 via fallback)" }

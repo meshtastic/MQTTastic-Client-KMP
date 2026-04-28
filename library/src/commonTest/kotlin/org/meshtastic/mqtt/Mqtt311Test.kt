@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
+import kotlinx.io.bytestring.ByteString
 import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.Connect
 import org.meshtastic.mqtt.packet.Disconnect
@@ -715,6 +716,73 @@ class Mqtt311Test {
         assertFailsWith<IllegalArgumentException> {
             withAuth.validateV311Compatibility()
         }
+
+        // Should fail — userProperties are 5.0-only
+        val withProps = MqttConfig(clientId = "test", userProperties = listOf("k" to "v"))
+        assertFailsWith<IllegalArgumentException> {
+            withProps.validateV311Compatibility()
+        }
+
+        // Should fail — maximumPacketSize is 5.0-only
+        val withMaxPacket = MqttConfig(clientId = "test", maximumPacketSize = 1024L)
+        assertFailsWith<IllegalArgumentException> {
+            withMaxPacket.validateV311Compatibility()
+        }
+
+        // Should fail — topicAliasMaximum > 0 is 5.0-only
+        val withTopicAlias = MqttConfig(clientId = "test", topicAliasMaximum = 10)
+        assertFailsWith<IllegalArgumentException> {
+            withTopicAlias.validateV311Compatibility()
+        }
+
+        // Should fail — requestResponseInformation is 5.0-only
+        val withRRI = MqttConfig(clientId = "test", requestResponseInformation = true)
+        assertFailsWith<IllegalArgumentException> {
+            withRRI.validateV311Compatibility()
+        }
+
+        // Should fail — receiveMaximum != 65535 is 5.0-only
+        val withRecvMax = MqttConfig(clientId = "test", receiveMaximum = 10)
+        assertFailsWith<IllegalArgumentException> {
+            withRecvMax.validateV311Compatibility()
+        }
+
+        // Should fail — will with 5.0-only properties
+        val withWillDelay =
+            MqttConfig(
+                clientId = "test",
+                will =
+                    WillConfig(
+                        topic = "t",
+                        payload = ByteString(),
+                        willDelayInterval = 60L,
+                    ),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            withWillDelay.validateV311Compatibility()
+        }
+
+        val withWillContentType =
+            MqttConfig(
+                clientId = "test",
+                will =
+                    WillConfig(
+                        topic = "t",
+                        payload = ByteString(),
+                        contentType = "application/json",
+                    ),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            withWillContentType.validateV311Compatibility()
+        }
+
+        // Should pass — will with basic fields only
+        val withBasicWill =
+            MqttConfig(
+                clientId = "test",
+                will = WillConfig(topic = "t", payload = ByteString()),
+            )
+        withBasicWill.validateV311Compatibility()
     }
 
     @Test

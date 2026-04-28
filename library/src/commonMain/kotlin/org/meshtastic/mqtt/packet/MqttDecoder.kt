@@ -191,7 +191,8 @@ private fun decodeConnAck(
     if (version.supportsProperties) {
         require(body.size >= 3) { "CONNACK body too short" }
     } else {
-        require(body.size >= 2) { "CONNACK body too short" }
+        // MQTT 3.1.1: exactly 2 bytes — acknowledge flags + return code (§3.2)
+        require(body.size == 2) { "CONNACK body must be exactly 2 bytes for MQTT 3.1.1" }
     }
     // Connect Acknowledge Flags — bits 7-1 are reserved and MUST be 0 (§3.2.2.1)
     require((body[0].toInt() and 0xFE) == 0) {
@@ -207,6 +208,12 @@ private fun decodeConnAck(
         // MQTT 3.1.1: single return code byte, no properties (§3.2.2.3)
         val returnCode = body[1].toInt() and 0xFF
         val reasonCode = reasonCodeFromConnAckReturnCode(returnCode)
+        // §3.2.2.3: If return code is non-zero, session present MUST be 0
+        if (reasonCode != ReasonCode.SUCCESS) {
+            require(!sessionPresent) {
+                "MQTT 3.1.1: sessionPresent must be 0 when return code is non-zero (§3.2.2.3)"
+            }
+        }
         ConnAck(sessionPresent = sessionPresent, reasonCode = reasonCode)
     }
 }
@@ -328,7 +335,10 @@ private fun decodeSubscribe(
                     retainHandling = RetainHandling.fromValue((options shr 4) and 0x03),
                 )
         } else {
-            // MQTT 3.1.1: options byte is just QoS (bits 0-1), rest reserved as 0
+            // MQTT 3.1.1: options byte is just QoS (bits 0-1), bits 2-7 reserved as 0 (§3.8.3.1)
+            require((options and 0xFC) == 0) {
+                "Reserved bits 2-7 in MQTT 3.1.1 subscription options must be 0 (§3.8.3.1)"
+            }
             subscriptions +=
                 Subscription(
                     topicFilter = topicFilter,
