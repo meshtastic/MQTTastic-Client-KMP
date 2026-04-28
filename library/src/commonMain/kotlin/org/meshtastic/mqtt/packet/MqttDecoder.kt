@@ -16,18 +16,24 @@
  */
 package org.meshtastic.mqtt.packet
 
+import org.meshtastic.mqtt.MqttProtocolVersion
 import org.meshtastic.mqtt.QoS
 import org.meshtastic.mqtt.ReasonCode
 import org.meshtastic.mqtt.RetainHandling
 
 /**
- * Decode a complete MQTT 5.0 packet (including fixed header) into the appropriate [MqttPacket] subclass.
+ * Decode a complete MQTT packet (including fixed header) into the appropriate [MqttPacket] subclass.
  *
  * @param bytes The complete packet bytes starting with the fixed header.
+ * @param version The MQTT protocol version to decode as. Determines whether properties
+ *   and reason codes are expected in the packet body.
  * @throws IllegalArgumentException if the packet is malformed or unrecognized.
  */
 @Suppress("CyclomaticComplexMethod")
-internal fun decodePacket(bytes: ByteArray): MqttPacket {
+internal fun decodePacket(
+    bytes: ByteArray,
+    version: MqttProtocolVersion = MqttProtocolVersion.V5_0,
+): MqttPacket {
     require(bytes.isNotEmpty()) { "Packet bytes must not be empty" }
 
     val firstByte = bytes[0].toInt() and 0xFF
@@ -35,6 +41,11 @@ internal fun decodePacket(bytes: ByteArray): MqttPacket {
     val flags = firstByte and 0x0F
 
     val type = PacketType.fromValue(typeValue)
+
+    // MQTT 3.1.1 does not have AUTH packets
+    if (!version.supportsProperties && type == PacketType.AUTH) {
+        throw IllegalArgumentException("AUTH packets are not valid in MQTT 3.1.1")
+    }
 
     // Validate flags (PUBLISH has variable flags)
     type.requiredFlags?.let { required ->
@@ -54,20 +65,20 @@ internal fun decodePacket(bytes: ByteArray): MqttPacket {
     val body = bytes.copyOfRange(headerSize, headerSize + remainingLength)
 
     return when (type) {
-        PacketType.CONNECT -> decodeConnect(body)
-        PacketType.CONNACK -> decodeConnAck(body)
-        PacketType.PUBLISH -> decodePublish(body, flags)
-        PacketType.PUBACK -> decodePubAckLike(body, ::PubAck)
-        PacketType.PUBREC -> decodePubAckLike(body, ::PubRec)
-        PacketType.PUBREL -> decodePubAckLike(body, ::PubRel)
-        PacketType.PUBCOMP -> decodePubAckLike(body, ::PubComp)
-        PacketType.SUBSCRIBE -> decodeSubscribe(body)
-        PacketType.SUBACK -> decodeSubAck(body)
-        PacketType.UNSUBSCRIBE -> decodeUnsubscribe(body)
-        PacketType.UNSUBACK -> decodeUnsubAck(body)
+        PacketType.CONNECT -> decodeConnect(body, version)
+        PacketType.CONNACK -> decodeConnAck(body, version)
+        PacketType.PUBLISH -> decodePublish(body, flags, version)
+        PacketType.PUBACK -> decodePubAckLike(body, version, ::PubAck)
+        PacketType.PUBREC -> decodePubAckLike(body, version, ::PubRec)
+        PacketType.PUBREL -> decodePubAckLike(body, version, ::PubRel)
+        PacketType.PUBCOMP -> decodePubAckLike(body, version, ::PubComp)
+        PacketType.SUBSCRIBE -> decodeSubscribe(body, version)
+        PacketType.SUBACK -> decodeSubAck(body, version)
+        PacketType.UNSUBSCRIBE -> decodeUnsubscribe(body, version)
+        PacketType.UNSUBACK -> decodeUnsubAck(body, version)
         PacketType.PINGREQ -> PingReq
         PacketType.PINGRESP -> PingResp
-        PacketType.DISCONNECT -> decodeDisconnect(body)
+        PacketType.DISCONNECT -> decodeDisconnect(body, version)
         PacketType.AUTH -> decodeAuth(body)
     }
 }
@@ -75,7 +86,10 @@ internal fun decodePacket(bytes: ByteArray): MqttPacket {
 // --- §3.1 CONNECT ---
 
 @Suppress("CyclomaticComplexMethod")
-private fun decodeConnect(body: ByteArray): Connect {
+private fun decodeConnect(
+    body: ByteArray,
+    version: MqttProtocolVersion,
+): Connect {
     var pos = 0
 
     // Protocol Name
@@ -101,9 +115,15 @@ private fun decodeConnect(body: ByteArray): Connect {
     val keepAlive = WireFormat.decodeTwoByteInt(body, pos)
     pos += 2
 
-    // Properties
-    val (properties, propsConsumed) = decodePropertiesSection(body, pos)
-    pos += propsConsumed
+    // Properties (MQTT 5.0 only)
+    val properties =
+        if (version.supportsProperties) {
+            val (props, propsConsumed) = decodePropertiesSection(body, pos)
+            pos += propsConsumed
+            props
+        } else {
+            MqttProperties.EMPTY
+        }
 
     // Payload: Client ID
     val (clientId, clientIdConsumed) = WireFormat.decodeUtf8String(body, pos)
@@ -114,9 +134,11 @@ private fun decodeConnect(body: ByteArray): Connect {
     var willPayload: ByteArray? = null
     var willProperties = MqttProperties.EMPTY
     if (willFlag) {
-        val (wp, wpConsumed) = decodePropertiesSection(body, pos)
-        willProperties = wp
-        pos += wpConsumed
+        if (version.supportsProperties) {
+            val (wp, wpConsumed) = decodePropertiesSection(body, pos)
+            willProperties = wp
+            pos += wpConsumed
+        }
 
         val (wt, wtConsumed) = WireFormat.decodeUtf8String(body, pos)
         willTopic = wt
@@ -162,22 +184,31 @@ private fun decodeConnect(body: ByteArray): Connect {
 
 // --- §3.2 CONNACK ---
 
-private fun decodeConnAck(body: ByteArray): ConnAck {
-    require(body.size >= 3) { "CONNACK body too short" }
+private fun decodeConnAck(
+    body: ByteArray,
+    version: MqttProtocolVersion,
+): ConnAck {
+    if (version.supportsProperties) {
+        require(body.size >= 3) { "CONNACK body too short" }
+    } else {
+        require(body.size >= 2) { "CONNACK body too short" }
+    }
     // Connect Acknowledge Flags — bits 7-1 are reserved and MUST be 0 (§3.2.2.1)
     require((body[0].toInt() and 0xFE) == 0) {
         "Reserved bits in Connect Acknowledge Flags must be 0 (§3.2.2.1)"
     }
     val sessionPresent = (body[0].toInt() and 0x01) != 0
-    val reasonCode = ReasonCode.fromValue(body[1].toInt() and 0xFF)
 
-    val (properties, _) = decodePropertiesSection(body, 2)
-
-    return ConnAck(
-        sessionPresent = sessionPresent,
-        reasonCode = reasonCode,
-        properties = properties,
-    )
+    return if (version.supportsProperties) {
+        val reasonCode = ReasonCode.fromValue(body[1].toInt() and 0xFF)
+        val (properties, _) = decodePropertiesSection(body, 2)
+        ConnAck(sessionPresent = sessionPresent, reasonCode = reasonCode, properties = properties)
+    } else {
+        // MQTT 3.1.1: single return code byte, no properties (§3.2.2.3)
+        val returnCode = body[1].toInt() and 0xFF
+        val reasonCode = reasonCodeFromConnAckReturnCode(returnCode)
+        ConnAck(sessionPresent = sessionPresent, reasonCode = reasonCode)
+    }
 }
 
 // --- §3.3 PUBLISH ---
@@ -185,6 +216,7 @@ private fun decodeConnAck(body: ByteArray): ConnAck {
 private fun decodePublish(
     body: ByteArray,
     flags: Int,
+    version: MqttProtocolVersion,
 ): Publish {
     val dup = (flags and 0x08) != 0
     val qos = QoS.fromValue((flags shr 1) and 0x03)
@@ -200,8 +232,14 @@ private fun decodePublish(
         pos += 2
     }
 
-    val (properties, propsConsumed) = decodePropertiesSection(body, pos)
-    pos += propsConsumed
+    val properties: MqttProperties
+    if (version.supportsProperties) {
+        val (props, propsConsumed) = decodePropertiesSection(body, pos)
+        properties = props
+        pos += propsConsumed
+    } else {
+        properties = MqttProperties.EMPTY
+    }
 
     val payload = body.copyOfRange(pos, body.size)
 
@@ -220,10 +258,16 @@ private fun decodePublish(
 
 private fun <T : MqttPacket> decodePubAckLike(
     body: ByteArray,
+    version: MqttProtocolVersion,
     factory: (Int, ReasonCode, MqttProperties) -> T,
 ): T {
     require(body.size >= 2) { "Packet body too short for packet identifier" }
     val packetId = WireFormat.decodeTwoByteInt(body, 0)
+
+    // MQTT 3.1.1: only packet identifier, no reason code or properties
+    if (!version.supportsProperties) {
+        return factory(packetId, ReasonCode.SUCCESS, MqttProperties.EMPTY)
+    }
 
     // Short form: remaining length == 2 → SUCCESS with no properties
     if (body.size == 2) {
@@ -243,14 +287,23 @@ private fun <T : MqttPacket> decodePubAckLike(
 
 // --- §3.8 SUBSCRIBE ---
 
-private fun decodeSubscribe(body: ByteArray): Subscribe {
+private fun decodeSubscribe(
+    body: ByteArray,
+    version: MqttProtocolVersion,
+): Subscribe {
     var pos = 0
 
     val packetId = WireFormat.decodeTwoByteInt(body, pos)
     pos += 2
 
-    val (properties, propsConsumed) = decodePropertiesSection(body, pos)
-    pos += propsConsumed
+    val properties: MqttProperties
+    if (version.supportsProperties) {
+        val (props, propsConsumed) = decodePropertiesSection(body, pos)
+        properties = props
+        pos += propsConsumed
+    } else {
+        properties = MqttProperties.EMPTY
+    }
 
     val subscriptions = mutableListOf<Subscription>()
     while (pos < body.size) {
@@ -260,19 +313,28 @@ private fun decodeSubscribe(body: ByteArray): Subscribe {
         val options = body[pos].toInt() and 0xFF
         pos++
 
-        // Subscription Options bits 6-7 are reserved and MUST be 0 (§3.8.3.1)
-        require((options and 0xC0) == 0) {
-            "Reserved bits 6-7 in Subscription Options must be 0 (§3.8.3.1)"
-        }
+        if (version.supportsProperties) {
+            // Subscription Options bits 6-7 are reserved and MUST be 0 (§3.8.3.1)
+            require((options and 0xC0) == 0) {
+                "Reserved bits 6-7 in Subscription Options must be 0 (§3.8.3.1)"
+            }
 
-        subscriptions +=
-            Subscription(
-                topicFilter = topicFilter,
-                maxQos = QoS.fromValue(options and 0x03),
-                noLocal = (options and 0x04) != 0,
-                retainAsPublished = (options and 0x08) != 0,
-                retainHandling = RetainHandling.fromValue((options shr 4) and 0x03),
-            )
+            subscriptions +=
+                Subscription(
+                    topicFilter = topicFilter,
+                    maxQos = QoS.fromValue(options and 0x03),
+                    noLocal = (options and 0x04) != 0,
+                    retainAsPublished = (options and 0x08) != 0,
+                    retainHandling = RetainHandling.fromValue((options shr 4) and 0x03),
+                )
+        } else {
+            // MQTT 3.1.1: options byte is just QoS (bits 0-1), rest reserved as 0
+            subscriptions +=
+                Subscription(
+                    topicFilter = topicFilter,
+                    maxQos = QoS.fromValue(options and 0x03),
+                )
+        }
     }
 
     return Subscribe(
@@ -284,19 +346,34 @@ private fun decodeSubscribe(body: ByteArray): Subscribe {
 
 // --- §3.9 SUBACK ---
 
-private fun decodeSubAck(body: ByteArray): SubAck {
+private fun decodeSubAck(
+    body: ByteArray,
+    version: MqttProtocolVersion,
+): SubAck {
     var pos = 0
 
     val packetId = WireFormat.decodeTwoByteInt(body, pos)
     pos += 2
 
-    val (properties, propsConsumed) = decodePropertiesSection(body, pos)
-    pos += propsConsumed
+    val properties: MqttProperties
+    if (version.supportsProperties) {
+        val (props, propsConsumed) = decodePropertiesSection(body, pos)
+        properties = props
+        pos += propsConsumed
+    } else {
+        properties = MqttProperties.EMPTY
+    }
 
     val reasonCodes = mutableListOf<ReasonCode>()
     while (pos < body.size) {
-        reasonCodes += ReasonCode.fromValue(body[pos].toInt() and 0xFF)
+        val codeByte = body[pos].toInt() and 0xFF
         pos++
+        if (version.supportsProperties) {
+            reasonCodes += ReasonCode.fromValue(codeByte)
+        } else {
+            // MQTT 3.1.1 SUBACK return codes: 0x00=QoS0, 0x01=QoS1, 0x02=QoS2, 0x80=Failure
+            reasonCodes += reasonCodeFromSubAckReturnCode(codeByte)
+        }
     }
 
     require(reasonCodes.isNotEmpty()) {
@@ -312,14 +389,23 @@ private fun decodeSubAck(body: ByteArray): SubAck {
 
 // --- §3.10 UNSUBSCRIBE ---
 
-private fun decodeUnsubscribe(body: ByteArray): Unsubscribe {
+private fun decodeUnsubscribe(
+    body: ByteArray,
+    version: MqttProtocolVersion,
+): Unsubscribe {
     var pos = 0
 
     val packetId = WireFormat.decodeTwoByteInt(body, pos)
     pos += 2
 
-    val (properties, propsConsumed) = decodePropertiesSection(body, pos)
-    pos += propsConsumed
+    val properties: MqttProperties
+    if (version.supportsProperties) {
+        val (props, propsConsumed) = decodePropertiesSection(body, pos)
+        properties = props
+        pos += propsConsumed
+    } else {
+        properties = MqttProperties.EMPTY
+    }
 
     val topicFilters = mutableListOf<String>()
     while (pos < body.size) {
@@ -337,11 +423,24 @@ private fun decodeUnsubscribe(body: ByteArray): Unsubscribe {
 
 // --- §3.11 UNSUBACK ---
 
-private fun decodeUnsubAck(body: ByteArray): UnsubAck {
+private fun decodeUnsubAck(
+    body: ByteArray,
+    version: MqttProtocolVersion,
+): UnsubAck {
     var pos = 0
 
     val packetId = WireFormat.decodeTwoByteInt(body, pos)
     pos += 2
+
+    if (!version.supportsProperties) {
+        // MQTT 3.1.1: UNSUBACK has no payload beyond packet identifier (§3.11)
+        // Synthesize a single SUCCESS — callers that need per-topic status should
+        // track the original UNSUBSCRIBE request.
+        return UnsubAck(
+            packetIdentifier = packetId,
+            reasonCodes = listOf(ReasonCode.SUCCESS),
+        )
+    }
 
     val (properties, propsConsumed) = decodePropertiesSection(body, pos)
     pos += propsConsumed
@@ -365,7 +464,15 @@ private fun decodeUnsubAck(body: ByteArray): UnsubAck {
 
 // --- §3.14 DISCONNECT ---
 
-private fun decodeDisconnect(body: ByteArray): Disconnect {
+private fun decodeDisconnect(
+    body: ByteArray,
+    version: MqttProtocolVersion,
+): Disconnect {
+    // MQTT 3.1.1: DISCONNECT has no variable header or payload (§3.14)
+    if (!version.supportsProperties) {
+        return Disconnect()
+    }
+
     // Short form: empty body → SUCCESS with no properties
     if (body.isEmpty()) {
         return Disconnect()
@@ -412,3 +519,34 @@ private fun decodePropertiesSection(
     val props = decodeProperties(bytes, offset + lengthResult.bytesConsumed, propsLength)
     return props to (lengthResult.bytesConsumed + propsLength)
 }
+
+/**
+ * Map an MQTT 3.1.1 CONNACK return code (§3.2.2.3) to a [ReasonCode].
+ *
+ * The 3.1.1 return codes use different wire values than MQTT 5.0 reason codes,
+ * so this is NOT a simple `ReasonCode.fromValue()` lookup.
+ */
+internal fun reasonCodeFromConnAckReturnCode(returnCode: Int): ReasonCode =
+    when (returnCode) {
+        0 -> ReasonCode.SUCCESS
+        1 -> ReasonCode.UNSUPPORTED_PROTOCOL_VERSION
+        2 -> ReasonCode.CLIENT_IDENTIFIER_NOT_VALID
+        3 -> ReasonCode.SERVER_UNAVAILABLE
+        4 -> ReasonCode.BAD_USER_NAME_OR_PASSWORD
+        5 -> ReasonCode.NOT_AUTHORIZED
+        else -> ReasonCode.UNSPECIFIED_ERROR
+    }
+
+/**
+ * Map an MQTT 3.1.1 SUBACK return code (§3.9.3) to a [ReasonCode].
+ *
+ * 3.1.1 values: 0x00=Maximum QoS 0, 0x01=Maximum QoS 1, 0x02=Maximum QoS 2, 0x80=Failure.
+ */
+internal fun reasonCodeFromSubAckReturnCode(returnCode: Int): ReasonCode =
+    when (returnCode) {
+        0x00 -> ReasonCode.SUCCESS
+        0x01 -> ReasonCode.GRANTED_QOS_1
+        0x02 -> ReasonCode.GRANTED_QOS_2
+        0x80 -> ReasonCode.UNSPECIFIED_ERROR
+        else -> ReasonCode.UNSPECIFIED_ERROR
+    }

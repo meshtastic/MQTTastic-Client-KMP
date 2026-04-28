@@ -9,7 +9,7 @@
 [![codecov](https://codecov.io/gh/meshtastic/MQTTastic-Client-KMP/graph/badge.svg)](https://codecov.io/gh/meshtastic/MQTTastic-Client-KMP)
 [![API Docs](https://img.shields.io/badge/API%20Docs-latest-blue.svg)](https://meshtastic.github.io/MQTTastic-Client-KMP)
 
-A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — connecting JVM, Android, iOS, macOS, Linux, Windows, and browsers through a single, idiomatic Kotlin API.
+A fully-featured **MQTT 5.0 and 3.1.1** client library for **Kotlin Multiplatform** — connecting JVM, Android, iOS, macOS, Linux, Windows, and browsers through a single, idiomatic Kotlin API.
 
 <p align="center">
   <img src="docs/images/sample-app.png" alt="MQTTastic sample app running on Android, connected to mqtt.meshtastic.org and streaming live mesh traffic" width="820" />
@@ -19,7 +19,7 @@ A fully-featured **MQTT 5.0** client library for **Kotlin Multiplatform** — co
 
 ## Features
 
-- 📦 **Full MQTT 5.0** — all 15 packet types, properties, reason codes, and enhanced auth
+- 📦 **Full MQTT 5.0 + 3.1.1** — all 15 packet types, properties, reason codes, and enhanced auth (5.0); backward-compatible 3.1.1 support
 - 🔄 **All QoS levels** — QoS 0, 1, and 2 with complete state machine handling
 - 🌍 **True multiplatform** — one codebase, 9 targets (see [Platform Support](#platform-support))
 - 🔒 **TLS/SSL** — secure connections on all native/JVM targets
@@ -174,6 +174,33 @@ client.messages.collect { msg ->
 client.close()
 ```
 </details>
+
+### MQTT 3.1.1 Support
+
+To connect to an MQTT 3.1.1 broker, set `protocolVersion` in your config:
+
+```kotlin
+val client = MqttClient("my-client") {
+    protocolVersion = MqttProtocolVersion.V3_1_1
+    keepAliveSeconds = 30
+}
+
+client.use(MqttEndpoint.parse("tcp://legacy-broker:1883")) { c ->
+    c.subscribe("sensors/#")
+    c.messagesForTopic("sensors/#").collect { msg ->
+        println("Received: ${msg.payloadAsString()}")
+    }
+}
+```
+
+MQTT 3.1.1 mode automatically:
+- Omits properties sections from all packets
+- Uses 3.1.1 CONNACK return codes (mapped to `ReasonCode`)
+- Encodes subscribe options as QoS-only (no `noLocal`, `retainAsPublished`, `retainHandling`)
+- Sends a body-less DISCONNECT on close
+- Skips topic aliases and flow control (Receive Maximum)
+
+5.0-only config options (`sessionExpiryInterval`, `authenticationMethod`) are rejected at config-build time when `V3_1_1` is selected. The default protocol version is `V5_0` — existing code is unaffected.
 
 ### Convenience APIs
 

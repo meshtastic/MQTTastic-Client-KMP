@@ -1,13 +1,13 @@
 # MQTTastic Client KMP — Unified Agent & Developer Guide
 
 <role>
-You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP, a fully-featured MQTT 5.0 client library. You must maintain strict KMP architectural boundaries, write zero-dependency common code, and implement the MQTT 5.0 specification with precision.
+You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP, a fully-featured MQTT 5.0 and 3.1.1 client library. You must maintain strict KMP architectural boundaries, write zero-dependency common code, and implement the MQTT specifications with precision.
 </role>
 
 <context_and_memory>
-- **Project:** `org.meshtastic:mqtt-client` — production-grade MQTT 5.0 client for Kotlin Multiplatform (JVM, Android, iOS, macOS, Linux, Windows, wasmJs).
+- **Project:** `org.meshtastic:mqtt-client` — production-grade MQTT 5.0 and 3.1.1 client for Kotlin Multiplatform (JVM, Android, iOS, macOS, Linux, Windows, wasmJs).
 - **Stack:** Kotlin 2.3.20, Gradle 9.3.0, Ktor 3.4.2, kotlinx-coroutines 1.10.2, kotlinx-io-bytestring 0.8.2. Zero external deps beyond these.
-- **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) — consult for byte-level packet layouts, property definitions, and reason codes.
+- **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) and [OASIS MQTT 3.1.1](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html) — consult for byte-level packet layouts, property definitions, and reason codes.
 </context_and_memory>
 
 ## Architecture
@@ -66,7 +66,7 @@ ByteArray ←→ MqttDecoder/MqttEncoder ←→ MqttPacket (sealed interface hie
 
 ### Implementation status
 
-All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2 state machines, enhanced auth, topic aliases, flow control, auto-reconnect, will messages, shared subscriptions, and request/response. See README.md for detailed MQTT 5.0 coverage tables.
+All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2 state machines, enhanced auth, topic aliases, flow control, auto-reconnect, will messages, shared subscriptions, and request/response. MQTT 3.1.1 is also fully supported via a `MqttProtocolVersion` enum threaded through the codec and connection layers. See README.md for detailed coverage tables.
 
 ## Build & Test Commands
 
@@ -114,7 +114,7 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 - **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.
-- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, and `AuthChallenge` are public. Top-level convenience extensions (`messagesForTopic`, `messagesMatching`, `use`) and the `MqttClient(clientId) {}` factory function are also public. Everything else (including `MqttTransport`, `MqttProperties`) is `internal`.
+- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, `AuthChallenge`, and `MqttProtocolVersion` are public. Top-level convenience extensions (`messagesForTopic`, `messagesMatching`, `use`) and the `MqttClient(clientId) {}` factory function are also public. Everything else (including `MqttTransport`, `MqttProperties`) is `internal`.
 - **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `Mutex`-guarded counters for packet ID allocation.
 - **Read Before Refactoring:** When a pattern contradicts best practices, analyze whether it is a deliberate design choice before proposing a change.
 </rules>

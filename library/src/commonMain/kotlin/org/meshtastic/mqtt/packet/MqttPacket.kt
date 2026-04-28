@@ -55,7 +55,9 @@ internal data class Connect(
     override val packetType: PacketType get() = PacketType.CONNECT
 
     init {
-        require(protocolLevel == 5) { "Only MQTT 5.0 is supported (protocolLevel must be 5)" }
+        require(protocolLevel in intArrayOf(4, 5)) {
+            "Unsupported protocol level: $protocolLevel (must be 4 for MQTT 3.1.1 or 5 for MQTT 5.0)"
+        }
         require(keepAliveSeconds in 0..65535) { "keepAliveSeconds must be 0..65535" }
     }
 

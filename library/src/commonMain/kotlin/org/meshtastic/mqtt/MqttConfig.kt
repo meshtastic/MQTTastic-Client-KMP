@@ -108,6 +108,7 @@ import kotlinx.io.bytestring.ByteString
  *   [MqttLogLevel.NONE] (all logging disabled).
  */
 public data class MqttConfig(
+    val protocolVersion: MqttProtocolVersion = MqttProtocolVersion.V5_0,
     val clientId: String = "",
     val keepAliveSeconds: Int = 60,
     val cleanStart: Boolean = true,
@@ -161,6 +162,24 @@ public data class MqttConfig(
         require(maxReconnectAttempts >= 0) {
             "maxReconnectAttempts must be >= 0, got: $maxReconnectAttempts"
         }
+        // MQTT 3.1.1 does not support these features — fail fast if configured
+        if (protocolVersion == MqttProtocolVersion.V3_1_1) {
+            require(sessionExpiryInterval == null) {
+                "sessionExpiryInterval is not supported in MQTT 3.1.1"
+            }
+            require(authenticationMethod == null) {
+                "Enhanced authentication (authenticationMethod) is not supported in MQTT 3.1.1"
+            }
+            require(authenticationData == null) {
+                "Enhanced authentication (authenticationData) is not supported in MQTT 3.1.1"
+            }
+            // §3.1.2.3: In 3.1.1, password flag requires username flag
+            if (password != null) {
+                require(username != null) {
+                    "MQTT 3.1.1 requires username when password is set (§3.1.2.3)"
+                }
+            }
+        }
     }
 
     public companion object {
@@ -196,6 +215,9 @@ public data class MqttConfig(
     @MqttDsl
     @Suppress("TooManyFunctions")
     public class Builder {
+        /** MQTT protocol version for this connection. Defaults to MQTT 5.0. */
+        public var protocolVersion: MqttProtocolVersion = MqttProtocolVersion.V5_0
+
         /** Client identifier sent to the broker. Empty requests broker-assigned ID. */
         public var clientId: String = ""
 
@@ -309,6 +331,7 @@ public data class MqttConfig(
         /** Build the immutable [MqttConfig] from the current builder state. */
         public fun build(): MqttConfig =
             MqttConfig(
+                protocolVersion = protocolVersion,
                 clientId = clientId,
                 keepAliveSeconds = keepAliveSeconds,
                 cleanStart = cleanStart,
