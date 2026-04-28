@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-28
+
+### Added
+- **Full MQTT 3.1.1 protocol support** with seamless version auto-negotiation (#36)
+  - All 15 encoder/decoder functions accept a `version` parameter
+  - 3.1.1 wire protocol differences: no properties, 1-byte CONNACK return codes, QoS-only SUBSCRIBE options, body-less DISCONNECT, no AUTH packet
+  - `negotiateVersion: Boolean = true` config flag — tries V5.0 first, falls back to V3.1.1 on `UNSUPPORTED_PROTOCOL_VERSION`
+  - `negotiatedProtocolVersion` public property on `MqttClient`
+  - New `MqttProtocolVersion` public enum (`V3_1_1`, `V5_0`)
+
+### Fixed
+- Correct decoding of 3.1.1-format CONNACK (2 bytes) when a V3.1.1-only broker rejects a V5.0 CONNECT (#36)
+
+### Changed
+- Bump Compose Multiplatform to 1.11.0-beta03, Material3 to 1.11.0-alpha07, Adaptive to 1.3.0-alpha07, compileSdk to 37 (#31)
+- Bump Kotlin to 2.3.21
+- Bump Ktor ecosystem to 3.4.3
+- Bump AGP to 9.2.0
+- Bump Develocity plugin to 4.4.1
+
 ## [0.2.0] - 2026-04-17
 
 ### Changed (BREAKING)
