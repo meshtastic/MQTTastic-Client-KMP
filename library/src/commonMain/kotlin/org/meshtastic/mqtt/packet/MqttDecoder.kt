@@ -188,10 +188,19 @@ private fun decodeConnAck(
     body: ByteArray,
     version: MqttProtocolVersion,
 ): ConnAck {
-    if (version.supportsProperties) {
+    // Determine effective decode version. A 3.1.1-only broker receiving a V5.0 CONNECT
+    // responds with a 3.1.1 CONNACK (2 bytes, no properties). Detect this and decode
+    // as 3.1.1 so the version negotiation layer can handle the rejection gracefully.
+    val effectiveVersion =
+        if (version.supportsProperties && body.size == 2) {
+            MqttProtocolVersion.V3_1_1
+        } else {
+            version
+        }
+
+    if (effectiveVersion.supportsProperties) {
         require(body.size >= 3) { "CONNACK body too short" }
     } else {
-        // MQTT 3.1.1: exactly 2 bytes — acknowledge flags + return code (§3.2)
         require(body.size == 2) { "CONNACK body must be exactly 2 bytes for MQTT 3.1.1" }
     }
     // Connect Acknowledge Flags — bits 7-1 are reserved and MUST be 0 (§3.2.2.1)
@@ -200,7 +209,7 @@ private fun decodeConnAck(
     }
     val sessionPresent = (body[0].toInt() and 0x01) != 0
 
-    return if (version.supportsProperties) {
+    return if (effectiveVersion.supportsProperties) {
         val reasonCode = ReasonCode.fromValue(body[1].toInt() and 0xFF)
         val (properties, _) = decodePropertiesSection(body, 2)
         ConnAck(sessionPresent = sessionPresent, reasonCode = reasonCode, properties = properties)
