@@ -548,9 +548,16 @@ private fun decodePropertiesSection(
     return props to (lengthResult.bytesConsumed + propsLength)
 }
 
-private fun ByteArray.toHexDump(): String =
-    if (size <= 64) joinToString("") { "%02x".format(it) }
-    else take(64).joinToString("") { "%02x".format(it) } + "...(${size} total)"
+private fun ByteArray.toHexDump(): String {
+    fun Byte.hex(): String {
+        val i = toInt() and 0xFF
+        val hi = "0123456789abcdef"[i ushr 4]
+        val lo = "0123456789abcdef"[i and 0x0F]
+        return "$hi$lo"
+    }
+    return if (size <= 64) joinToString("") { it.hex() }
+    else take(64).joinToString("") { it.hex() } + "...(${size} total)"
+}
 
 /**
  * Map an MQTT 3.1.1 CONNACK return code (§3.2.2.3) to a [ReasonCode].
