@@ -74,8 +74,10 @@ internal class TcpTransport : MqttTransport {
                 socket =
                     try {
                         if (endpoint.tls) {
+                            val tlsServerName = endpoint.host.takeUnless { isIpLiteral(it) }
                             rawSocket.tls(Dispatchers.IO) {
-                                serverName = endpoint.host.takeUnless { isIpLiteral(it) }
+                                serverName = tlsServerName
+                                configurePlatformTrust(tlsServerName)
                             }
                         } else {
                             rawSocket
