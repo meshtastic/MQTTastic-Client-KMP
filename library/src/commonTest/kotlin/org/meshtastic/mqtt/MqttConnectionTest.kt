@@ -17,6 +17,7 @@
 package org.meshtastic.mqtt
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -44,6 +45,7 @@ import org.meshtastic.mqtt.packet.Subscription
 import org.meshtastic.mqtt.packet.UnsubAck
 import org.meshtastic.mqtt.packet.Unsubscribe
 import org.meshtastic.mqtt.packet.decodePacket
+import org.meshtastic.mqtt.packet.encode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -1140,6 +1142,38 @@ class MqttConnectionTest {
                 "Connection should be DISCONNECTED after PINGRESP timeout",
             )
             assertIs<MqttException.ConnectionLost>(state.reason)
+        }
+
+    @Test
+    fun v5ConnectionFallsBackToV311WhenBrokerSendsV311Packets() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(), this)
+
+            transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            val v311Publish = Publish(
+                topicName = "test/topic",
+                payload = "hello".encodeToByteArray(),
+                qos = QoS.AT_MOST_ONCE,
+            )
+
+            val msgDeferred = async { connection.incomingMessages.first() }
+            yield()
+
+            transport.enqueueReceive(v311Publish.encode(MqttProtocolVersion.V3_1_1))
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.Connected, connection.connectionState.value)
+
+            val msg = msgDeferred.await()
+            assertEquals("test/topic", msg.topic)
+            assertEquals("hello", msg.payload.toByteArray().decodeToString())
+
+            connection.disconnect()
+            advanceUntilIdle()
         }
 
     companion object {

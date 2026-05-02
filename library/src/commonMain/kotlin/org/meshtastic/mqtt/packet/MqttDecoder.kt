@@ -533,11 +533,24 @@ private fun decodePropertiesSection(
     bytes: ByteArray,
     offset: Int,
 ): Pair<MqttProperties, Int> {
+    require(offset < bytes.size) {
+        "Properties section offset $offset is beyond body (${bytes.size} bytes). " +
+            "Hex: ${bytes.toHexDump()}"
+    }
     val lengthResult = VariableByteInt.decode(bytes, offset)
     val propsLength = lengthResult.value
+    require(offset + lengthResult.bytesConsumed + propsLength <= bytes.size) {
+        "Properties section overflows body: offset=$offset, " +
+            "vbiLen=${lengthResult.bytesConsumed}, propsLen=$propsLength, " +
+            "bodySize=${bytes.size}. Hex: ${bytes.toHexDump()}"
+    }
     val props = decodeProperties(bytes, offset + lengthResult.bytesConsumed, propsLength)
     return props to (lengthResult.bytesConsumed + propsLength)
 }
+
+private fun ByteArray.toHexDump(): String =
+    if (size <= 64) joinToString("") { "%02x".format(it) }
+    else take(64).joinToString("") { "%02x".format(it) } + "...(${size} total)"
 
 /**
  * Map an MQTT 3.1.1 CONNACK return code (§3.2.2.3) to a [ReasonCode].

@@ -101,8 +101,8 @@ internal class MqttConnection(
     private val log: MqttLoggerInternal = MqttLoggerInternal.NOOP,
     private val timeSource: TimeSource = TimeSource.Monotonic,
 ) {
-    /** The MQTT protocol version for this connection. */
-    private val version: MqttProtocolVersion get() = config.protocolVersion
+    /** The MQTT protocol version for this connection (may downgrade at runtime). */
+    private var version: MqttProtocolVersion = config.protocolVersion
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected.Idle)
 
@@ -811,7 +811,28 @@ internal class MqttConnection(
                             }
                         }
 
-                        val packet = decodePacket(bytes, version)
+                        val packet = try {
+                            decodePacket(bytes, version)
+                        } catch (e: IllegalArgumentException) {
+                            if (version == MqttProtocolVersion.V5_0) {
+                                // Broker may have accepted v5 CONNECT but sends v3.1.1 packets
+                                val fallbackPacket = runCatching {
+                                    decodePacket(bytes, MqttProtocolVersion.V3_1_1)
+                                }.getOrNull()
+                                if (fallbackPacket != null) {
+                                    log.warn(TAG) {
+                                        "Packet decoded as MQTT 3.1.1 (v5 decode failed: ${e.message}). " +
+                                            "Downgrading connection to 3.1.1."
+                                    }
+                                    version = MqttProtocolVersion.V3_1_1
+                                    fallbackPacket
+                                } else {
+                                    throw e
+                                }
+                            } else {
+                                throw e
+                            }
+                        }
                         log.debug(TAG) { "Received ${packet.packetType}" }
                         handlePacket(packet)
                     }
