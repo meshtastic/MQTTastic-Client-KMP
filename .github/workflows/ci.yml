@@ -154,3 +154,38 @@ jobs:
 
       - name: Build
         run: ./gradlew build --stacktrace
+
+  publish-snapshot:
+    name: Publish Snapshot
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'false'
+
+      - name: Compute snapshot version
+        id: version
+        run: |
+          RELEASE_VERSION=$(grep '^VERSION_NAME=' gradle.properties | cut -d= -f2)
+          IFS='.' read -r major minor patch <<< "$RELEASE_VERSION"
+          SNAPSHOT_VERSION="${major}.${minor}.$((patch + 1))-SNAPSHOT"
+          echo "snapshot=$SNAPSHOT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing snapshot: $SNAPSHOT_VERSION"
+
+      - name: Publish to Maven Central (snapshots)
+        run: >-
+          ./gradlew publishAllPublicationsToMavenCentralRepository
+          -PVERSION_NAME=${{ steps.version.outputs.snapshot }}
+          --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.OSSRH_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.OSSRH_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
