@@ -1154,11 +1154,12 @@ class MqttConnectionTest {
             connection.connect(endpoint)
             advanceUntilIdle()
 
-            val v311Publish = Publish(
-                topicName = "test/topic",
-                payload = "hello".encodeToByteArray(),
-                qos = QoS.AT_MOST_ONCE,
-            )
+            val v311Publish =
+                Publish(
+                    topicName = "test/topic",
+                    payload = "hello".encodeToByteArray(),
+                    qos = QoS.AT_MOST_ONCE,
+                )
 
             val msgDeferred = async { connection.incomingMessages.first() }
             yield()

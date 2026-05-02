@@ -555,8 +555,11 @@ private fun ByteArray.toHexDump(): String {
         val lo = "0123456789abcdef"[i and 0x0F]
         return "$hi$lo"
     }
-    return if (size <= 64) joinToString("") { it.hex() }
-    else take(64).joinToString("") { it.hex() } + "...(${size} total)"
+    return if (size <= 64) {
+        joinToString("") { it.hex() }
+    } else {
+        take(64).joinToString("") { it.hex() } + "...($size total)"
+    }
 }
 
 /**
