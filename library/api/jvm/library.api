@@ -557,6 +557,7 @@ public final class org/meshtastic/mqtt/ReasonCode : java/lang/Enum {
 	public static final field WILDCARD_SUBSCRIPTIONS_NOT_SUPPORTED Lorg/meshtastic/mqtt/ReasonCode;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public final fun getValue ()I
+	public final fun isConnectionRejection ()Z
 	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/mqtt/ReasonCode;
 	public static fun values ()[Lorg/meshtastic/mqtt/ReasonCode;
 }
