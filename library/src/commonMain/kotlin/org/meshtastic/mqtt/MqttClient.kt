@@ -746,7 +746,19 @@ public class MqttClient
                     val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
                     val fallbackTransport = effectiveTransportFactory(endpoint)
                     val fallbackConn = MqttConnection(fallbackTransport, fallbackConfig, scope, log)
-                    fallbackConn.connect(endpoint)
+                    try {
+                        fallbackConn.connect(endpoint)
+                    } catch (fallbackError: Exception) {
+                        try {
+                            fallbackTransport.close()
+                        } catch (
+                            @Suppress("TooGenericExceptionCaught", "SwallowedException")
+                            _: Exception,
+                        ) {
+                            // Best-effort close
+                        }
+                        throw fallbackError
+                    }
                     // Only set after successful connect — don't leave stale state on failure
                     negotiatedProtocolVersion = MqttProtocolVersion.V3_1_1
                     connection = fallbackConn

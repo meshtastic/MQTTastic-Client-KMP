@@ -144,7 +144,7 @@ internal class MqttConnection(
     private var awaitingPingResp = false
     private var pingSentMark: TimeMark = timeSource.markNow()
 
-    @Volatile
+    private val fatalErrorMutex = Mutex()
     private var handlingFatalError = false
 
     // Server-assigned values from CONNACK
@@ -830,25 +830,8 @@ internal class MqttConnection(
                             try {
                                 decodePacket(bytes, version)
                             } catch (e: IllegalArgumentException) {
-                                if (version == MqttProtocolVersion.V5_0) {
-                                    // Broker may have accepted v5 CONNECT but sends v3.1.1 packets
-                                    val fallbackPacket =
-                                        runCatching {
-                                            decodePacket(bytes, MqttProtocolVersion.V3_1_1)
-                                        }.getOrNull()
-                                    if (fallbackPacket != null) {
-                                        log.warn(TAG) {
-                                            "Packet decoded as MQTT 3.1.1 (v5 decode failed: ${e.message}). " +
-                                                "Downgrading connection to 3.1.1."
-                                        }
-                                        version = MqttProtocolVersion.V3_1_1
-                                        fallbackPacket
-                                    } else {
-                                        throw e
-                                    }
-                                } else {
-                                    throw e
-                                }
+                                log.error(TAG) { "Failed to decode packet: ${e.message}" }
+                                throw e
                             }
                         log.debug(TAG) { "Received ${packet.packetType}" }
                         handlePacket(packet)
@@ -874,9 +857,11 @@ internal class MqttConnection(
         reasonCode: ReasonCode = ReasonCode.UNSPECIFIED_ERROR,
         cause: Throwable? = null,
     ) {
-        // Guard against re-entrant calls (e.g., handlePacket → handleFatalError → sendPacket fails)
-        if (handlingFatalError) return
-        handlingFatalError = true
+        // Atomic guard against re-entrant/concurrent calls
+        fatalErrorMutex.withLock {
+            if (handlingFatalError) return
+            handlingFatalError = true
+        }
 
         // Coerce the cause to a public MqttException to derive the reason code and reason value.
         val mappedReason: MqttException? = cause?.toMqttException(defaultReasonCode = reasonCode)
