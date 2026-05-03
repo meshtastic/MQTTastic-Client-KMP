@@ -622,4 +622,76 @@ class MqttClientTest {
             client.close()
             advanceUntilIdle()
         }
+
+    // --- Non-retriable reconnect ---
+
+    @Test
+    fun reconnectStopsOnBadCredentials() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(autoReconnect = true)
+            val client = connectedClient(transport, config, scope = this)
+
+            // Initial connect
+            client.connect(endpoint)
+            advanceUntilIdle()
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
+
+            // Set up callback to reject reconnect with BAD_USER_NAME_OR_PASSWORD
+            transport.onConnect = {
+                transport.enqueuePacket(
+                    ConnAck(reasonCode = ReasonCode.BAD_USER_NAME_OR_PASSWORD),
+                )
+            }
+
+            // Simulate connection loss
+            transport.receiveError = RuntimeException("Connection reset")
+            transport.enqueuePacket(PingResp)
+            advanceUntilIdle()
+
+            // Advance past reconnect delay
+            advanceTimeBy(200)
+            advanceUntilIdle()
+
+            // Should NOT be Connected or Reconnecting — should be Disconnected
+            val state = client.connectionState.value
+            assertIs<ConnectionState.Disconnected>(state)
+            assertIs<MqttException.ConnectionRejected>(state.reason)
+            assertEquals(ReasonCode.BAD_USER_NAME_OR_PASSWORD, state.reason!!.reasonCode)
+
+            transport.onConnect = null
+            client.close()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun reconnectStopsOnBanned() =
+        runTest {
+            val transport = FakeTransport()
+            val config = defaultConfig(autoReconnect = true)
+            val client = connectedClient(transport, config, scope = this)
+
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            transport.onConnect = {
+                transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.BANNED))
+            }
+
+            transport.receiveError = RuntimeException("Connection reset")
+            transport.enqueuePacket(PingResp)
+            advanceUntilIdle()
+
+            advanceTimeBy(200)
+            advanceUntilIdle()
+
+            val state = client.connectionState.value
+            assertIs<ConnectionState.Disconnected>(state)
+            assertIs<MqttException.ConnectionRejected>(state.reason)
+            assertEquals(ReasonCode.BANNED, state.reason!!.reasonCode)
+
+            transport.onConnect = null
+            client.close()
+            advanceUntilIdle()
+        }
 }

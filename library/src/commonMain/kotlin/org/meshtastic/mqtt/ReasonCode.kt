@@ -162,6 +162,28 @@ public enum class ReasonCode(
     WILDCARD_SUBSCRIPTIONS_NOT_SUPPORTED(0xA2),
     ;
 
+    /**
+     * Whether this reason code represents a permanent CONNECT rejection that should
+     * NOT be retried (e.g., bad credentials, banned client, invalid client ID).
+     *
+     * Codes that indicate transient failures (server busy, server unavailable, rate exceeded)
+     * are excluded — those may succeed on retry.
+     */
+    public val isConnectionRejection: Boolean
+        get() =
+            when (this) {
+                BAD_USER_NAME_OR_PASSWORD,
+                NOT_AUTHORIZED,
+                BAD_AUTHENTICATION_METHOD,
+                CLIENT_IDENTIFIER_NOT_VALID,
+                BANNED,
+                PROTOCOL_ERROR,
+                MALFORMED_PACKET,
+                -> true
+
+                else -> false
+            }
+
     public companion object {
         private val byValue: Map<Int, ReasonCode> = entries.associateBy { it.value }
 

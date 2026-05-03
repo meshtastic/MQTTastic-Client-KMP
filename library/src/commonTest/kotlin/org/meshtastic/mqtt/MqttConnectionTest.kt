@@ -1145,7 +1145,7 @@ class MqttConnectionTest {
         }
 
     @Test
-    fun v5ConnectionFallsBackToV311WhenBrokerSendsV311Packets() =
+    fun v5ConnectionDisconnectsOnMalformedPacket() =
         runTest {
             val transport = FakeTransport()
             val connection = MqttConnection(transport, defaultConfig(), this)
@@ -1154,24 +1154,61 @@ class MqttConnectionTest {
             connection.connect(endpoint)
             advanceUntilIdle()
 
+            // Send a v3.1.1-encoded packet to a v5 connection — should be treated as
+            // a decode error and disconnect, not silently downgrade protocol version.
             val v311Publish =
                 Publish(
                     topicName = "test/topic",
                     payload = "hello".encodeToByteArray(),
                     qos = QoS.AT_MOST_ONCE,
                 )
-
-            val msgDeferred = async { connection.incomingMessages.first() }
-            yield()
-
             transport.enqueueReceive(v311Publish.encode(MqttProtocolVersion.V3_1_1))
             advanceUntilIdle()
 
-            assertEquals(ConnectionState.Connected, connection.connectionState.value)
+            val state = connection.connectionState.value
+            assertIs<ConnectionState.Disconnected>(
+                state,
+                "Connection should disconnect on malformed packet, not downgrade protocol",
+            )
+        }
 
-            val msg = msgDeferred.await()
-            assertEquals("test/topic", msg.topic)
-            assertEquals("hello", msg.payload.toByteArray().decodeToString())
+    // --- Session Present validation (§3.2.2.1.1) ---
+
+    @Test
+    fun connectRejectsSessionPresentWithCleanStart() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(cleanStart = true), this)
+
+            // Server returns sessionPresent=true despite cleanStart=true — protocol violation
+            transport.enqueuePacket(
+                ConnAck(sessionPresent = true, reasonCode = ReasonCode.SUCCESS),
+            )
+
+            val exception =
+                assertFailsWith<MqttConnectionException> {
+                    connection.connect(endpoint)
+                }
+            assertEquals(ReasonCode.PROTOCOL_ERROR, exception.reasonCode)
+            assertTrue(exception.message!!.contains("sessionPresent"))
+        }
+
+    @Test
+    fun connectAllowsSessionPresentWithCleanStartFalse() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(cleanStart = false), this)
+
+            transport.enqueuePacket(
+                ConnAck(sessionPresent = true, reasonCode = ReasonCode.SUCCESS),
+            )
+
+            val connAck = connection.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ReasonCode.SUCCESS, connAck.reasonCode)
+            assertEquals(true, connAck.sessionPresent)
+            assertEquals(ConnectionState.Connected, connection.connectionState.value)
 
             connection.disconnect()
             advanceUntilIdle()

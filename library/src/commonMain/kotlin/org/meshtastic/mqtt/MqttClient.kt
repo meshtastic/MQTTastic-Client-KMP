@@ -746,7 +746,19 @@ public class MqttClient
                     val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
                     val fallbackTransport = effectiveTransportFactory(endpoint)
                     val fallbackConn = MqttConnection(fallbackTransport, fallbackConfig, scope, log)
-                    fallbackConn.connect(endpoint)
+                    try {
+                        fallbackConn.connect(endpoint)
+                    } catch (fallbackError: Exception) {
+                        try {
+                            fallbackTransport.close()
+                        } catch (
+                            @Suppress("TooGenericExceptionCaught", "SwallowedException")
+                            _: Exception,
+                        ) {
+                            // Best-effort close
+                        }
+                        throw fallbackError
+                    }
                     // Only set after successful connect — don't leave stale state on failure
                     negotiatedProtocolVersion = MqttProtocolVersion.V3_1_1
                     connection = fallbackConn
@@ -900,6 +912,19 @@ public class MqttClient
                             ) {
                                 attempts++
                                 lastError = e.toMqttException()
+
+                                // Non-retriable rejections: stop immediately (§3.2.2.2)
+                                if (lastError is MqttException.ConnectionRejected) {
+                                    val code =
+                                        (lastError as MqttException.ConnectionRejected).reasonCode
+                                    log.error(TAG) {
+                                        "Connection permanently rejected ($code), stopping reconnect"
+                                    }
+                                    _connectionState.value =
+                                        ConnectionState.Disconnected(reason = lastError)
+                                    return@launch
+                                }
+
                                 log.warn(TAG, throwable = e) { "Reconnect attempt $attempts failed" }
                                 _connectionState.value =
                                     ConnectionState.Reconnecting(attempt = attempts, lastError = lastError)
