@@ -99,11 +99,20 @@ internal fun Throwable.toMqttException(defaultReasonCode: ReasonCode = ReasonCod
         }
 
         is MqttConnectionException -> {
-            MqttException.ConnectionLost(
-                reasonCode = this.reasonCode,
-                message = this.message ?: "Connection error",
-                cause = this.cause,
-            )
+            if (this.reasonCode.isConnectionRejection) {
+                MqttException.ConnectionRejected(
+                    reasonCode = this.reasonCode,
+                    message = this.message ?: "Connection rejected",
+                    cause = this.cause,
+                    serverReference = this.serverReference,
+                )
+            } else {
+                MqttException.ConnectionLost(
+                    reasonCode = this.reasonCode,
+                    message = this.message ?: "Connection error",
+                    cause = this.cause,
+                )
+            }
         }
 
         else -> {

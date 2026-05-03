@@ -224,6 +224,21 @@ internal class MqttConnection(
 
             log.debug(TAG) { "Received CONNACK: reasonCode=${connAck.reasonCode}" }
 
+            // §3.2.2.1.1: If cleanStart=true and the server returns sessionPresent=true,
+            // this is a protocol error — the server MUST NOT set sessionPresent when
+            // the client requested a clean start.
+            if (config.cleanStart && connAck.sessionPresent) {
+                log.error(TAG) {
+                    "Protocol error: sessionPresent=true with cleanStart=true (§3.2.2.1.1)"
+                }
+                transport.close()
+                _connectionState.value = ConnectionState.Disconnected.Idle
+                throw MqttConnectionException(
+                    ReasonCode.PROTOCOL_ERROR,
+                    "Server set sessionPresent=true with cleanStart=true (§3.2.2.1.1)",
+                )
+            }
+
             if (version.supportsProperties) {
                 // Store server-assigned values from CONNACK properties
                 connAck.properties.receiveMaximum?.let { serverReceiveMaximum = it }

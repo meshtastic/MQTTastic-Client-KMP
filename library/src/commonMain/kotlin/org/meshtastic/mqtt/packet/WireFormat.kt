@@ -26,7 +26,7 @@ internal object WireFormat {
 
     fun encodeUtf8String(value: String): ByteArray {
         val utf8 = value.encodeToByteArray()
-        require('\u0000' !in value) { "UTF-8 string must not contain null character U+0000 (§1.5.4)" }
+        requireValidMqttUtf8(value)
         require(utf8.size <= 65_535) { "UTF-8 string length ${utf8.size} exceeds max 65535" }
         val result = ByteArray(2 + utf8.size)
         result[0] = (utf8.size shr 8).toByte()
@@ -46,8 +46,35 @@ internal object WireFormat {
             "Not enough bytes for UTF-8 string data: need $length at offset ${offset + 2}"
         }
         val str = bytes.decodeToString(offset + 2, offset + 2 + length)
-        require('\u0000' !in str) { "UTF-8 string must not contain null character U+0000 (§1.5.4)" }
+        requireValidMqttUtf8(str)
         return str to (2 + length)
+    }
+
+    /**
+     * Validate a string conforms to MQTT UTF-8 requirements (§1.5.4):
+     * - Must not contain null character U+0000
+     * - Must not contain unpaired surrogates U+D800..U+DFFF
+     */
+    private fun requireValidMqttUtf8(value: String) {
+        var i = 0
+        while (i < value.length) {
+            val ch = value[i]
+            require(ch != '\u0000') {
+                "UTF-8 string must not contain null character U+0000 (§1.5.4)"
+            }
+            if (ch.isHighSurrogate()) {
+                val next = value.getOrNull(i + 1)
+                require(next != null && next.isLowSurrogate()) {
+                    "UTF-8 string must not contain unpaired surrogate U+${ch.code.toString(16).uppercase()} (§1.5.4)"
+                }
+                i += 2 // skip the valid pair
+            } else {
+                require(!ch.isLowSurrogate()) {
+                    "UTF-8 string must not contain unpaired surrogate U+${ch.code.toString(16).uppercase()} (§1.5.4)"
+                }
+                i++
+            }
+        }
     }
 
     // --- Binary Data (§1.5.6): 2-byte big-endian length prefix + raw bytes ---

@@ -229,6 +229,29 @@ class MqttPropertiesTest {
     }
 
     @Test
+    fun wireFormatUtf8StringRejectsNullCharacter() {
+        assertFailsWith<IllegalArgumentException> {
+            WireFormat.encodeUtf8String("hello\u0000world")
+        }
+    }
+
+    @Test
+    fun wireFormatUtf8StringRejectsSurrogateCharacters() {
+        // High surrogate U+D800
+        assertFailsWith<IllegalArgumentException> {
+            WireFormat.encodeUtf8String("test\uD800")
+        }
+        // Low surrogate U+DC00
+        assertFailsWith<IllegalArgumentException> {
+            WireFormat.encodeUtf8String("test\uDC00")
+        }
+        // Mid-range surrogate U+DBFF
+        assertFailsWith<IllegalArgumentException> {
+            WireFormat.encodeUtf8String("test\uDBFF")
+        }
+    }
+
+    @Test
     fun wireFormatBinaryDataEmpty() {
         val encoded = WireFormat.encodeBinaryData(byteArrayOf())
         assertContentEquals(byteArrayOf(0x00, 0x00), encoded)

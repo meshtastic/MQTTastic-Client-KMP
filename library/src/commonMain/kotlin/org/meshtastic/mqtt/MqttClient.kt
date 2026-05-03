@@ -900,6 +900,19 @@ public class MqttClient
                             ) {
                                 attempts++
                                 lastError = e.toMqttException()
+
+                                // Non-retriable rejections: stop immediately (§3.2.2.2)
+                                if (lastError is MqttException.ConnectionRejected) {
+                                    val code =
+                                        (lastError as MqttException.ConnectionRejected).reasonCode
+                                    log.error(TAG) {
+                                        "Connection permanently rejected ($code), stopping reconnect"
+                                    }
+                                    _connectionState.value =
+                                        ConnectionState.Disconnected(reason = lastError)
+                                    return@launch
+                                }
+
                                 log.warn(TAG, throwable = e) { "Reconnect attempt $attempts failed" }
                                 _connectionState.value =
                                     ConnectionState.Reconnecting(attempt = attempts, lastError = lastError)

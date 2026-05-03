@@ -1177,6 +1177,48 @@ class MqttConnectionTest {
             advanceUntilIdle()
         }
 
+    // --- Session Present validation (§3.2.2.1.1) ---
+
+    @Test
+    fun connectRejectsSessionPresentWithCleanStart() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(cleanStart = true), this)
+
+            // Server returns sessionPresent=true despite cleanStart=true — protocol violation
+            transport.enqueuePacket(
+                ConnAck(sessionPresent = true, reasonCode = ReasonCode.SUCCESS),
+            )
+
+            val exception =
+                assertFailsWith<MqttConnectionException> {
+                    connection.connect(endpoint)
+                }
+            assertEquals(ReasonCode.PROTOCOL_ERROR, exception.reasonCode)
+            assertTrue(exception.message!!.contains("sessionPresent"))
+        }
+
+    @Test
+    fun connectAllowsSessionPresentWithCleanStartFalse() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, defaultConfig(cleanStart = false), this)
+
+            transport.enqueuePacket(
+                ConnAck(sessionPresent = true, reasonCode = ReasonCode.SUCCESS),
+            )
+
+            val connAck = connection.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ReasonCode.SUCCESS, connAck.reasonCode)
+            assertEquals(true, connAck.sessionPresent)
+            assertEquals(ConnectionState.Connected, connection.connectionState.value)
+
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
     companion object {
         /** Timeout for waiting on async operations in tests. */
         private const val TIMEOUT_MS = 5_000L
