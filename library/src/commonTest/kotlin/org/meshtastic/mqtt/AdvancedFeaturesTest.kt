@@ -44,6 +44,7 @@ class AdvancedFeaturesTest {
         cleanStart: Boolean = true,
         clientId: String = "test-client",
         topicAliasMaximum: Int = 0,
+        useOutboundTopicAliases: Boolean = false,
         authenticationMethod: String? = null,
     ): MqttConfig =
         MqttConfig(
@@ -51,6 +52,7 @@ class AdvancedFeaturesTest {
             keepAliveSeconds = keepAliveSeconds,
             cleanStart = cleanStart,
             topicAliasMaximum = topicAliasMaximum,
+            useOutboundTopicAliases = useOutboundTopicAliases,
             authenticationMethod = authenticationMethod,
         )
 
@@ -68,7 +70,7 @@ class AdvancedFeaturesTest {
                 ),
             )
 
-            val connection = MqttConnection(transport, defaultConfig(), this)
+            val connection = MqttConnection(transport, defaultConfig(useOutboundTopicAliases = true), this)
             connection.connect(endpoint)
             advanceUntilIdle()
 
@@ -99,6 +101,41 @@ class AdvancedFeaturesTest {
                     .last()
             assertEquals("", secondPublish.topicName)
             assertEquals(assignedAlias, secondPublish.properties.topicAlias)
+
+            connection.disconnect()
+            advanceUntilIdle()
+        }
+
+    @Test
+    fun topicAliasOutbound_disabledByDefault_evenWhenBrokerAdvertises() =
+        runTest {
+            val transport = FakeTransport()
+            // CONNACK with topicAliasMaximum=10 — broker supports aliases
+            transport.enqueuePacket(
+                ConnAck(
+                    reasonCode = ReasonCode.SUCCESS,
+                    properties = MqttProperties(topicAliasMaximum = 10),
+                ),
+            )
+
+            // Default config does NOT enable outbound topic aliases
+            val connection = MqttConnection(transport, defaultConfig(), this)
+            connection.connect(endpoint)
+            advanceUntilIdle()
+
+            connection.publish(
+                MqttMessage(topic = "sensor/temp", payload = ByteString(byteArrayOf(1))),
+            )
+            advanceUntilIdle()
+
+            val publish =
+                transport
+                    .decodeSentPackets()
+                    .filterIsInstance<Publish>()
+                    .first()
+            assertEquals("sensor/temp", publish.topicName)
+            // topicAlias should NOT be assigned even though broker supports it
+            assertEquals(null, publish.properties.topicAlias)
 
             connection.disconnect()
             advanceUntilIdle()

@@ -77,6 +77,10 @@ import kotlinx.io.bytestring.ByteString
  *   `null` = no limit imposed. Range: 1..4,294,967,295 (§3.1.2.11.5).
  * @property topicAliasMaximum Maximum number of topic aliases the client accepts from the broker.
  *   `0` = topic aliases are not supported by this client. Range: 0..65,535 (§3.1.2.11.6).
+ * @property useOutboundTopicAliases If `true`, the client uses topic aliases for outbound PUBLISH
+ *   packets when the broker advertises `topicAliasMaximum > 0` in CONNACK. This reduces bandwidth
+ *   for repeated topics but some brokers have incomplete alias implementations. Defaults to `false`
+ *   for maximum compatibility.
  * @property requestResponseInformation If `true`, requests the broker to include Response Information
  *   in CONNACK, which can be used as a basis for response topics (§3.1.2.11.7).
  * @property requestProblemInformation If `true` (default), the broker may include Reason String
@@ -120,6 +124,7 @@ public data class MqttConfig(
     val receiveMaximum: Int = 65535,
     val maximumPacketSize: Long? = null,
     val topicAliasMaximum: Int = 0,
+    val useOutboundTopicAliases: Boolean = false,
     val requestResponseInformation: Boolean = false,
     val requestProblemInformation: Boolean = true,
     val userProperties: List<Pair<String, String>> = emptyList(),
@@ -306,6 +311,9 @@ public data class MqttConfig(
         /** Maximum topic aliases the client accepts from the broker (§3.1.2.11.6). */
         public var topicAliasMaximum: Int = 0
 
+        /** If `true`, use outbound topic aliases when broker advertises support. */
+        public var useOutboundTopicAliases: Boolean = false
+
         /** If `true`, requests Response Information in CONNACK (§3.1.2.11.7). */
         public var requestResponseInformation: Boolean = false
 
@@ -401,6 +409,7 @@ public data class MqttConfig(
                 receiveMaximum = receiveMaximum,
                 maximumPacketSize = maximumPacketSize,
                 topicAliasMaximum = topicAliasMaximum,
+                useOutboundTopicAliases = useOutboundTopicAliases,
                 requestResponseInformation = requestResponseInformation,
                 requestProblemInformation = requestProblemInformation,
                 userProperties = userProperties,

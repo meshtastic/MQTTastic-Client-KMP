@@ -333,4 +333,92 @@ class MqttPortugalIntegrationTest {
             assertTrue(result !is ProbeResult.Success, "Plaintext to TLS port should fail, got: $result")
             println("Plaintext-to-TLS probe correctly failed: $result")
         }
+
+    // --- Diagnostic: mimics Meshtastic proxy pattern (subscribe + sequential publishes) ---
+
+    @Test
+    fun sequentialPublishMimicsMeshtasticProxy() =
+        runTest(timeout = 60.seconds) {
+            if (skipIfNoBroker()) return@runTest
+            val topic = "msh/2/e/LongFast/!test${System.nanoTime()}"
+            val subTopic = "msh/2/c/LongFast/#"
+            val messageCount = 5
+
+            val client = createClient(clientId = "pt-proxy-test-${System.nanoTime()}")
+            try {
+                client.connect(endpoint)
+                withTimeout(10_000) {
+                    while (client.connectionState.value != ConnectionState.Connected) {
+                        delay(50)
+                    }
+                }
+                println("Connected — state: ${client.connectionState.value}")
+
+                // Subscribe (like Meshtastic Android does)
+                client.subscribe(subTopic, QoS.AT_LEAST_ONCE)
+                println("Subscribed to $subTopic")
+
+                // Publish sequentially with delays (simulating mesh packets arriving)
+                var successCount = 0
+                var failCount = 0
+                repeat(messageCount) { i ->
+                    try {
+                        client.publish(topic, "mesh-packet-$i", QoS.AT_LEAST_ONCE)
+                        successCount++
+                        println("Publish $i OK — state: ${client.connectionState.value}")
+                    } catch (e: Exception) {
+                        failCount++
+                        println("Publish $i FAILED: ${e::class.simpleName}: ${e.message}")
+                        println("  Connection state: ${client.connectionState.value}")
+                    }
+                    // Simulate real-world delay between mesh packets
+                    delay(2000)
+                }
+
+                println("\nResults: $successCount/$messageCount succeeded, $failCount failed")
+                assertEquals(messageCount, successCount, "All publishes should succeed")
+
+                client.disconnect()
+            } finally {
+                client.close()
+            }
+        }
+
+    // --- Diagnostic: rapid-fire publish (no delay, same topic) ---
+
+    @Test
+    fun rapidFirePublishSameTopic() =
+        runTest(timeout = 30.seconds) {
+            if (skipIfNoBroker()) return@runTest
+            val topic = "msh/2/e/LongFast/!rapid${System.nanoTime()}"
+
+            val client = createClient(clientId = "pt-rapid-${System.nanoTime()}")
+            try {
+                client.connect(endpoint)
+                withTimeout(10_000) {
+                    while (client.connectionState.value != ConnectionState.Connected) {
+                        delay(50)
+                    }
+                }
+                println("Connected")
+
+                // Rapid fire — no delay between publishes
+                var successCount = 0
+                repeat(10) { i ->
+                    try {
+                        client.publish(topic, "rapid-$i", QoS.AT_LEAST_ONCE)
+                        successCount++
+                    } catch (e: Exception) {
+                        println("Rapid publish $i FAILED: ${e::class.simpleName}: ${e.message}")
+                        println("  State: ${client.connectionState.value}")
+                    }
+                }
+                println("Rapid fire: $successCount/10 succeeded")
+                assertEquals(10, successCount)
+
+                client.disconnect()
+            } finally {
+                client.close()
+            }
+        }
 }

@@ -1290,6 +1290,7 @@ internal class MqttConnection(
         properties: MqttProperties,
     ): Pair<String, MqttProperties> =
         aliasMutex.withLock {
+            if (!config.useOutboundTopicAliases) return@withLock topic to properties
             if (serverTopicAliasMaximum <= 0) return@withLock topic to properties
 
             val existingAlias = outboundTopicAliases[topic]
