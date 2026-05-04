@@ -250,9 +250,16 @@ private fun decodePublish(
 
     val properties: MqttProperties
     if (version.supportsProperties) {
-        val (props, propsConsumed) = decodePropertiesSection(body, pos)
-        properties = props
-        pos += propsConsumed
+        // Some brokers accept a v5 CONNECT but relay messages from 3.1.1 clients
+        // without a properties section. Try v5 decode; fall back to treating
+        // remaining bytes as raw payload (3.1.1 style).
+        val propertiesResult = tryDecodePropertiesSection(body, pos)
+        if (propertiesResult != null) {
+            properties = propertiesResult.first
+            pos += propertiesResult.second
+        } else {
+            properties = MqttProperties.EMPTY
+        }
     } else {
         properties = MqttProperties.EMPTY
     }
@@ -297,7 +304,7 @@ private fun <T : MqttPacket> decodePubAckLike(
         return factory(packetId, reasonCode, MqttProperties.EMPTY)
     }
 
-    val (properties, _) = decodePropertiesSection(body, 3)
+    val properties = tryDecodePropertiesSection(body, 3)?.first ?: MqttProperties.EMPTY
     return factory(packetId, reasonCode, properties)
 }
 
@@ -376,9 +383,16 @@ private fun decodeSubAck(
 
     val properties: MqttProperties
     if (version.supportsProperties) {
-        val (props, propsConsumed) = decodePropertiesSection(body, pos)
-        properties = props
-        pos += propsConsumed
+        // Some brokers accept a v5 CONNECT but respond with 3.1.1-style SUBACKs
+        // (no properties section). Detect this by trying v5 decode first; if properties
+        // parsing fails, fall back to treating remaining bytes as bare return codes.
+        val propertiesResult = tryDecodePropertiesSection(body, pos)
+        if (propertiesResult != null) {
+            properties = propertiesResult.first
+            pos += propertiesResult.second
+        } else {
+            properties = MqttProperties.EMPTY
+        }
     } else {
         properties = MqttProperties.EMPTY
     }
@@ -461,8 +475,16 @@ private fun decodeUnsubAck(
         )
     }
 
-    val (properties, propsConsumed) = decodePropertiesSection(body, pos)
-    pos += propsConsumed
+    // Some brokers accept a v5 CONNECT but respond with 3.1.1-style packets.
+    // Try v5 properties decode; fall back to bare reason codes on failure.
+    val propertiesResult = tryDecodePropertiesSection(body, pos)
+    val properties: MqttProperties
+    if (propertiesResult != null) {
+        properties = propertiesResult.first
+        pos += propertiesResult.second
+    } else {
+        properties = MqttProperties.EMPTY
+    }
 
     val reasonCodes = mutableListOf<ReasonCode>()
     while (pos < body.size) {
@@ -548,7 +570,25 @@ private fun decodePropertiesSection(
     return props to (lengthResult.bytesConsumed + propsLength)
 }
 
-private fun ByteArray.toHexDump(): String {
+/**
+ * Try to decode a properties section. Returns null if the bytes don't form a valid
+ * properties section — this handles brokers that accept a v5 CONNECT but respond with
+ * 3.1.1-style packets (no properties section in SUBACK/UNSUBACK/etc.).
+ */
+@Suppress("SwallowedException")
+private fun tryDecodePropertiesSection(
+    bytes: ByteArray,
+    offset: Int,
+): Pair<MqttProperties, Int>? =
+    try {
+        decodePropertiesSection(bytes, offset)
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+private fun ByteArray.toHexDump(): String = hexDump()
+
+internal fun ByteArray.hexDump(): String {
     fun Byte.hex(): String {
         val i = toInt() and 0xFF
         val hi = "0123456789abcdef"[i ushr 4]

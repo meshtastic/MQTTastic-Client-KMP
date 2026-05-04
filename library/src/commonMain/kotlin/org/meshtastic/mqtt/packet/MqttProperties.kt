@@ -242,9 +242,19 @@ internal fun decodeProperties(
     var sharedSubscriptionAvailable: Boolean? = null
 
     while (pos < end) {
+        require(pos < bytes.size) {
+            "Property section overflows buffer: pos=$pos, end=$end, " +
+                "bodySize=${bytes.size}. Hex: ${bytes.hexDump()}"
+        }
         val idResult = VariableByteInt.decode(bytes, pos)
         pos += idResult.bytesConsumed
         val propertyId = idResult.value
+
+        // Bounds-check: the property value must start within the declared section
+        require(pos <= end && pos <= bytes.size) {
+            "Property 0x${propertyId.toString(16)} value overflows section: " +
+                "pos=$pos, end=$end, bodySize=${bytes.size}. Hex: ${bytes.hexDump()}"
+        }
 
         // Multi-occurrence properties: User Property and Subscription Identifier
         val isMultiOccurrence =
@@ -445,9 +455,15 @@ private fun decodeBooleanByte(
     bytes: ByteArray,
     offset: Int,
 ): Boolean {
-    require(offset < bytes.size) { "Not enough bytes for boolean at offset $offset" }
+    require(offset < bytes.size) {
+        "Not enough bytes for boolean at offset $offset " +
+            "(bodySize=${bytes.size}). Hex: ${bytes.hexDump()}"
+    }
     val b = bytes[offset].toInt() and 0xFF
-    require(b == 0 || b == 1) { "Malformed boolean value 0x${b.toString(16)} at offset $offset (§1.5.1.4)" }
+    require(b == 0 || b == 1) {
+        "Malformed boolean value 0x${b.toString(16)} at offset $offset (§1.5.1.4). " +
+            "Hex: ${bytes.hexDump()}"
+    }
     return b == 1
 }
 

@@ -1145,7 +1145,7 @@ class MqttConnectionTest {
         }
 
     @Test
-    fun v5ConnectionDisconnectsOnMalformedPacket() =
+    fun v5ConnectionDecodesV311PublishGracefully() =
         runTest {
             val transport = FakeTransport()
             val connection = MqttConnection(transport, defaultConfig(), this)
@@ -1154,8 +1154,9 @@ class MqttConnectionTest {
             connection.connect(endpoint)
             advanceUntilIdle()
 
-            // Send a v3.1.1-encoded packet to a v5 connection — should be treated as
-            // a decode error and disconnect, not silently downgrade protocol version.
+            // Some brokers accept a v5 CONNECT but relay PUBLISH messages from
+            // v3.1.1 clients without a properties section.  The decoder should
+            // fall back gracefully (empty properties) instead of disconnecting.
             val v311Publish =
                 Publish(
                     topicName = "test/topic",
@@ -1166,10 +1167,13 @@ class MqttConnectionTest {
             advanceUntilIdle()
 
             val state = connection.connectionState.value
-            assertIs<ConnectionState.Disconnected>(
+            assertIs<ConnectionState.Connected>(
                 state,
-                "Connection should disconnect on malformed packet, not downgrade protocol",
+                "Connection should stay connected when receiving a v3.1.1 PUBLISH in a v5 session",
             )
+
+            connection.disconnect()
+            advanceUntilIdle()
         }
 
     // --- Session Present validation (§3.2.2.1.1) ---
