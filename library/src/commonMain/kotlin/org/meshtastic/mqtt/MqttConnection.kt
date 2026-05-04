@@ -58,6 +58,7 @@ import org.meshtastic.mqtt.packet.UnsubAck
 import org.meshtastic.mqtt.packet.Unsubscribe
 import org.meshtastic.mqtt.packet.decodePacket
 import org.meshtastic.mqtt.packet.encode
+import org.meshtastic.mqtt.packet.hexDump
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeMark
 import kotlin.time.TimeSource
@@ -830,7 +831,11 @@ internal class MqttConnection(
                             try {
                                 decodePacket(bytes, version)
                             } catch (e: IllegalArgumentException) {
-                                log.error(TAG) { "Failed to decode packet: ${e.message}" }
+                                log.error(TAG) {
+                                    "Failed to decode packet (${bytes.size} bytes, " +
+                                        "version=$version): ${e.message}. " +
+                                        "Raw hex: ${bytes.hexDump()}"
+                                }
                                 throw e
                             }
                         log.debug(TAG) { "Received ${packet.packetType}" }
