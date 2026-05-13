@@ -48,7 +48,7 @@ kotlin {
             implementation(libs.compose.material3.navigation.suite)
             implementation(libs.compose.material3.window.size)
             implementation(compose.ui)
-            implementation("org.jetbrains.compose.ui:ui-tooling-preview:1.11.0-beta03")
+            implementation("org.jetbrains.compose.ui:ui-tooling-preview:1.11.0")
             implementation(libs.lifecycle.viewmodel)
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.lifecycle.runtime.compose)
