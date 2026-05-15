@@ -80,7 +80,7 @@ jobs:
 
   test-native-macos:
     name: Test Native macOS
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
         with:
@@ -159,7 +159,7 @@ jobs:
     name: Publish Snapshot
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [build]
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
         with:
