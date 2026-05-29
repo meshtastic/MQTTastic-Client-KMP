@@ -66,6 +66,10 @@ class MqttIntegrationTest {
         }
 
     private fun skipIfNoBroker(): Boolean {
+        if (System.getenv("MQTT_INTEGRATION_TESTS") == null) {
+            println("SKIPPED: set MQTT_INTEGRATION_TESTS=1 to run integration broker tests")
+            return true
+        }
         if (!brokerAvailable()) {
             println("SKIPPED: MQTT broker not available at $brokerHost:$brokerPort")
             return true

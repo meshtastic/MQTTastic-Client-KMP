@@ -124,35 +124,47 @@ kotlin {
     }
 }
 
-mavenPublishing {
-    publishToMavenCentral()
-    signAllPublications()
+tasks.withType<Jar>().configureEach {
+    from(rootProject.layout.projectDirectory.file("LICENSE"))
+}
 
-    // Coordinates (GROUP, POM_ARTIFACT_ID, VERSION_NAME) come from gradle.properties.
+mavenPublishing {
+    publishToMavenCentral(automaticRelease = true)
+    if (providers.gradleProperty("signingInMemoryKey").isPresent) {
+        signAllPublications()
+    }
 
     pom {
-        name = "MQTTastic Client"
-        description = "A fully-featured MQTT 5.0 client library for Kotlin Multiplatform."
-        inceptionYear = "2025"
-        url = "https://github.com/meshtastic/MQTTastic-Client-KMP"
+        name.set("MQTTastic Client")
+        description.set(
+            "A fully-featured MQTT 5.0 and 3.1.1 client library for Kotlin Multiplatform.",
+        )
+        inceptionYear.set("2025")
+        url.set("https://github.com/meshtastic/MQTTastic-Client-KMP")
         licenses {
             license {
-                name = "GPL-3.0"
-                url = "https://www.gnu.org/licenses/gpl-3.0.txt"
-                distribution = "repo"
+                name.set("GNU General Public License, Version 3.0")
+                url.set("https://www.gnu.org/licenses/gpl-3.0.html")
+                distribution.set("repo")
             }
         }
         developers {
             developer {
-                id = "meshtastic"
-                name = "Meshtastic"
-                url = "https://meshtastic.org"
+                id.set("meshtastic")
+                name.set("Meshtastic")
+                url.set("https://meshtastic.org")
             }
         }
         scm {
-            url = "https://github.com/meshtastic/MQTTastic-Client-KMP"
-            connection = "scm:git:git://github.com/meshtastic/MQTTastic-Client-KMP.git"
-            developerConnection = "scm:git:ssh://github.com/meshtastic/MQTTastic-Client-KMP.git"
+            url.set("https://github.com/meshtastic/MQTTastic-Client-KMP")
+            connection.set("scm:git:git://github.com/meshtastic/MQTTastic-Client-KMP.git")
+            developerConnection.set(
+                "scm:git:ssh://git@github.com/meshtastic/MQTTastic-Client-KMP.git",
+            )
+        }
+        issueManagement {
+            system.set("GitHub Issues")
+            url.set("https://github.com/meshtastic/MQTTastic-Client-KMP/issues")
         }
     }
 }
