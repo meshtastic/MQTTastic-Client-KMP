@@ -125,7 +125,7 @@ kotlin {
 }
 
 mavenPublishing {
-    publishToMavenCentral()
+    publishToMavenCentral(automaticRelease = true)
     signAllPublications()
 
     // Coordinates (GROUP, POM_ARTIFACT_ID, VERSION_NAME) come from gradle.properties.
