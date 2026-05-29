@@ -110,6 +110,19 @@ class MqttPtDiagnosticTest {
         return false
     }
 
+    /**
+     * Wraps a test body so that [MqttException.ConnectionRejected] is treated as a skip
+     * (the broker is TCP-reachable but rejects the MQTT CONNECT — e.g. credential rotation).
+     */
+    private fun runOrSkipOnReject(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) =
+        runBlocking {
+            try {
+                block()
+            } catch (e: MqttException.ConnectionRejected) {
+                println("SKIPPED: broker rejected MQTT connection (reason=${e.reasonCode})")
+            }
+        }
+
     // ─── Test: Full Meshtastic Android proxy flow ───
 
     /**
@@ -125,8 +138,8 @@ class MqttPtDiagnosticTest {
      */
     @Test
     fun fullMeshtasticProxyFlow() =
-        runBlocking {
-            if (skipIfNoBroker()) return@runBlocking
+        runOrSkipOnReject {
+            if (skipIfNoBroker()) return@runOrSkipOnReject
 
             val nonce = System.nanoTime()
             val clientId = "MeshtasticAndroidMqttProxy-!diag$nonce"
@@ -297,8 +310,8 @@ class MqttPtDiagnosticTest {
      */
     @Test
     fun listenToRealMeshTraffic() =
-        runBlocking {
-            if (skipIfNoBroker()) return@runBlocking
+        runOrSkipOnReject {
+            if (skipIfNoBroker()) return@runOrSkipOnReject
 
             val client = createClient(clientId = "pt-listener-${System.nanoTime()}", autoReconnect = true)
             val errors = mutableListOf<String>()
@@ -379,8 +392,8 @@ class MqttPtDiagnosticTest {
      */
     @Test
     fun fireAndForgetConcurrentPublishes() =
-        runBlocking {
-            if (skipIfNoBroker()) return@runBlocking
+        runOrSkipOnReject {
+            if (skipIfNoBroker()) return@runOrSkipOnReject
 
             val nonce = System.nanoTime()
             val client = createClient(clientId = "pt-fandf-$nonce", autoReconnect = true)
@@ -459,8 +472,8 @@ class MqttPtDiagnosticTest {
      */
     @Test
     fun publishImmediatelyAfterSubscribe() =
-        runBlocking {
-            if (skipIfNoBroker()) return@runBlocking
+        runOrSkipOnReject {
+            if (skipIfNoBroker()) return@runOrSkipOnReject
 
             val nonce = System.nanoTime()
             val client = createClient(clientId = "pt-immed-$nonce", autoReconnect = false)
