@@ -66,14 +66,14 @@
     {
       "description": "Stabilise minor/major non-tool deps before merging",
       "matchUpdateTypes": ["minor", "major"],
-      "matchPackagePatterns": [
-        "^org\\.jetbrains\\.kotlin:",
-        "^org\\.jetbrains\\.kotlinx:",
-        "^io\\.ktor:",
-        "^org\\.jetbrains\\.compose",
-        "^androidx\\."
-      ],
-      "minimumReleaseAge": "3 days"
+      "minimumReleaseAge": "3 days",
+      "matchPackageNames": [
+        "/^org\\.jetbrains\\.kotlin:/",
+        "/^org\\.jetbrains\\.kotlinx:/",
+        "/^io\\.ktor:/",
+        "/^org\\.jetbrains\\.compose/",
+        "/^androidx\\./"
+      ]
     },
     {
       "description": "Never automerge major updates",
