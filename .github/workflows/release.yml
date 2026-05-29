@@ -22,7 +22,7 @@ permissions:
 jobs:
   publish:
     name: Publish to Maven Central
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
         with:
