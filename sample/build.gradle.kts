@@ -102,7 +102,7 @@ compose.desktop {
             packageName = "mqtt-sample"
             // jpackage requires the first component to be >= 1 (macOS CFBundleShortVersionString rule).
             // Library follows 0.x SemVer; coerce to 1.x.y for the installer metadata only.
-            packageVersion = providers.gradleProperty("VERSION_NAME").get().let { v ->
+            packageVersion = project.version.toString().let { v ->
                 val parts = v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
                 val major = parts.getOrElse(0) { 0 }.coerceAtLeast(1)
                 val minor = parts.getOrElse(1) { 0 }

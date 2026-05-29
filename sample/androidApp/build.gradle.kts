@@ -14,9 +14,9 @@ android {
         // legacy raster fallbacks. The library itself still supports minSdk 24.
         minSdk = 26
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        // Version is the single source of truth defined in root gradle.properties (VERSION_NAME).
+        // Version is derived from git tags by the root build script.
         // versionCode is derived from semver: MAJOR*10000 + MINOR*100 + PATCH.
-        val semver = providers.gradleProperty("VERSION_NAME").get()
+        val semver = project.version.toString()
         val (major, minor, patch) = semver.substringBefore('-').split('.').map(String::toInt)
         versionCode = major * 10000 + minor * 100 + patch
         versionName = semver

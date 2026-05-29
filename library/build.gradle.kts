@@ -25,8 +25,8 @@ plugins {
     alias(libs.plugins.kover)
 }
 
-// group + version are inherited from gradle.properties (GROUP / VERSION_NAME)
-// via the vanniktech.mavenPublish plugin — single source of truth for the whole project.
+// group + version are set by the root build script from git tags.
+// The vanniktech.mavenPublish plugin picks up project.version automatically.
 
 kotlin {
     applyDefaultHierarchyTemplate()
