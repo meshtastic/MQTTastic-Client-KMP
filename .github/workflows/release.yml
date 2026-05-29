@@ -113,6 +113,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: true
+          fetch-depth: 0
 
       - uses: ./.github/actions/gradle-setup
         with:
@@ -174,6 +175,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: true
+          fetch-depth: 0
 
       - name: Generate SBOM (CycloneDX + SPDX)
         uses: anchore/sbom-action@v0

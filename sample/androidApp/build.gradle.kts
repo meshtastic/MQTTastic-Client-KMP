@@ -18,7 +18,7 @@ android {
         // versionCode is derived from semver: MAJOR*10000 + MINOR*100 + PATCH.
         val semver = project.version.toString()
         val (major, minor, patch) = semver.substringBefore('-').split('.').map(String::toInt)
-        versionCode = major * 10000 + minor * 100 + patch
+        versionCode = (major * 10000 + minor * 100 + patch).coerceAtLeast(1)
         versionName = semver
     }
 }
