@@ -79,6 +79,10 @@ class MqttPortugalIntegrationTest {
         }
 
     private fun skipIfNoBroker(): Boolean {
+        if (System.getenv("MQTT_INTEGRATION_TESTS") == null) {
+            println("SKIPPED: set MQTT_INTEGRATION_TESTS=1 to run integration broker tests")
+            return true
+        }
         if (!brokerAvailable()) {
             println("SKIPPED: $brokerHost:$brokerPort not reachable (geoblocking may be active)")
             return true

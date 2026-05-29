@@ -98,6 +98,11 @@ class MqttPtDiagnosticTest {
         }
 
     private fun skipIfNoBroker(): Boolean {
+        // These tests require a live external broker and are opt-in only.
+        if (System.getenv("MQTT_INTEGRATION_TESTS") == null) {
+            println("SKIPPED: set MQTT_INTEGRATION_TESTS=1 to run diagnostic broker tests")
+            return true
+        }
         if (!brokerAvailable()) {
             println("SKIPPED: $brokerHost:$brokerPort not reachable (geoblocking may be active)")
             return true
