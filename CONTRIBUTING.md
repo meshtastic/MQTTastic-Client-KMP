@@ -54,14 +54,13 @@ When filing an issue, please include:
 
 ## Releasing
 
-The version is tracked in **one place only**: `VERSION_NAME` in `gradle.properties`. The library coordinate (`GROUP:POM_ARTIFACT_ID:VERSION_NAME`) and the sample Android app's `versionCode`/`versionName` are both derived from it — keep them in sync by editing this single property.
+The version is derived from **git tags** — the tag is the single source of truth. The root `build.gradle.kts` runs `git describe --tags --match 'v*'` to resolve the version at build time. On an exact tag (e.g. `v0.3.6`) the version is `0.3.6`; between tags it becomes a `-SNAPSHOT`. You can override at any time with `-PVERSION_NAME=...`.
 
 To cut a release:
 
-1. Bump `VERSION_NAME` in `gradle.properties` (drop the `-SNAPSHOT` suffix if any).
-2. Move the `## [Unreleased]` entries in `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading.
-3. Commit with `chore(release): x.y.z` and tag: `git tag vx.y.z && git push --follow-tags`.
-4. The `Release` workflow will publish to Maven Central, create a GitHub Release, and attach sample artifacts (`.apk`, `.deb`, `.dmg`, `.msi`, wasmJs web zip) built across a per-OS matrix.
+1. Move the `## [Unreleased]` entries in `CHANGELOG.md` under a new `## [x.y.z] - YYYY-MM-DD` heading.
+2. Commit with `chore(release): x.y.z` and tag: `git tag vx.y.z && git push --follow-tags`.
+3. The `Release` workflow will publish to Maven Central, create a GitHub Release, and attach sample artifacts (`.apk`, `.deb`, `.dmg`, `.msi`, wasmJs web zip) built across a per-OS matrix.
 
 ## License
 

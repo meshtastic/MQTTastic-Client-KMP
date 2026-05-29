@@ -96,7 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Builder DSL** — `MqttConfig.build { clientId = "x"; keepAliveSeconds = 30 }`
 - **Spec-compliant validation** — reserved bits in CONNECT/CONNACK/SUBSCRIBE decoded packets (§3.1.2.3, §3.2.2.1, §3.8.3.1)
 - **Build tooling** — Binary Compatibility Validator, Dokka, Kover (≥80% line coverage), [Konsist](https://docs.konsist.lemonappdev.com/) architectural tests enforcing no `java.*`/`javax.*`/`android.*`/`platform.*` imports in `commonMain` and `internal` visibility on transport and property types
-- **Single-source versioning** — `GROUP`, `POM_ARTIFACT_ID`, and `VERSION_NAME` live in `gradle.properties` and are consumed automatically by the vanniktech maven-publish plugin; the sample Android app derives its `versionCode`/`versionName` from the same property
+- **Single-source versioning** — version is derived from git tags at build time via `git describe`; `GROUP` and `POM_ARTIFACT_ID` live in `gradle.properties`; the sample Android app derives its `versionCode`/`versionName` from `project.version`
 - Input validation on all public types (port range, topic alias, subscription identifiers, `MqttMessage` topic must not be empty, etc.)
 - KDoc on all public API types with spec references, examples, and parameter documentation
 - **Consumer convenience APIs:**
