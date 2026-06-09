@@ -28,8 +28,12 @@ import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.readByte
 import io.ktor.utils.io.readFully
 import io.ktor.utils.io.writeFully
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -48,6 +52,9 @@ internal class TcpTransport : MqttTransport {
     private var readChannel: ByteReadChannel? = null
     private var writeChannel: ByteWriteChannel? = null
     private val sendMutex = Mutex()
+
+    // Parent job for ktor's detached TLS record-pump coroutines (see [connect]).
+    private var tlsJob: Job? = null
 
     override val isConnected: Boolean
         get() = socket?.isClosed == false
@@ -75,7 +82,21 @@ internal class TcpTransport : MqttTransport {
                     try {
                         if (endpoint.tls) {
                             val tlsServerName = endpoint.host.takeUnless { isIpLiteral(it) }
-                            rawSocket.tls(Dispatchers.IO) {
+                            // Ktor launches the TLS record-pump (input/output) coroutines on the
+                            // context passed here. A bare dispatcher leaves them with no parent Job
+                            // and no exception handler, so a write that fails around the handshake —
+                            // e.g. a broken pipe when the peer resets the socket during reconnect
+                            // churn — reaches the thread's default handler and crashes the whole app.
+                            // A SupervisorJob + CoroutineExceptionHandler contains that failure; it
+                            // still closes the channels, which the read loop turns into a reconnect.
+                            val tlsContext =
+                                SupervisorJob() +
+                                    Dispatchers.IO +
+                                    CoroutineName("mqtt-tls") +
+                                    // benign socket teardown
+                                    CoroutineExceptionHandler { _, _ -> }
+                            tlsJob = tlsContext[Job]
+                            rawSocket.tls(tlsContext) {
                                 serverName = tlsServerName
                                 configurePlatformTrust(tlsServerName)
                             }
@@ -101,6 +122,13 @@ internal class TcpTransport : MqttTransport {
                 // Any failure (TCP connect, TLS handshake, channel setup) — close selector to prevent leaks
                 try {
                     socket?.close()
+                } catch (
+                    @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                ) {
+                    // best-effort
+                }
+                try {
+                    tlsJob?.cancel()
                 } catch (
                     @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
                 ) {
@@ -178,6 +206,13 @@ internal class TcpTransport : MqttTransport {
         try {
             socket?.close()
         } finally {
+            try {
+                tlsJob?.cancel()
+            } catch (
+                @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+            ) {
+                // best-effort
+            }
             socket = null
             readChannel = null
             writeChannel = null
