@@ -1,12 +1,10 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
-    alias(libs.plugins.wire)
 }
 
 kotlin {
@@ -20,12 +18,6 @@ kotlin {
     }
 
     jvm("desktop")
-
-    @OptIn(ExperimentalWasmDsl::class)
-    wasmJs {
-        browser()
-        binaries.executable()
-    }
 
     listOf(
         iosArm64(),
@@ -53,7 +45,7 @@ kotlin {
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.lifecycle.runtime.compose)
             implementation(project(":library"))
-            implementation(libs.wire.runtime)
+            implementation(libs.meshtastic.protobufs)
             implementation(libs.kotlinx.io.bytestring)
         }
 
@@ -72,28 +64,10 @@ kotlin {
     }
 }
 
-wire {
-    sourcePath {
-        srcDir("../protobufs")
-        include("meshtastic/*.proto")
-    }
-    protoPath {
-        srcDir("../protobufs")
-        include("nanopb.proto")
-    }
-    kotlin {
-        makeImmutableCopies = false
-        boxOneOfsMinSize = 5000
-    }
-    root("meshtastic.*")
-    prune("meshtastic.MeshPacket#delayed")
-    prune("meshtastic.MeshPacket.Delayed")
-}
-
 compose.desktop {
     application {
         mainClass = "MainKt"
-        // Sample app — ProGuard adds no value and trips on wire-runtime's Android-only classes.
+        // Sample app — ProGuard adds no value and trips on wire-runtime classes.
         buildTypes.release.proguard {
             isEnabled.set(false)
         }

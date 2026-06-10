@@ -324,7 +324,7 @@ class MqttSampleViewModel : ViewModel() {
         val envelope = ServiceEnvelope.ADAPTER.decode(bytes)
         val packet = envelope.packet ?: return null
 
-        val isEncrypted = packet.encrypted != null && packet.encrypted.size > 0
+        val isEncrypted = packet.encrypted.let { it != null && it.size > 0 }
         val decoded = packet.decoded
 
         val portnum = decoded?.portnum?.takeIf { it != PortNum.UNKNOWN_APP }
