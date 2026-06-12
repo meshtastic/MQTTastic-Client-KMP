@@ -3,7 +3,7 @@ agp = "9.2.1"
 # Held at 2.3.x: klibs built by Kotlin 2.4 carry ABI version 2.4.0, which the primary
 # consumer (Meshtastic-Android, on Kotlin 2.3.21 until InsertKoinIO/koin#2431 resolves)
 # cannot read. Renovate enforces this via the "Hold Kotlin at 2.3.x" rule in renovate.json.
-kotlin = "2.3.21"
+kotlin = "2.4.0"
 ktor = "3.5.0"
 coroutines = "1.11.0"
 kotlinx-io = "0.9.0"
