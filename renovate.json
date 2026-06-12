@@ -9,11 +9,6 @@
   "rebaseWhen": "conflicted",
   "packageRules": [
     {
-      "description": "Hold Kotlin at 2.3.x: 2.4-built klibs carry ABI version 2.4.0, which Meshtastic-Android (Kotlin 2.3.21 until InsertKoinIO/koin#2431 resolves) rejects — see meshtastic/Meshtastic-Android#5763. Drop this rule once Android is on Kotlin 2.4.",
-      "matchPackageNames": ["/^org\\.jetbrains\\.kotlin[.:]/"],
-      "allowedVersions": "<2.4.0"
-    },
-    {
       "description": "Group Kotlin ecosystem dependencies",
       "groupName": "Kotlin ecosystem",
       "matchPackageNames": [
