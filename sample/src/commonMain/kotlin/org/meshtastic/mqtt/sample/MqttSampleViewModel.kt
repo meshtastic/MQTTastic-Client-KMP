@@ -34,6 +34,9 @@ import org.meshtastic.mqtt.MqttLogLevel
 import org.meshtastic.mqtt.MqttLogger
 import org.meshtastic.mqtt.MqttMessage
 import org.meshtastic.mqtt.QoS
+import org.meshtastic.mqtt.plus
+import org.meshtastic.mqtt.transport.tcp.TcpTransportFactory
+import org.meshtastic.mqtt.transport.ws.WebSocketTransportFactory
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ServiceEnvelope
 
@@ -180,6 +183,7 @@ class MqttSampleViewModel : ViewModel() {
             try {
                 val endpoint = MqttEndpoint.parse(s.brokerUri)
                 val newClient = MqttClient(s.clientId) {
+                    transportFactory = TcpTransportFactory() + WebSocketTransportFactory()
                     username = s.username.ifBlank { null }
                     s.password.ifBlank { null }?.let { password(it) }
                     logger = MqttLogger.println()

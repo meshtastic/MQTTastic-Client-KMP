@@ -79,7 +79,7 @@ jobs:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run Linux native tests
-        run: ./gradlew :library:linuxX64Test --stacktrace
+        run: ./gradlew linuxX64Test --stacktrace
 
   test-native-macos:
     name: Test Native macOS
@@ -95,7 +95,7 @@ jobs:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
 
       - name: Run macOS and iOS simulator tests
-        run: ./gradlew :library:macosArm64Test :library:iosSimulatorArm64Test --stacktrace
+        run: ./gradlew macosArm64Test iosSimulatorArm64Test --stacktrace
 
   test-wasm:
     name: Test wasmJs
@@ -128,7 +128,7 @@ jobs:
 
       - name: Run Windows native tests
         shell: bash
-        run: ./gradlew :library:mingwX64Test --stacktrace
+        run: ./gradlew mingwX64Test --stacktrace
 
   api-check:
     name: API Check

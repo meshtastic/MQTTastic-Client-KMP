@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google()
         mavenCentral()
@@ -26,6 +27,9 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "MQTTastic-Client-KMP"
-include(":library")
+include(":core")
+include(":transport-tcp")
+include(":transport-ws")
+include(":bom")
 include(":sample")
 include(":sample:androidApp")
