@@ -2,7 +2,7 @@
 
 <img src="docs/images/app-icon.png" alt="MQTTastic app icon" align="right" width="128" height="128" />
 
-[![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/mqtt-client?label=Maven%20Central)](https://central.sonatype.com/artifact/org.meshtastic/mqtt-client)
+[![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/mqtt-client-core?label=Maven%20Central)](https://central.sonatype.com/artifact/org.meshtastic/mqtt-client-core)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7f52ff.svg?logo=kotlin)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![CI](https://github.com/meshtastic/MQTTastic-Client-KMP/actions/workflows/ci.yml/badge.svg)](https://github.com/meshtastic/MQTTastic-Client-KMP/actions/workflows/ci.yml)
@@ -54,26 +54,33 @@ A fully-featured **MQTT 5.0 and 3.1.1** client library for **Kotlin Multiplatfor
 
 ## Architecture
 
-All protocol logic — packet encoding/decoding, the client state machine, QoS flows, and property handling — lives in **`commonMain`** as pure Kotlin. Platform source sets contain _only_ transport implementations: TCP/TLS sockets for native/JVM targets and WebSocket frames for the browser. This means every bug fix, feature, and optimization applies to all 9 targets simultaneously.
+All protocol logic — packet encoding/decoding, the client state machine, QoS flows, and property handling — lives in the **`mqtt-client-core`** module as pure `commonMain` Kotlin, with **zero** transport dependencies. Each transport ships as its own artifact, so a consumer pulls in only what it uses. Every bug fix, feature, and optimization in core applies to all 9 targets simultaneously.
 
 ```
 ┌─────────────────────────────────────────────┐
-│  MqttClient              (commonMain)       │  ← public API: suspend + Flow
-│  MqttConnection / QoS state machines        │  ← protocol logic, keepalive
+│  mqtt-client-core                           │  ← public API: suspend + Flow
+│  MqttClient / MqttConnection / QoS machines │  ← protocol logic, keepalive
 │  MqttPacket / Encoder / Decoder             │  ← MQTT 5.0 wire format
-├──────────────────────┬──────────────────────┤
-│  TcpTransport        │  WebSocketTransport  │
-│  (nonWebMain)        │  (nonWebMain +       │
-│  ktor-network + TLS  │   wasmJsMain)        │
-│                      │  ktor-client-ws      │
-└──────────────────────┴──────────────────────┘
+│  MqttTransport / MqttTransportFactory (SPI) │  ← the transport seam
+└───────────────────────┬─────────────────────┘
+            ▲            │  api(core)            ▲
+            │            ▼                       │
+┌───────────┴───────────┐   ┌───────────────────┴───────────┐
+│ mqtt-client-          │   │ mqtt-client-transport-ws       │
+│   transport-tcp       │   │ WebSocketTransport(Factory)    │
+│ TcpTransport(Factory) │   │ ktor-client-websockets         │
+│ ktor-network + TLS    │   │ all targets incl. browser      │
+│ (no browser)          │   │                                │
+└───────────────────────┘   └────────────────────────────────┘
 ```
 
-The `MqttTransport` interface is the sole platform abstraction boundary — it is `internal`, not part of the public API. Coroutines drive everything: `suspend` functions for operations, `SharedFlow<MqttMessage>` for incoming messages, and `StateFlow<ConnectionState>` for lifecycle observation.
+`MqttTransport` / `MqttTransportFactory` are the **public** service-provider interface — the sole platform abstraction boundary. Core has no compile-time dependency on any transport module; you supply a factory (`TcpTransportFactory`, `WebSocketTransportFactory`, or both combined with `+`) via `MqttConfig.Builder.transportFactory`. Coroutines drive everything: `suspend` functions for operations, `SharedFlow<MqttMessage>` for incoming messages, and `StateFlow<ConnectionState>` for lifecycle observation.
 
 ## Installation
 
-Add the dependency to your `build.gradle.kts`:
+Artifacts are published to Maven Central under the `org.meshtastic` group. Depend on
+`mqtt-client-core` plus the transport(s) you need. The `mqtt-client-bom` pins every module to one
+version so you don't repeat it:
 
 ```kotlin
 // settings.gradle.kts
@@ -85,27 +92,39 @@ repositories {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("org.meshtastic:mqtt-client:0.3.0")
+            implementation(platform("org.meshtastic:mqtt-client-bom:0.3.0"))
+            implementation("org.meshtastic:mqtt-client-core")
+            // Pick the transport(s) you actually use:
+            implementation("org.meshtastic:mqtt-client-transport-tcp") // TCP/TLS — every target except browser
+            implementation("org.meshtastic:mqtt-client-transport-ws")  // WebSocket — every target incl. browser
         }
     }
 }
 ```
 
+Then supply the matching factory when building the client (combine with `+` if you use both):
+
+```kotlin
+val client = MqttClient("my-client") {
+    transportFactory = TcpTransportFactory() + WebSocketTransportFactory()
+}
+```
+
+> **Browser (wasmJs)** can only use `mqtt-client-transport-ws` — raw TCP is unavailable there.
+
 <details>
 <summary>Groovy DSL</summary>
 
 ```groovy
-// settings.gradle
-repositories {
-    mavenCentral()
-}
-
 // build.gradle
 kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                implementation 'org.meshtastic:mqtt-client:0.3.0'
+                implementation platform('org.meshtastic:mqtt-client-bom:0.3.0')
+                implementation 'org.meshtastic:mqtt-client-core'
+                implementation 'org.meshtastic:mqtt-client-transport-tcp'
+                implementation 'org.meshtastic:mqtt-client-transport-ws'
             }
         }
     }
@@ -118,7 +137,9 @@ kotlin {
 
 ```kotlin
 dependencies {
-    implementation("org.meshtastic:mqtt-client:0.3.0")
+    implementation(platform("org.meshtastic:mqtt-client-bom:0.3.0"))
+    implementation("org.meshtastic:mqtt-client-core")
+    implementation("org.meshtastic:mqtt-client-transport-tcp")
 }
 ```
 </details>
@@ -127,9 +148,11 @@ dependencies {
 
 ```kotlin
 import org.meshtastic.mqtt.*
+import org.meshtastic.mqtt.transport.tcp.TcpTransportFactory
 
 // Create a client with the factory DSL
 val client = MqttClient("my-client") {
+    transportFactory = TcpTransportFactory()   // from mqtt-client-transport-tcp
     keepAliveSeconds = 30
     autoReconnect = true
     defaultQos = QoS.AT_LEAST_ONCE  // all publishes default to QoS 1
@@ -154,7 +177,12 @@ client.use(MqttEndpoint.parse("tcp://broker.example.com:1883")) { c ->
 <summary>Verbose equivalent (without convenience APIs)</summary>
 
 ```kotlin
-val config = MqttConfig(clientId = "my-client", keepAliveSeconds = 30, autoReconnect = true)
+val config = MqttConfig(
+    clientId = "my-client",
+    keepAliveSeconds = 30,
+    autoReconnect = true,
+    transportFactory = TcpTransportFactory(),
+)
 val client = MqttClient(config)
 
 client.connect(MqttEndpoint.Tcp(host = "broker.example.com", port = 1883))
@@ -182,6 +210,7 @@ By default, the client automatically negotiates the protocol version. It connect
 ```kotlin
 // Auto-negotiation is on by default — works with both 5.0 and 3.1.1 brokers
 val client = MqttClient("my-client") {
+    transportFactory = TcpTransportFactory()
     keepAliveSeconds = 30
 }
 
@@ -312,6 +341,8 @@ The library is designed as a drop-in MQTT client for KMP projects. Consumer ProG
 ```kotlin
 class MqttViewModel : ViewModel() {
     private val client = MqttClient("my-device") {
+        // broker URI may be tcp:// or ws://, so accept either transport
+        transportFactory = TcpTransportFactory() + WebSocketTransportFactory()
         autoReconnect = true
         keepAliveSeconds = 30
     }

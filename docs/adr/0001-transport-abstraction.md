@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted.
+Accepted, then **partially superseded by [0006](0006-multi-module-distribution.md)**. The core
+principle still holds — all protocol logic lives in `commonMain` behind a single transport seam.
+What changed in 0006: the seam (`MqttTransport`) is now a **public** SPI, the transports ship as
+separate Gradle modules/artifacts rather than platform source sets, and the `expect`/`actual`
+`createPlatformTransport` factory was removed in favor of a consumer-supplied `MqttTransportFactory`.
+The `nonWebMain` intermediate source set described below no longer exists.
 
 ## Context
 
