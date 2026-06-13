@@ -1,3 +1,6 @@
+import org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnPlugin
+import org.jetbrains.kotlin.gradle.targets.wasm.yarn.WasmYarnRootExtension
+
 plugins {
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
     alias(libs.plugins.androidApplication) apply false
@@ -40,4 +43,18 @@ val resolvedVersion: String =
 
 allprojects {
     version = resolvedVersion
+}
+
+// ---------------------------------------------------------------------------
+// Security: pin the transitive npm `ws` dependency to a patched version.
+// The wasmJs target's JS dev/test toolchain (webpack-dev-server / karma) pulls
+// in `ws`, which Kotlin otherwise resolves to a version vulnerable to
+// uninitialized-memory disclosure (GHSA-58qx-3vcg-4xpx; fixed in 8.20.1).
+// The wasmJs target uses its own Yarn store (kotlin-js-store/wasm/yarn.lock),
+// so the override targets the Wasm Yarn plugin/extension — not the JS one.
+// After changing this pin, regenerate the lockfile with:
+//   ./gradlew kotlinWasmUpgradeYarnLock
+// ---------------------------------------------------------------------------
+plugins.withType<WasmYarnPlugin> {
+    the<WasmYarnRootExtension>().resolution("ws", "8.20.1")
 }
