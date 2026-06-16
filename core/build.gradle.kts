@@ -105,10 +105,15 @@ val coreInTreeDependencies: List<String> =
 val verifyModuleBoundary by tasks.registering {
     group = "verification"
     description = "Fails if :core declares a dependency on another in-tree module (ADR-0006)."
+    // Copy into a task-local val so the doLast action captures a plain List<String> rather than a
+    // script-object reference (the latter is not serializable by the configuration cache).
+    val violations = coreInTreeDependencies
     doLast {
-        check(coreInTreeDependencies.isEmpty()) {
-            "ADR-0006 violation: :core must not depend on other in-tree modules:\n" +
-                coreInTreeDependencies.joinToString("\n") { "  - $it" }
+        if (violations.isNotEmpty()) {
+            throw GradleException(
+                "ADR-0006 violation: :core must not depend on other in-tree modules:\n" +
+                    violations.joinToString("\n") { "  - $it" },
+            )
         }
     }
 }
