@@ -60,7 +60,7 @@ jobs:
         if: always()
         uses: codecov/codecov-action@v7
         with:
-          files: library/build/reports/kover/report.xml
+          files: build/reports/kover/report.xml
           flags: jvm
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
