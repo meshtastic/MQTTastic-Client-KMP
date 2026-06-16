@@ -5,7 +5,7 @@ You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP,
 </role>
 
 <context_and_memory>
-- **Project:** `org.meshtastic:mqtt-client` — production-grade MQTT 5.0 and 3.1.1 client for Kotlin Multiplatform (JVM, Android, iOS, macOS, Linux, Windows, wasmJs).
+- **Project:** `org.meshtastic:mqtt-client-core` plus per-transport modules (`-transport-tcp`, `-transport-ws`) and a `-bom` — production-grade MQTT 5.0 and 3.1.1 client for Kotlin Multiplatform (JVM, Android, iOS, macOS, Linux, Windows, wasmJs).
 - **Stack:** Kotlin 2.3.20, Gradle 9.3.0, Ktor 3.4.2, kotlinx-coroutines 1.10.2, kotlinx-io-bytestring 0.8.2. Zero external deps beyond these.
 - **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) and [OASIS MQTT 3.1.1](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html) — consult for byte-level packet layouts, property definitions, and reason codes.
 </context_and_memory>
@@ -14,47 +14,46 @@ You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP,
 
 ### Transport abstraction — the central design pattern
 
-```
-MqttClient (commonMain) — public API surface
-  └─ MqttConnection (commonMain) — lifecycle, keepalive, read loop, QoS state machines
-       └─ MqttTransport (interface, commonMain)
-            ├─ TcpTransport (nonWebMain) — ktor-network raw sockets + TLS
-            ├─ WebSocketTransport (nonWebMain) — ktor-client-websockets, binary frames (JVM/Android/native)
-            └─ WebSocketTransport (wasmJsMain) — ktor-client-websockets, binary frames (browser)
-```
-
-`MqttTransport` is an internal interface — not `expect`/`actual`. Everything above it is pure common Kotlin.
-
-### Source set hierarchy (conceptual)
+The library is split into a transport-free `:core` plus per-transport modules (ADR-0006):
 
 ```
-commonMain        ← ALL protocol logic: packets, encoder, decoder, client, connection, properties
-├── nonWebMain*   ← TcpTransport + WebSocketTransport (ktor-network + ktor-network-tls + ktor-client-websockets)
-│   ├── jvmMain
-│   ├── androidMain
-│   ├── nativeMain (auto-created by default hierarchy template)
-│   │   ├── appleMain → iosMain, macosMain (macosArm64 only — macosX64 deprecated in Kotlin 2.3.20)
-│   │   ├── linuxMain (linuxX64, linuxArm64)
-│   │   └── mingwMain (mingwX64)
-├── wasmJsMain    ← WebSocketTransport (ktor-client-websockets)
-└── commonTest    ← ALL tests: encode/decode round-trips, client state machine, QoS flows
+:core (mqtt-client-core) — commonMain, all 9 targets
+  MqttClient — public API surface
+    └─ MqttConnection — lifecycle, keepalive, read loop, QoS state machines
+         └─ MqttTransport / MqttTransportFactory — PUBLIC SPI interface
+
+implemented by separately-published modules that each api(project(":core")):
+  :transport-tcp (mqtt-client-transport-tcp) — TcpTransport, ktor-network + TLS (all targets EXCEPT wasmJs)
+  :transport-ws  (mqtt-client-transport-ws)  — WebSocketTransport, ktor-client-websockets (all targets incl. browser)
 ```
 
-> **\*`nonWebMain` is a custom intermediate source set** — it is NOT part of Kotlin's default hierarchy template. It must be created manually in `build.gradle.kts`. Call `applyDefaultHierarchyTemplate()` first to preserve the auto-created intermediate source sets (`nativeMain`, `appleMain`, `iosMain`, etc.), then create `nonWebMain` with explicit `dependsOn()` wiring:
->
-> ```kotlin
-> kotlin {
->     applyDefaultHierarchyTemplate()
->     sourceSets {
->         val nonWebMain by creating { dependsOn(commonMain.get()) }
->         jvmMain.get().dependsOn(nonWebMain)
->         androidMain.get().dependsOn(nonWebMain)
->         nativeMain.get().dependsOn(nonWebMain)
->     }
-> }
-> ```
->
-> The `MqttTransport` interface lives in `commonMain` — it is NOT `expect`/`actual`. Concrete implementations in `nonWebMain` and `wasmJsMain` are instantiated via factory functions.
+`MqttTransport` and `MqttTransportFactory` are **public** SPI in `:core` — there is **no**
+`expect`/`actual` transport factory. The consumer supplies a factory (`TcpTransportFactory`,
+`WebSocketTransportFactory`, or both combined with `+`) via `MqttConfig.Builder.transportFactory`.
+`:core` has zero compile-time dependency on any transport module (guarded by a configuration-time
+check; see `core/build.gradle.kts` `verifyModuleBoundary`). Everything in `:core` is pure common Kotlin.
+
+### Module / source-set layout
+
+```
+:core (mqtt-client-core)   commonMain ← ALL protocol logic: packets, encoder, decoder, client,
+                                        connection, properties, + the MqttTransport/Factory SPI
+                           commonTest ← codec/client/QoS tests via FakeTransport
+                           jvmTest    ← Konsist architecture suite + env-gated real-broker
+                                        integration tests (testImplementation project(":transport-tcp"))
+:transport-tcp             commonMain (TcpTransport) + jvm/android/native PlatformTls expect/actual.
+                           Targets: jvm, android, apple (ios/macos), linux, mingw — NO wasmJs.
+:transport-ws              commonMain (WebSocketTransport) + per-platform Ktor engine deps.
+                           Targets: all, incl. wasmJs.
+:bom (mqtt-client-bom)     java-platform BOM pinning every artifact to one version.
+build-logic/convention     mqtt.kmp.library + mqtt.publishing convention plugins (shared KMP target
+                           set + per-module publishing coordinates derived from the module name).
+```
+
+Each library module applies `applyDefaultHierarchyTemplate()` (via `mqtt.kmp.library`), so
+`nativeMain`/`appleMain`/`linuxMain`/`mingwMain` are auto-created. macosArm64 only (macosX64
+deprecated in Kotlin 2.3.20). There is **no** custom `nonWebMain` source set any more: `:transport-tcp`
+simply omits the wasmJs target, so its `commonMain` is effectively the old "non-web" set.
 
 ### Packet codec pipeline
 
@@ -114,7 +113,7 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 - **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.
-- **Internal by Default:** Only `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, `AuthChallenge`, and `MqttProtocolVersion` are public. Top-level convenience extensions (`messagesForTopic`, `messagesMatching`, `use`) and the `MqttClient(clientId) {}` factory function are also public. Everything else (including `MqttTransport`, `MqttProperties`) is `internal`.
+- **Internal by Default:** In `:core`, the public surface is `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, `AuthChallenge`, `MqttProtocolVersion`, the transport SPI (`MqttTransport`, `MqttTransportFactory` + its `plus` operator), the VBI framing helper (`VariableByteInt`, `VbiResult`), the convenience extensions (`messagesForTopic`, `messagesMatching`, `use`), and the `MqttClient(clientId) {}` factory. Everything else — including `MqttProperties` and the entire `MqttPacket` hierarchy — is `internal`. Transport modules add `TcpTransport`/`TcpTransportFactory` and `WebSocketTransport`/`WebSocketTransportFactory`. Enforced by the Konsist allowlist (ADR-0008) and `apiCheck`.
 - **Concurrency Safety:** Use `Mutex` for send operations (one packet on the wire at a time). Use `StateFlow`/`SharedFlow` for observable state. No shared mutable state. Use `Mutex`-guarded counters for packet ID allocation.
 - **Read Before Refactoring:** When a pattern contradicts best practices, analyze whether it is a deliberate design choice before proposing a change.
 </rules>
@@ -163,10 +162,15 @@ Honor the server's Receive Maximum property — do not exceed the allowed number
 ## Publishing
 
 - Group: `org.meshtastic`
-- Artifact: `mqtt-client`
-- Supported project targets: JVM, Android, iOS (iosArm64, iosSimulatorArm64), macOS (macosArm64), Linux (linuxX64, linuxArm64), Windows (mingwX64), wasmJs
-- The `maven-publish` plugin auto-creates per-target publications (e.g., `mqtt-client-jvm`, `mqtt-client-iosarm64`) and a root `kotlinMultiplatform` publication that resolves to the correct platform artifact.
-- **Android publishing** requires the `androidLibrary {}` block in `build.gradle.kts` with the Android Gradle Library Plugin. Configure `namespace`, `compileSdk`, and `minSdk` inside this block. Without this, Android artifacts will not be published.
+- Artifacts (one coordinate per module; the `mqtt.publishing` convention plugin derives the
+  artifactId as `mqtt-client-<module-name>`):
+  - `mqtt-client-core`
+  - `mqtt-client-transport-tcp`
+  - `mqtt-client-transport-ws`
+  - `mqtt-client-bom` (a `java-platform` BOM pinning the above to one version)
+- Supported project targets: JVM, Android, iOS (iosArm64, iosSimulatorArm64), macOS (macosArm64), Linux (linuxX64, linuxArm64), Windows (mingwX64), wasmJs (`:transport-tcp` omits wasmJs).
+- The vanniktech `maven-publish` plugin auto-creates per-target publications (e.g., `mqtt-client-core-jvm`, `mqtt-client-core-iosarm64`) and a root `kotlinMultiplatform` publication per module.
+- **Android publishing** requires the `androidLibrary {}` block (Android Gradle KMP Library Plugin) in each library module's `build.gradle.kts`. Configure `namespace`, `compileSdk`, and `minSdk` inside it. Without this, Android artifacts will not be published.
 - For Apple platforms, Maven publishes `.klib` artifacts. If XCFramework distribution is needed separately, that is a distinct build step (`assembleXCFramework`), not part of Maven publishing.
 
 <git_and_prs>

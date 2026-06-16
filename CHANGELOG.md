@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING — split into per-transport modules.** The single `org.meshtastic:mqtt-client` artifact
+  is replaced by a `:core` plus per-transport modules and a BOM (#27):
+  - `org.meshtastic:mqtt-client-core` — all protocol logic + the transport SPI
+  - `org.meshtastic:mqtt-client-transport-tcp` — `TcpTransport` (TCP/TLS; every target except browser)
+  - `org.meshtastic:mqtt-client-transport-ws` — `WebSocketTransport` (every target incl. browser)
+  - `org.meshtastic:mqtt-client-bom` — pins the above to one version
+
+  Consumers now pull in only the transport(s) they use and must supply a factory:
+  ```kotlin
+  implementation(platform("org.meshtastic:mqtt-client-bom:<version>"))
+  implementation("org.meshtastic:mqtt-client-core")
+  implementation("org.meshtastic:mqtt-client-transport-tcp")
+  // val client = MqttClient("id") { transportFactory = TcpTransportFactory() }
+  ```
+- **BREAKING — transport is now a public SPI.** `MqttTransport` and the new `MqttTransportFactory`
+  (with a `+` combinator) are public; the `expect`/`actual` `createPlatformTransport` factory was
+  removed. Set `MqttConfig.Builder.transportFactory` before connecting. The VBI framing helper
+  `VariableByteInt`/`VbiResult` is now public so transport modules can frame packets. See
+  [ADR-0006](docs/adr/0006-multi-module-distribution.md).
+
+### Added
+- `build-logic` convention plugins (`mqtt.kmp.library`, `mqtt.publishing`) and a multi-module Dokka
+  + Kover aggregation at the root.
+- ADRs 0006–0010 (multi-module distribution, `Mutex` send serialization, public-API allowlist,
+  dual 3.1.1/5.0 support, packet-ID allocation); the Konsist architecture suite now enforces the
+  public-API allowlist, packet internality/immutability, and the `:core` ⊥ transport build-graph
+  boundary (#28, #29).
+
 ## [0.3.0] - 2026-04-28
 
 ### Added

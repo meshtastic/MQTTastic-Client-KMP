@@ -44,7 +44,12 @@ kotlin {
             implementation(libs.lifecycle.viewmodel)
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.lifecycle.runtime.compose)
-            implementation(project(":library"))
+            implementation(project(":core"))
+            // The sample parses arbitrary broker URIs (tcp:// or ws://), so it pulls in both
+            // transports and combines their factories. A real consumer would depend on only the
+            // transport(s) it actually uses.
+            implementation(project(":transport-tcp"))
+            implementation(project(":transport-ws"))
             implementation(libs.meshtastic.protobufs)
             implementation(libs.kotlinx.io.bytestring)
         }

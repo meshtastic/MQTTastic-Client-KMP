@@ -10,6 +10,10 @@ plugins {
     alias(libs.plugins.vanniktech.mavenPublish) apply false
     alias(libs.plugins.spotless) apply false
     alias(libs.plugins.detekt) apply false
+    alias(libs.plugins.bcv) apply false
+    // Applied at the root so docs and coverage can aggregate across the published modules.
+    alias(libs.plugins.dokka)
+    alias(libs.plugins.kover)
 }
 
 // ---------------------------------------------------------------------------
@@ -43,6 +47,35 @@ val resolvedVersion: String =
 
 allprojects {
     version = resolvedVersion
+}
+
+// ---------------------------------------------------------------------------
+// Aggregate API docs (Dokka) and coverage (Kover) across the published library
+// modules. The ≥80% coverage gate is enforced on the merged report so that
+// thinly-unit-tested transport modules don't each need to clear the bar alone.
+// ---------------------------------------------------------------------------
+val publishedLibraryModules = listOf(":core", ":transport-tcp", ":transport-ws")
+
+dependencies {
+    publishedLibraryModules.forEach {
+        dokka(project(it))
+        kover(project(it))
+    }
+}
+
+kover {
+    reports {
+        total {
+            xml {
+                onCheck = false
+            }
+        }
+        verify {
+            rule {
+                minBound(80)
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
