@@ -19,6 +19,6 @@ package org.meshtastic.mqtt.transport.tcp
 import io.ktor.network.tls.TLSConfigBuilder
 
 /** Native targets use platform TLS (SecureTransport / OpenSSL) — no custom trust manager needed. */
-internal actual fun TLSConfigBuilder.configurePlatformTrust(serverName: String?) {
+internal actual fun TLSConfigBuilder.configurePlatformTrust(host: String) {
     // No-op: native TLSConfigBuilder does not expose a trustManager property.
 }

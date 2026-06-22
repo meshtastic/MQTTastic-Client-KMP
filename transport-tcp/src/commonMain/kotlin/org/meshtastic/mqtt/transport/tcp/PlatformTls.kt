@@ -25,9 +25,14 @@ import io.ktor.network.tls.TLSConfigBuilder
  * `NetworkSecurityTrustManager`'s requirement for the 3-arg
  * `checkServerTrusted(chain, authType, hostname)` overload when
  * `network_security_config.xml` contains domain-specific configurations.
+ * The platform throws from the 2-arg overload whenever *any* domain-specific
+ * config is present — regardless of the target host — so this must run for
+ * IP-literal brokers too, not only DNS hostnames.
  *
  * On JVM and native targets, this is a no-op — the platform default suffices.
  *
- * @param serverName the TLS server name (SNI hostname), or `null` for IP literals.
+ * @param host the broker host (DNS name or IP literal) used for trust evaluation.
+ *   Unlike the SNI server name, this is never `null`: an IP literal is a valid
+ *   host for the hostname-aware trust check even though it must not be sent as SNI.
  */
-internal expect fun TLSConfigBuilder.configurePlatformTrust(serverName: String?)
+internal expect fun TLSConfigBuilder.configurePlatformTrust(host: String)

@@ -19,6 +19,6 @@ package org.meshtastic.mqtt.transport.tcp
 import io.ktor.network.tls.TLSConfigBuilder
 
 /** JVM does not require hostname-aware trust manager configuration. */
-internal actual fun TLSConfigBuilder.configurePlatformTrust(serverName: String?) {
+internal actual fun TLSConfigBuilder.configurePlatformTrust(host: String) {
     // No-op: JVM's default X509TrustManager handles the 2-arg checkServerTrusted correctly.
 }

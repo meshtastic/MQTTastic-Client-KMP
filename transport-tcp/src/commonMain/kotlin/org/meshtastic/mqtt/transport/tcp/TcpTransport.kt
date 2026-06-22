@@ -84,7 +84,7 @@ public class TcpTransport : MqttTransport {
                 socket =
                     try {
                         if (endpoint.tls) {
-                            val tlsServerName = endpoint.host.takeUnless { isIpLiteral(it) }
+                            val tlsServerName = sniServerName(endpoint.host)
                             // Ktor launches the TLS record-pump (input/output) coroutines on the
                             // context passed here. A bare dispatcher leaves them with no parent Job
                             // and no exception handler, so a write that fails around the handshake —
@@ -101,7 +101,10 @@ public class TcpTransport : MqttTransport {
                             tlsJob = tlsContext[Job]
                             rawSocket.tls(tlsContext) {
                                 serverName = tlsServerName
-                                configurePlatformTrust(tlsServerName)
+                                // Configure trust with the real host (DNS name or IP literal),
+                                // not the SNI value: tlsServerName is null for IP literals, but
+                                // Android still needs a host for the hostname-aware trust check.
+                                configurePlatformTrust(endpoint.host)
                             }
                         } else {
                             rawSocket
@@ -233,22 +236,30 @@ public class TcpTransport : MqttTransport {
          * in MqttConnection's read loop. This is a transport-level safety net.
          */
         const val MAX_PACKET_REMAINING_LENGTH = 16 * 1024 * 1024 // 16 MB
-
-        /**
-         * Returns `true` if [host] looks like an IP address literal (IPv4 or IPv6)
-         * rather than a DNS hostname, so that TLS SNI is only sent for DNS names.
-         *
-         * Sending SNI for an IP literal is at best useless and at worst breaks the
-         * TLS handshake (RFC 6066 §3 forbids IP literals in SNI).
-         */
-        fun isIpLiteral(host: String): Boolean {
-            // IPv6: contains colons (e.g. "::1", "2001:db8::1")
-            if (':' in host) return true
-            // IPv4: all characters are digits or dots (e.g. "192.168.1.1")
-            if (host.isNotEmpty() && host.all { it.isDigit() || it == '.' }) return true
-            return false
-        }
     }
+}
+
+/**
+ * Returns the TLS SNI server name to advertise for [host], or `null` for IP literals.
+ *
+ * Sending SNI for an IP literal is at best useless and at worst breaks the TLS
+ * handshake (RFC 6066 §3 forbids IP literals in SNI). This governs *only* SNI — the
+ * platform trust manager is still configured with the raw host (see
+ * `configurePlatformTrust`), so Android's domain-aware `NetworkSecurityTrustManager`
+ * is satisfied even when SNI is suppressed.
+ */
+internal fun sniServerName(host: String): String? = host.takeUnless { isIpLiteral(it) }
+
+/**
+ * Returns `true` if [host] looks like an IP address literal (IPv4 or IPv6)
+ * rather than a DNS hostname.
+ */
+internal fun isIpLiteral(host: String): Boolean {
+    // IPv6: contains colons (e.g. "::1", "2001:db8::1")
+    if (':' in host) return true
+    // IPv4: all characters are digits or dots (e.g. "192.168.1.1")
+    if (host.isNotEmpty() && host.all { it.isDigit() || it == '.' }) return true
+    return false
 }
 
 /**
