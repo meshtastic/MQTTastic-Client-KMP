@@ -27,7 +27,7 @@ plugins {
 // Raw-TCP (optionally TLS) transport via ktor-network. Not available on the browser (wasmJs),
 // so this module deliberately omits the wasmJs target the convention plugin would otherwise allow.
 kotlin {
-    androidLibrary {
+    android {
         namespace = "org.meshtastic.mqtt.transport.tcp"
         compileSdk =
             libs.versions.android.compileSdk

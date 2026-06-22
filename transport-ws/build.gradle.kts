@@ -27,7 +27,7 @@ plugins {
 // Binary-WebSocket transport via ktor-client-websockets. Available on every target including the
 // browser (wasmJs) — the only transport that runs there. One Ktor engine is wired per platform.
 kotlin {
-    androidLibrary {
+    android {
         namespace = "org.meshtastic.mqtt.transport.ws"
         compileSdk =
             libs.versions.android.compileSdk
