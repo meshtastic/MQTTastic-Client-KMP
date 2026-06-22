@@ -31,9 +31,15 @@ import javax.net.ssl.X509TrustManager
  * has domain-specific rules) throws from the standard 2-arg `checkServerTrusted` and
  * requires the 3-arg hostname-aware overload. Ktor's TLS handshake only calls the
  * 2-arg version, so we intercept and route through the extensions API.
+ *
+ * This runs for IP-literal brokers as well as DNS hostnames: the platform's 2-arg
+ * overload throws whenever the config has *any* domain-specific entry, independent of
+ * the target host, so an IP-only broker (a common private-broker setup) hits the same
+ * failure. The [host] — an IP literal or DNS name — is a valid argument for the 3-arg
+ * overload even though an IP must never be sent as the TLS SNI server name.
  */
-internal actual fun TLSConfigBuilder.configurePlatformTrust(serverName: String?) {
-    if (serverName == null) return
+internal actual fun TLSConfigBuilder.configurePlatformTrust(host: String) {
+    if (host.isBlank()) return
 
     val baseTm =
         (trustManager as? X509TrustManager) ?: run {
@@ -42,7 +48,7 @@ internal actual fun TLSConfigBuilder.configurePlatformTrust(serverName: String?)
             tmf.trustManagers.filterIsInstance<X509TrustManager>().first()
         }
 
-    trustManager = HostnameAwareTrustManager(baseTm, serverName)
+    trustManager = HostnameAwareTrustManager(baseTm, host)
 }
 
 /**
