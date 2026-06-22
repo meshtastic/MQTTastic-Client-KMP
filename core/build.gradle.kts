@@ -27,7 +27,7 @@ plugins {
 // :core holds all protocol logic — packets, codec, client, connection, properties, and the
 // MqttTransport / MqttTransportFactory SPI. It has zero dependency on any transport module.
 kotlin {
-    androidLibrary {
+    android {
         namespace = "org.meshtastic.mqtt"
         compileSdk =
             libs.versions.android.compileSdk

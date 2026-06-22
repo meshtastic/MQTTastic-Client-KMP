@@ -10,8 +10,7 @@ plugins {
 kotlin {
     jvmToolchain(17)
 
-    @Suppress("DEPRECATION")
-    androidLibrary {
+    android {
         namespace = "org.meshtastic.mqtt.sample.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()

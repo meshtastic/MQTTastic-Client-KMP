@@ -170,7 +170,7 @@ Honor the server's Receive Maximum property — do not exceed the allowed number
   - `mqtt-client-bom` (a `java-platform` BOM pinning the above to one version)
 - Supported project targets: JVM, Android, iOS (iosArm64, iosSimulatorArm64), macOS (macosArm64), Linux (linuxX64, linuxArm64), Windows (mingwX64), wasmJs (`:transport-tcp` omits wasmJs).
 - The vanniktech `maven-publish` plugin auto-creates per-target publications (e.g., `mqtt-client-core-jvm`, `mqtt-client-core-iosarm64`) and a root `kotlinMultiplatform` publication per module.
-- **Android publishing** requires the `androidLibrary {}` block (Android Gradle KMP Library Plugin) in each library module's `build.gradle.kts`. Configure `namespace`, `compileSdk`, and `minSdk` inside it. Without this, Android artifacts will not be published.
+- **Android publishing** requires the `android {}` block (Android Gradle KMP Library Plugin, `com.android.kotlin.multiplatform.library`) in each library module's `build.gradle.kts`. Configure `namespace`, `compileSdk`, and `minSdk` inside it. Without this, Android artifacts will not be published. (The older `androidLibrary {}` block name is deprecated since AGP 9.1.0-alpha09 — use `android {}` on AGP 8.12+.)
 - For Apple platforms, Maven publishes `.klib` artifacts. If XCFramework distribution is needed separately, that is a distinct build step (`assembleXCFramework`), not part of Maven publishing.
 
 <git_and_prs>
