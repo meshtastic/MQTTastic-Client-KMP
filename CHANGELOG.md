@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-22
+
 ### Changed
 - **BREAKING — split into per-transport modules.** The single `org.meshtastic:mqtt-client` artifact
   is replaced by a `:core` plus per-transport modules and a BOM (#27):
@@ -35,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dual 3.1.1/5.0 support, packet-ID allocation); the Konsist architecture suite now enforces the
   public-API allowlist, packet internality/immutability, and the `:core` ⊥ transport build-graph
   boundary (#28, #29).
+
+### Fixed
+- Android TLS handshake to a private MQTT broker addressed by an IP literal failed with
+  "Domain specific configurations require that hostname aware checkServerTrusted(...) is
+  used". The hostname-aware trust manager is now installed for IP-literal hosts too, not
+  only DNS names — SNI stays suppressed for IPs per RFC 6066 (#67, meshtastic/Meshtastic-Android#5894).
 
 ## [0.3.0] - 2026-04-28
 
