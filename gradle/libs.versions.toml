@@ -4,7 +4,7 @@ agp = "9.2.1"
 # consumer (Meshtastic-Android, on Kotlin 2.3.21 until InsertKoinIO/koin#2431 resolves)
 # cannot read. Renovate enforces this via the "Hold Kotlin at 2.3.x" rule in renovate.json.
 kotlin = "2.4.10"
-ktor = "3.5.0"
+ktor = "3.5.1"
 coroutines = "1.11.0"
 kotlinx-io = "0.9.1"
 compose-multiplatform = "1.11.1"
