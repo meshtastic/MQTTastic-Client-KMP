@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-16
+
+### Changed
+- **Built with Kotlin 2.4.10** (#75, #76). Native and iOS consumers need a
+  Kotlin 2.4.x toolchain to consume the published klibs; JVM and Android
+  consumers are unaffected. This is the reason for the minor (rather than
+  patch) version bump.
+- Ktor 3.5.1 (#70), kotlinx-io-bytestring 0.9.1 (#71).
+- Android target is now configured via the `android {}` block; the deprecated
+  `androidLibrary {}` DSL is gone (#68). Build-internal; published artifacts
+  are unchanged.
+- Build tooling: Gradle 9.6.1 (#72), build tools updates (#73, #77),
+  Develocity plugin 4.5.0 (#74).
+
+### Security
+- Pinned transitive npm `ws` to >= 8.21.0 in the wasm browser-test harness
+  (memory-exhaustion DoS, Dependabot alert #2) (#79). Test-scope only — `ws`
+  is not part of any published artifact.
+
 ## [0.4.0] - 2026-06-22
 
 ### Changed
