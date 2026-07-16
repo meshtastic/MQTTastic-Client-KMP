@@ -28,8 +28,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - language: java-kotlin
-            build-mode: manual
+          # java-kotlin is temporarily disabled: CodeQL <= 2.26.1 rejects
+          # Kotlin 2.4.10 ("Kotlin version 2.4.10 is too recent"), so the
+          # traced build fails and no analysis ever runs. Support (ceiling
+          # 2.4.20) is already merged upstream and ships with the next CLI
+          # release, which codeql-action@v4 picks up automatically.
+          # Once a CodeQL CLI newer than 2.26.1 is out, uncomment to
+          # re-enable and verify Analyze (java-kotlin) goes green.
+          # - language: java-kotlin
+          #   build-mode: manual
           - language: actions
             build-mode: none
 
