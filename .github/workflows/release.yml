@@ -1,13 +1,34 @@
 name: Release
 
+# Triggers:
+#   - Tag push (v*) — the normal, automatic release path.
+#   - workflow_dispatch — manual recovery / dry-run path (#82). Re-runs the
+#     pipeline for an existing tag, e.g. to recover from a partial publish or
+#     to backfill GitHub-release assets (SBOM, sample apps) for a version that
+#     already reached Maven Central.
+
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.5.0). Must match an existing tag vX.Y.Z.'
+        required: true
+        type: string
+      dry_run:
+        description: 'If true, validate and stage artifacts but skip publish, attestation, and release steps.'
+        required: false
+        type: boolean
+        default: false
 
+# One run per release version, across both triggers. cancel-in-progress must
+# stay false: cancelling a half-finished publish is exactly the
+# partial-publish state this workflow is hardened against.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
+  cancel-in-progress: false
 
 env:
   GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
@@ -23,9 +44,29 @@ jobs:
   publish:
     name: Publish to Maven Central
     runs-on: macos-26
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      ref: ${{ steps.ver.outputs.ref }}
     steps:
+      - name: Resolve version
+        # Tag push: version comes from the tag. workflow_dispatch: from the
+        # version input, which must name an existing tag (the checkout below
+        # fails otherwise). Downstream jobs consume these outputs so every
+        # job builds from the same tag regardless of trigger.
+        id: ver
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "ref=refs/tags/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            tag="${GITHUB_REF_NAME}"
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v7
         with:
+          ref: ${{ steps.ver.outputs.ref }}
           submodules: true
           fetch-depth: 0
 
@@ -61,11 +102,33 @@ jobs:
           echo "Staged $(find "${{ github.workspace }}/maven-staging" -type f | wc -l) files for attestation"
 
       - name: Attest Maven artifacts
+        if: inputs.dry_run != true
         uses: actions/attest-build-provenance@v4
         with:
           subject-path: maven-staging/**/*
 
+      - name: Check Maven Central state
+        # Probe whether this version is already on Maven Central. If it is,
+        # the publish step below skips: Sonatype rejects re-uploads with
+        # "component already exists", which turns a re-run of a partially
+        # failed release (published to Central, then died before the GitHub
+        # release — the v0.5.0 outage run) into a hard failure. With this
+        # guard a plain re-run or a dispatch recovers safely.
+        id: mc_check
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "https://repo1.maven.org/maven2/org/meshtastic/mqtt-client-core/$VERSION/mqtt-client-core-$VERSION.pom")
+          echo "Maven Central POM probe for v$VERSION: HTTP $HTTP"
+          if [ "$HTTP" = "200" ]; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION already on Maven Central — skipping publish step."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to Maven Central
+        if: steps.mc_check.outputs.already_published == 'false' && inputs.dry_run != true
         run: ./gradlew publishAllPublicationsToMavenCentralRepository --stacktrace
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.OSSRH_USERNAME }}
@@ -75,13 +138,19 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
 
       - name: Create GitHub Release
+        # tag_name is explicit because on workflow_dispatch github.ref is a
+        # branch, not the release tag. For an existing release (e.g. one
+        # created manually after a failed run) this updates it in place.
+        if: inputs.dry_run != true
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
           generate_release_notes: true
 
   sample-artifacts:
     name: Build sample (${{ matrix.label }})
     needs: [publish]
+    if: inputs.dry_run != true
     strategy:
       fail-fast: false
       matrix:
@@ -112,6 +181,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.publish.outputs.ref }}
           submodules: true
           fetch-depth: 0
 
@@ -154,6 +224,7 @@ jobs:
         if: steps.collect.outputs.count != '0'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: v${{ needs.publish.outputs.version }}
           files: release-assets/*
           fail_on_unmatched_files: false
 
@@ -166,6 +237,7 @@ jobs:
   sbom:
     name: SBOM & Provenance
     needs: [publish]
+    if: inputs.dry_run != true
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -174,6 +246,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.publish.outputs.ref }}
           submodules: true
           fetch-depth: 0
 
@@ -192,6 +265,18 @@ jobs:
           output-file: sbom.spdx.json
           upload-artifact: true
           upload-release-assets: true
+
+      - name: Attach SBOMs to GitHub Release
+        # anchore/sbom-action only auto-uploads release assets on tag/release
+        # events; on workflow_dispatch (recovery/backfill) attach explicitly.
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.publish.outputs.version }}
+          files: |
+            sbom.cdx.json
+            sbom.spdx.json
+          fail_on_unmatched_files: false
 
       - name: Attest build provenance for release assets
         uses: actions/attest-build-provenance@v4
