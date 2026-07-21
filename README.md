@@ -3,7 +3,7 @@
 <img src="docs/images/app-icon.png" alt="MQTTastic app icon" align="right" width="128" height="128" />
 
 [![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/mqtt-client-core?label=Maven%20Central)](https://central.sonatype.com/artifact/org.meshtastic/mqtt-client-core)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7f52ff.svg?logo=kotlin)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-7f52ff.svg?logo=kotlin)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
 [![CI](https://github.com/meshtastic/MQTTastic-Client-KMP/actions/workflows/ci.yml/badge.svg)](https://github.com/meshtastic/MQTTastic-Client-KMP/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/meshtastic/MQTTastic-Client-KMP/graph/badge.svg)](https://codecov.io/gh/meshtastic/MQTTastic-Client-KMP)
