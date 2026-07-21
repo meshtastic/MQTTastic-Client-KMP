@@ -6,7 +6,7 @@ description: 'MQTTastic Client KMP — Kotlin Multiplatform MQTT 5.0 client libr
 # MQTTastic Client KMP
 
 ## Project Facts
-- **Language:** Kotlin 2.3.20 (Multiplatform)
+- **Language:** Kotlin 2.4.10 (Multiplatform)
 - **Build:** Gradle Kotlin DSL, version catalog at `gradle/libs.versions.toml`
 - **Targets:** jvm, android, iosArm64, iosSimulatorArm64, macosArm64, linuxX64, linuxArm64, mingwX64, wasmJs
 - **Dependencies:** Ktor 3.4.2, kotlinx-coroutines 1.10.2, kotlinx-io-bytestring 0.8.2 (zero external deps beyond these)

@@ -170,7 +170,7 @@ for the full coverage table.
 
 ## Compatibility
 
-- Kotlin **2.3.20** or newer.
+- Kotlin **2.4.10** or newer.
 - JDK **17+** for JVM/Android consumers (source/target compiled against 17).
 - Ktor **3.4.x** on the classpath for consumers who want to share the HTTP client.
 

@@ -6,7 +6,7 @@ You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP,
 
 <context_and_memory>
 - **Project:** `org.meshtastic:mqtt-client-core` plus per-transport modules (`-transport-tcp`, `-transport-ws`) and a `-bom` — production-grade MQTT 5.0 and 3.1.1 client for Kotlin Multiplatform (JVM, Android, iOS, macOS, Linux, Windows, wasmJs).
-- **Stack:** Kotlin 2.3.20, Gradle 9.3.0, Ktor 3.4.2, kotlinx-coroutines 1.10.2, kotlinx-io-bytestring 0.8.2. Zero external deps beyond these.
+- **Stack:** Kotlin 2.4.10, Gradle 9.6.1, Ktor 3.5.1, kotlinx-coroutines 1.11.0, kotlinx-io-bytestring 0.9.1. Zero external deps beyond these.
 - **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) and [OASIS MQTT 3.1.1](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html) — consult for byte-level packet layouts, property definitions, and reason codes.
 </context_and_memory>
 
