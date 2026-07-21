@@ -48,6 +48,11 @@ class MqttKmpLibraryConventionPlugin : Plugin<Project> {
                         .toInt(),
                 )
 
+                // Strict explicit API mode: every public/protected declaration must
+                // state its visibility and return type explicitly. Compiler-enforced
+                // companion to the Konsist allowlist (ADR-0008) and BCV apiCheck.
+                explicitApi()
+
                 jvm()
                 iosArm64()
                 iosSimulatorArm64()

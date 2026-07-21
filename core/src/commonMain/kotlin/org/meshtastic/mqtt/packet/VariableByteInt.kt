@@ -34,13 +34,13 @@ public data class VbiResult(
  * Maximum 4 bytes, maximum value 268,435,455.
  */
 public object VariableByteInt {
-    const val MAX_VALUE: Int = 268_435_455
+    public const val MAX_VALUE: Int = 268_435_455
 
     /**
      * Encode an integer as a Variable Byte Integer.
      * @throws IllegalArgumentException if [value] exceeds [MAX_VALUE] or is negative.
      */
-    fun encode(value: Int): ByteArray {
+    public fun encode(value: Int): ByteArray {
         require(value in 0..MAX_VALUE) { "Value $value out of VBI range 0..$MAX_VALUE" }
 
         val buf = ByteArray(4)
@@ -61,7 +61,7 @@ public object VariableByteInt {
      * @return A [VbiResult] containing the decoded value and number of bytes consumed.
      * @throws IllegalArgumentException if the encoding is malformed.
      */
-    fun decode(
+    public fun decode(
         bytes: ByteArray,
         offset: Int = 0,
     ): VbiResult {

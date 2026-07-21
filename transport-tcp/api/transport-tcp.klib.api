@@ -1,0 +1,26 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64, linuxArm64, linuxX64, macosArm64, mingwX64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <MQTTastic-Client-KMP:transport-tcp>
+final class org.meshtastic.mqtt.transport.tcp/TcpTransport : org.meshtastic.mqtt/MqttTransport { // org.meshtastic.mqtt.transport.tcp/TcpTransport|null[0]
+    constructor <init>() // org.meshtastic.mqtt.transport.tcp/TcpTransport.<init>|<init>(){}[0]
+
+    final val isConnected // org.meshtastic.mqtt.transport.tcp/TcpTransport.isConnected|{}isConnected[0]
+        final fun <get-isConnected>(): kotlin/Boolean // org.meshtastic.mqtt.transport.tcp/TcpTransport.isConnected.<get-isConnected>|<get-isConnected>(){}[0]
+
+    final suspend fun close() // org.meshtastic.mqtt.transport.tcp/TcpTransport.close|close(){}[0]
+    final suspend fun connect(org.meshtastic.mqtt/MqttEndpoint) // org.meshtastic.mqtt.transport.tcp/TcpTransport.connect|connect(org.meshtastic.mqtt.MqttEndpoint){}[0]
+    final suspend fun receive(): kotlin/ByteArray // org.meshtastic.mqtt.transport.tcp/TcpTransport.receive|receive(){}[0]
+    final suspend fun send(kotlin/ByteArray) // org.meshtastic.mqtt.transport.tcp/TcpTransport.send|send(kotlin.ByteArray){}[0]
+}
+
+final class org.meshtastic.mqtt.transport.tcp/TcpTransportFactory : org.meshtastic.mqtt/MqttTransportFactory { // org.meshtastic.mqtt.transport.tcp/TcpTransportFactory|null[0]
+    constructor <init>() // org.meshtastic.mqtt.transport.tcp/TcpTransportFactory.<init>|<init>(){}[0]
+
+    final fun create(org.meshtastic.mqtt/MqttEndpoint): org.meshtastic.mqtt/MqttTransport // org.meshtastic.mqtt.transport.tcp/TcpTransportFactory.create|create(org.meshtastic.mqtt.MqttEndpoint){}[0]
+    final fun supports(org.meshtastic.mqtt/MqttEndpoint): kotlin/Boolean // org.meshtastic.mqtt.transport.tcp/TcpTransportFactory.supports|supports(org.meshtastic.mqtt.MqttEndpoint){}[0]
+}
