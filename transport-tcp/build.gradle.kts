@@ -49,6 +49,18 @@ kotlin {
     }
 }
 
+apiValidation {
+    // Validate the full cross-platform ABI (klib/native + common), not JVM only.
+    // With klib enabled, `apiDump` writes a merged <module>.klib.api baseline next
+    // to the JVM dump under api/, and `apiCheck` validates both. Targets a CI host
+    // can't build are skipped by BCV and trusted from the committed dump —
+    // regenerate the full dump on a macOS host via `./gradlew apiDump`.
+    @OptIn(kotlinx.validation.ExperimentalBCVApi::class)
+    klib {
+        enabled = true
+    }
+}
+
 dokka {
     dokkaSourceSets.named("commonMain") {
         includes.from(layout.projectDirectory.file("Module.md"))

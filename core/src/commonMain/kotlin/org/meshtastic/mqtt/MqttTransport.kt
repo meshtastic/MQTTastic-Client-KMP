@@ -31,19 +31,19 @@ package org.meshtastic.mqtt
  */
 public interface MqttTransport {
     /** Establish a connection to the broker. */
-    suspend fun connect(endpoint: MqttEndpoint)
+    public suspend fun connect(endpoint: MqttEndpoint)
 
     /** Send raw bytes over the transport. */
-    suspend fun send(bytes: ByteArray)
+    public suspend fun send(bytes: ByteArray)
 
     /** Receive one complete MQTT packet as raw bytes. */
-    suspend fun receive(): ByteArray
+    public suspend fun receive(): ByteArray
 
     /** Close the transport connection. */
-    suspend fun close()
+    public suspend fun close()
 
     /** Whether the transport is currently connected. */
-    val isConnected: Boolean
+    public val isConnected: Boolean
 }
 
 /**

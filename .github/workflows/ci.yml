@@ -143,6 +143,17 @@ jobs:
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
 
+      # apiCheck now validates the klib/native ABI too, so it compiles native
+      # klibs and needs the Kotlin/Native toolchain. Cache ~/.konan to avoid
+      # re-downloading it every run.
+      - name: Cache Konan (Kotlin/Native toolchain)
+        uses: actions/cache@v6
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
       - name: Run API compatibility check
         run: ./gradlew apiCheck --stacktrace
 
