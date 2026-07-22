@@ -1,0 +1,4 @@
+# CODEOWNERS — review routing.
+# Solo maintainer for now; expand to GitHub teams as they form.
+# https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+* @jamesarich
