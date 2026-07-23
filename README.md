@@ -92,7 +92,7 @@ repositories {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation(platform("org.meshtastic:mqtt-client-bom:0.3.0"))
+            implementation(platform("org.meshtastic:mqtt-client-bom:0.5.0"))
             implementation("org.meshtastic:mqtt-client-core")
             // Pick the transport(s) you actually use:
             implementation("org.meshtastic:mqtt-client-transport-tcp") // TCP/TLS — every target except browser
@@ -121,7 +121,7 @@ kotlin {
     sourceSets {
         commonMain {
             dependencies {
-                implementation platform('org.meshtastic:mqtt-client-bom:0.3.0')
+                implementation platform('org.meshtastic:mqtt-client-bom:0.5.0')
                 implementation 'org.meshtastic:mqtt-client-core'
                 implementation 'org.meshtastic:mqtt-client-transport-tcp'
                 implementation 'org.meshtastic:mqtt-client-transport-ws'
@@ -137,7 +137,7 @@ kotlin {
 
 ```kotlin
 dependencies {
-    implementation(platform("org.meshtastic:mqtt-client-bom:0.3.0"))
+    implementation(platform("org.meshtastic:mqtt-client-bom:0.5.0"))
     implementation("org.meshtastic:mqtt-client-core")
     implementation("org.meshtastic:mqtt-client-transport-tcp")
 }
@@ -381,7 +381,7 @@ fun MqttScreen(viewModel: MqttViewModel) {
 
 ### Version alignment
 
-The library uses **Ktor 3.4.2** and **kotlinx-coroutines 1.10.2**. If your project uses the same versions, no conflicts will arise. Pin versions in your `libs.versions.toml` to avoid Gradle resolution surprises.
+The library uses **Ktor 3.5.1** and **kotlinx-coroutines 1.11.0**. If your project uses the same versions, no conflicts will arise. Pin versions in your `libs.versions.toml` to avoid Gradle resolution surprises.
 
 ## MQTT 5.0 Coverage
 
