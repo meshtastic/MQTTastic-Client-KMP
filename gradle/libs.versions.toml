@@ -1,5 +1,5 @@
 [versions]
-agp = "9.3.0"
+agp = "9.3.1"
 # Kotlin 2.4.10 — matches the primary consumer (Meshtastic-Android is also on 2.4.10),
 # so the klib ABI 2.4.0 emitted here is readable downstream. This was previously held at
 # 2.3.x while that consumer sat on Kotlin 2.3.21; that hold no longer applies.
