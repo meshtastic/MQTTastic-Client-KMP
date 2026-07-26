@@ -102,6 +102,33 @@ class TcpTransportTlsTest {
     }
 
     @Test
+    fun applyMqttTlsRunsCallerHookBeforePlatformTrust() {
+        // Security-relevant ordering: the caller hook must run BEFORE platform trust
+        // configuration. Reversed, a caller-supplied trust manager would replace Android's
+        // hostname-aware wrapper instead of being wrapped by it, dropping the platform's
+        // network-security-config, pinning, and CT policy checks. The platformTrust seam
+        // makes that order observable on every target.
+        val order = mutableListOf<String>()
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls(
+            host = "broker.example.com",
+            configureTls = { order += "callerHook" },
+            platformTrust = { order += "platformTrust" },
+        )
+        assertEquals(listOf("callerHook", "platformTrust"), order)
+    }
+
+    @Test
+    fun applyMqttTlsPassesTrustHostToPlatformTrustEvenWhenSniSuppressed() {
+        // IP literals suppress SNI but must still reach the platform trust hook with the raw host.
+        var trustHost: String? = null
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls(host = "192.168.1.50", platformTrust = { trustHost = it })
+        assertNull(builder.serverName)
+        assertEquals("192.168.1.50", trustHost)
+    }
+
+    @Test
     fun applyMqttTlsWithoutHookStillSetsSni() {
         val builder = TLSConfigBuilder()
         builder.applyMqttTls("mqtt.local", configureTls = null)

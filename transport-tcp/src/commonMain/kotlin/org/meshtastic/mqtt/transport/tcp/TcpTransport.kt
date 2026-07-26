@@ -56,7 +56,7 @@ import org.meshtastic.mqtt.packet.VariableByteInt
  *   non-TLS endpoints.
  */
 public class TcpTransport(
-    private val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
+    internal val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
 ) : MqttTransport {
     private var socket: Socket? = null
     private var selectorManager: SelectorManager? = null
@@ -279,8 +279,10 @@ internal fun isIpLiteral(host: String): Boolean {
  *
  * @param configureTls optional hook applied to ktor's [TLSConfigBuilder] for every transport
  *   this factory creates. It runs after the SNI server name is set and before platform trust
- *   is configured, so on Android a trust manager installed here is still wrapped in the
- *   hostname-aware delegate rather than replacing it.
+ *   is configured, so on Android a trust manager installed here is wrapped in the
+ *   hostname-aware delegate rather than replacing it — the caller's trust anchors stay subject
+ *   to the platform's network-security-config, pinning, and Certificate Transparency policy.
+ *   That wrapping is Android-only and is not subject-name matching; see [applyMqttTls].
  */
 public class TcpTransportFactory(
     private val configureTls: (TLSConfigBuilder.() -> Unit)? = null,

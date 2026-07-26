@@ -42,25 +42,39 @@ internal expect fun TLSConfigBuilder.configurePlatformTrust(host: String)
  *
  * This is the single call site for TLS setup, so the ordering below cannot drift:
  *
- * 1. [serverName] — the SNI value, `null` for IP literals (RFC 6066 §3 forbids them).
+ * 1. `serverName` — the SNI value, `null` for IP literals (RFC 6066 §3 forbids them).
  * 2. [configureTls] — the caller's hook, so it can read or override the SNI value and
  *    install its own trust manager (e.g. a private CA).
  * 3. [configurePlatformTrust] — reads whatever trust manager is now on the builder and,
  *    on Android, wraps it in a hostname-aware delegate.
  *
  * Step 2 must precede step 3. Reversing them would let a caller-supplied trust manager
- * *replace* Android's `HostnameAwareTrustManager`, silently dropping the platform's 3-arg
- * `checkServerTrusted` hostname verification. Running the caller first composes instead:
- * a private-CA trust manager is still subject to the hostname check.
+ * *replace* Android's `HostnameAwareTrustManager`, so the caller's trust anchors would no
+ * longer be evaluated against the platform's domain-specific `network_security_config.xml`
+ * rules, certificate pinning, or Certificate Transparency policy. Running the caller first
+ * composes instead: a private-CA trust manager stays subject to those platform checks.
+ *
+ * Note what this ordering does *not* provide. RFC 6125 subject-name matching (verifying the
+ * certificate actually names the host being contacted) comes from ktor, which performs it only
+ * when `serverName` is non-`null` — so it is absent for IP-literal brokers. Android's 3-arg
+ * `checkServerTrusted(chain, authType, hostname)` uses the hostname for config lookup, pinning,
+ * and CT policy, not for subject-name matching. On JVM and native targets
+ * [configurePlatformTrust] is a no-op, so no platform policy check happens there at all.
+ *
+ * The hook may read or replace `serverName`, but setting it to `null` disables ktor's
+ * subject-name verification entirely — the only name matching this transport has on JVM and
+ * native — so do not do that unless you verify the peer identity yourself.
  *
  * @param host the broker host (DNS name or IP literal), used for both SNI and trust evaluation.
  * @param configureTls optional caller customisation; `null` preserves the default behaviour.
+ * @param platformTrust test seam for [configurePlatformTrust]; production callers use the default.
  */
 internal fun TLSConfigBuilder.applyMqttTls(
     host: String,
     configureTls: (TLSConfigBuilder.() -> Unit)? = null,
+    platformTrust: TLSConfigBuilder.(String) -> Unit = { configurePlatformTrust(it) },
 ) {
     serverName = sniServerName(host)
     configureTls?.invoke(this)
-    configurePlatformTrust(host)
+    platformTrust(host)
 }

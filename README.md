@@ -349,7 +349,22 @@ client.connect(MqttEndpoint.parse("mqtts://broker.internal:8883"))
 
 The hook is applied after the SNI server name is resolved and before platform trust is configured.
 On Android that ordering matters: your trust manager is *wrapped* by the hostname-aware trust
-manager rather than replacing it, so certificate hostname verification still happens.
+manager rather than replacing it, so your trust anchors remain subject to the platform's
+domain-specific `network_security_config.xml` rules, certificate pinning, and Certificate
+Transparency policy instead of replacing that policy wholesale.
+
+Be clear about what the wrapping does *not* buy you. Android's hostname-aware
+`checkServerTrusted(chain, authType, hostname)` uses the hostname to look up that policy — it does
+not perform RFC 6125 subject-name matching. That check comes from ktor and only runs when the SNI
+server name is set, so it is absent for IP-literal brokers such as `mqtts://192.168.1.50:8883`. On
+JVM and native targets there is no platform trust wrapping at all, so ktor's SNI-gated
+subject-name check is the only peer-identity verification beyond chain validation. If your trust
+manager accepts any chain, nothing else will stop a mismatched certificate.
+
+On Android the trust manager you install must be one the platform can wrap: obtain it from a
+`TrustManagerFactory` initialised with a `KeyStore` containing your CA, rather than hand-writing an
+`X509TrustManager`. A hand-written one that implements only the two-arg `checkServerTrusted` cannot
+be wrapped and the handshake fails with an `IllegalArgumentException` explaining this.
 
 This scopes the extra trust to the MQTT connection alone. It replaces the app-wide workaround of
 adding `<certificates src="user"/>` to `network_security_config.xml`, which would affect every
