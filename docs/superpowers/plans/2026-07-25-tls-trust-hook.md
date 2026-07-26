@@ -494,10 +494,10 @@ class TcpTransportTrustManagerTest {
     }
 
     @Test
-    fun hookSeesBuilderBeforePlatformTrustRuns() {
-        // The hook reads trustManager before configurePlatformTrust has touched it. On the
-        // JVM that means null; the assertion of record is that the lambda observed the
-        // builder at all and that its own write then took effect.
+    fun hookWriteToTrustManagerTakesEffect() {
+        // The lambda runs against the live builder and its write survives the rest of
+        // applyMqttTls. This does not assert the hook/platform-trust ordering — on the JVM
+        // configurePlatformTrust is a no-op, so that ordering is not observable here.
         var ranWithBuilder = false
         val builder = TLSConfigBuilder()
         builder.applyMqttTls("broker.example.com") {
@@ -510,8 +510,8 @@ class TcpTransportTrustManagerTest {
     }
 
     @Test
-    fun factoryHookIsHandedToEveryTransportItCreates() {
-        // Guards against the factory dropping the lambda on the floor in create().
+    fun factoryDoesNotInvokeHookAtCreateTime() {
+        // The hook belongs to the handshake, not to transport construction.
         var invocations = 0
         val factory = TcpTransportFactory { invocations++ }
         // create() must not run the hook — that happens during the handshake.
