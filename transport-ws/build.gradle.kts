@@ -46,30 +46,51 @@ kotlin {
     }
 
     sourceSets {
+        val commonMain by getting
+        // Intermediate source set for the four targets that use the CIO engine. It holds the
+        // single CIO client builder and the TLS trust plumbing (applyWsTls and the
+        // configurePlatformTrust expect/actuals) — written once instead of four times per
+        // target. Deliberately spans JVM-family and native targets, so it may
+        // only use API present in both (CIO and TLSConfigBuilder both are; TLSConfigBuilder's
+        // JVM-only `trustManager` is touched solely from the androidMain actual).
+        val cioMain by creating { dependsOn(commonMain) }
+
         commonMain.dependencies {
             api(project(":core"))
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.websockets)
+            // api, not implementation: TLSConfigBuilder appears in WebSocketTransportFactory's
+            // public constructor signature, so consumers need it on their compile classpath.
+            // ktor-network-tls publishes a klib for every target this module builds, wasmJs
+            // included — `trustManager` is a JVM/Android-only property of that builder.
+            api(libs.ktor.network.tls)
         }
 
-        // Ktor HttpClient engines — one per platform family for WebSocket auto-detection.
-        jvmMain.get().dependencies {
+        cioMain.dependencies {
             implementation(libs.ktor.client.cio)
         }
-        findByName("androidMain")?.dependencies {
-            implementation(libs.ktor.client.cio)
-        }
-        findByName("appleMain")?.dependencies {
-            implementation(libs.ktor.client.cio)
-        }
-        findByName("linuxMain")?.dependencies {
-            implementation(libs.ktor.client.cio)
-        }
+
+        // Ktor HttpClient engines — CIO where available, platform engines elsewhere.
+        jvmMain.get().dependsOn(cioMain)
+        findByName("androidMain")?.dependsOn(cioMain)
+        findByName("appleMain")?.dependsOn(cioMain)
+        findByName("linuxMain")?.dependsOn(cioMain)
+
         findByName("mingwMain")?.dependencies {
             implementation(libs.ktor.client.winhttp)
         }
         wasmJsMain.dependencies {
             implementation(libs.ktor.client.js)
+        }
+
+        jvmTest.get().dependencies {
+            // Test-only: a local wss:// server with a generated self-signed certificate, so the
+            // private-CA path is proven rather than asserted. Not part of the published artifact.
+            // Netty, not CIO: ktor's server-side CIO engine rejects HTTPS connectors outright
+            // ("CIO Engine does not currently support HTTPS").
+            implementation(libs.ktor.server.netty)
+            implementation(libs.ktor.server.websockets)
+            implementation(libs.ktor.network.tls.certificates)
         }
     }
 }

@@ -8,6 +8,7 @@
 // Library unique name: <MQTTastic-Client-KMP:transport-ws>
 final class org.meshtastic.mqtt.transport.ws/WebSocketTransport : org.meshtastic.mqtt/MqttTransport { // org.meshtastic.mqtt.transport.ws/WebSocketTransport|null[0]
     constructor <init>() // org.meshtastic.mqtt.transport.ws/WebSocketTransport.<init>|<init>(){}[0]
+    constructor <init>(kotlin/Function1<io.ktor.network.tls/TLSConfigBuilder, kotlin/Unit>? = ...) // org.meshtastic.mqtt.transport.ws/WebSocketTransport.<init>|<init>(kotlin.Function1<io.ktor.network.tls.TLSConfigBuilder,kotlin.Unit>?){}[0]
 
     final val isConnected // org.meshtastic.mqtt.transport.ws/WebSocketTransport.isConnected|{}isConnected[0]
         final fun <get-isConnected>(): kotlin/Boolean // org.meshtastic.mqtt.transport.ws/WebSocketTransport.isConnected.<get-isConnected>|<get-isConnected>(){}[0]
@@ -20,6 +21,7 @@ final class org.meshtastic.mqtt.transport.ws/WebSocketTransport : org.meshtastic
 
 final class org.meshtastic.mqtt.transport.ws/WebSocketTransportFactory : org.meshtastic.mqtt/MqttTransportFactory { // org.meshtastic.mqtt.transport.ws/WebSocketTransportFactory|null[0]
     constructor <init>() // org.meshtastic.mqtt.transport.ws/WebSocketTransportFactory.<init>|<init>(){}[0]
+    constructor <init>(kotlin/Function1<io.ktor.network.tls/TLSConfigBuilder, kotlin/Unit>? = ...) // org.meshtastic.mqtt.transport.ws/WebSocketTransportFactory.<init>|<init>(kotlin.Function1<io.ktor.network.tls.TLSConfigBuilder,kotlin.Unit>?){}[0]
 
     final fun create(org.meshtastic.mqtt/MqttEndpoint): org.meshtastic.mqtt/MqttTransport // org.meshtastic.mqtt.transport.ws/WebSocketTransportFactory.create|create(org.meshtastic.mqtt.MqttEndpoint){}[0]
     final fun supports(org.meshtastic.mqtt/MqttEndpoint): kotlin/Boolean // org.meshtastic.mqtt.transport.ws/WebSocketTransportFactory.supports|supports(org.meshtastic.mqtt.MqttEndpoint){}[0]

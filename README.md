@@ -334,9 +334,11 @@ Log levels from most to least verbose: `TRACE` → `DEBUG` → `INFO` → `WARN`
 
 ### Custom TLS trust
 
-By default the TCP transport validates the broker certificate against the platform CA store. To
-reach a broker behind a private or self-signed CA, pass a TLS customisation lambda to
-`TcpTransportFactory`. It runs against ktor's `TLSConfigBuilder`:
+By default both transports validate the broker certificate against the platform CA store. To
+reach a broker behind a private or self-signed CA, pass a TLS customisation lambda to the
+transport factory you use — `TcpTransportFactory`, `WebSocketTransportFactory`, or both, since a
+factory without the lambda keeps validating against the platform store alone. It runs against
+ktor's `TLSConfigBuilder`:
 
 ```kotlin
 import org.meshtastic.mqtt.transport.tcp.TcpTransportFactory
@@ -377,18 +379,21 @@ This scopes the extra trust to the MQTT connection alone. It replaces the app-wi
 adding `<certificates src="user"/>` to `network_security_config.xml`, which would affect every
 HTTPS connection the app makes.
 
-The hook composes with transport selection as usual:
+The hook composes with transport selection as usual, and both transports take the same lambda type,
+so one trust manager can serve both:
 
 ```kotlin
 transportFactory = TcpTransportFactory { trustManager = myPrivateCaTrustManager } +
-    WebSocketTransportFactory()
+    WebSocketTransportFactory { trustManager = myPrivateCaTrustManager }
 ```
 
-`TLSConfigBuilder` comes from `io.ktor:ktor-network-tls`, exposed transitively by
-`mqtt-client-transport-tcp` — no extra dependency needed. The WebSocket transport has no equivalent
-hook yet. `trustManager` specifically is available on the JVM and Android actuals of
-`TLSConfigBuilder`; on Apple, Linux, and Windows targets the hook still runs, but `TLSConfigBuilder`
-exposes a different set of properties there.
+`TLSConfigBuilder` comes from `io.ktor:ktor-network-tls`, exposed transitively by both
+`mqtt-client-transport-tcp` and `mqtt-client-transport-ws` — no extra dependency needed.
+`trustManager` specifically is available on the JVM and Android actuals of `TLSConfigBuilder`; on
+Apple and Linux the hook still runs, but `TLSConfigBuilder` exposes a different set of properties
+there. The WebSocket hook is additionally ignored on Windows (the WinHttp engine has no
+TLS-configuration surface) and in the browser (which cannot influence trust) — see
+`transport-ws/Module.md` for the per-target table.
 
 ## Android / KMP Integration
 

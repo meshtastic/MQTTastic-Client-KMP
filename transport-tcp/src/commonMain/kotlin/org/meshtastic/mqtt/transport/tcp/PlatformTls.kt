@@ -31,6 +31,11 @@ import io.ktor.network.tls.TLSConfigBuilder
  *
  * On JVM and native targets, this is a no-op — the platform default suffices.
  *
+ * **Sibling copy.** The same logic is duplicated in
+ * `transport-ws/src/cioMain/kotlin/org/meshtastic/mqtt/transport/ws/PlatformTls.kt` and its
+ * actuals, because `:transport-ws` cannot depend on this module. **Any fix here must be applied
+ * there too, and vice versa.**
+ *
  * @param host the broker host (DNS name or IP literal) used for trust evaluation.
  *   Unlike the SNI server name, this is never `null`: an IP literal is a valid
  *   host for the hostname-aware trust check even though it must not be sent as SNI.

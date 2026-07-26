@@ -43,8 +43,8 @@ check; see `core/build.gradle.kts` `verifyModuleBoundary`). Everything in `:core
                                         integration tests (testImplementation project(":transport-tcp"))
 :transport-tcp             commonMain (TcpTransport) + jvm/android/native PlatformTls expect/actual.
                            Targets: jvm, android, apple (ios/macos), linux, mingw — NO wasmJs.
-:transport-ws              commonMain (WebSocketTransport) + per-platform Ktor engine deps.
-                           Targets: all, incl. wasmJs.
+:transport-ws              commonMain (WebSocketTransport) + cioMain (CIO engine + TLS trust hook)
+                           + per-platform Ktor engine deps. Targets: all, incl. wasmJs.
 :bom (mqtt-client-bom)     java-platform BOM pinning every artifact to one version.
 build-logic/convention     mqtt.kmp.library + mqtt.publishing convention plugins (shared KMP target
                            set + per-module publishing coordinates derived from the module name).
@@ -52,8 +52,11 @@ build-logic/convention     mqtt.kmp.library + mqtt.publishing convention plugins
 
 Each library module applies `applyDefaultHierarchyTemplate()` (via `mqtt.kmp.library`), so
 `nativeMain`/`appleMain`/`linuxMain`/`mingwMain` are auto-created. macosArm64 only (macosX64
-deprecated in Kotlin 2.3.20). There is **no** custom `nonWebMain` source set any more: `:transport-tcp`
-simply omits the wasmJs target, so its `commonMain` is effectively the old "non-web" set.
+deprecated in Kotlin 2.3.20). The one custom intermediate source set is `:transport-ws`'s `cioMain`
+(jvm + android + apple + linux), which holds the single CIO `HttpClient` builder and the TLS trust
+plumbing (`applyWsTls` and the `configurePlatformTrust` expect/actuals). The old `nonWebMain` set is
+gone: `:transport-tcp` simply omits the wasmJs target, so its `commonMain` is effectively the old
+"non-web" set.
 
 ### Packet codec pipeline
 

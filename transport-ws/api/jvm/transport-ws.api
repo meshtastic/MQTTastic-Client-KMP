@@ -1,6 +1,8 @@
 public final class org/meshtastic/mqtt/transport/ws/WebSocketTransport : org/meshtastic/mqtt/MqttTransport {
 	public static final field MAX_FRAME_SIZE J
 	public fun <init> ()V
+	public fun <init> (Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun close (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun connect (Lorg/meshtastic/mqtt/MqttEndpoint;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun isConnected ()Z
@@ -10,6 +12,8 @@ public final class org/meshtastic/mqtt/transport/ws/WebSocketTransport : org/mes
 
 public final class org/meshtastic/mqtt/transport/ws/WebSocketTransportFactory : org/meshtastic/mqtt/MqttTransportFactory {
 	public fun <init> ()V
+	public fun <init> (Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun create (Lorg/meshtastic/mqtt/MqttEndpoint;)Lorg/meshtastic/mqtt/MqttTransport;
 	public fun supports (Lorg/meshtastic/mqtt/MqttEndpoint;)Z
 }
