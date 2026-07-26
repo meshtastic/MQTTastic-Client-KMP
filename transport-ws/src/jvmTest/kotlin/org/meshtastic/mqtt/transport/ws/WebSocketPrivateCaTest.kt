@@ -57,17 +57,20 @@ import kotlin.test.assertTrue
 class WebSocketPrivateCaTest {
     private val alias = "mqtt-ws-test"
     private val password = "changeit"
-    private lateinit var keyStoreFile: File
+    private var keyStoreFile: File? = null
     private lateinit var keyStore: KeyStore
     private var port = 0
     private var server: EmbeddedServer<*, *>? = null
     private val nettyLogger: Logger = Logger.getLogger("io.netty")
+    private var previousNettyLevel: Level? = null
 
     @BeforeTest
     fun startServer() {
         // Two of the three tests deliberately fail the handshake; Netty logs each one at WARNING.
         // Silence it so a passing run has clean output. The Logger must be held in a field —
-        // java.util.logging discards the configuration of unreferenced Logger instances.
+        // java.util.logging discards the configuration of unreferenced Logger instances. Restored
+        // in stopServer() since this is a JVM-wide mutation shared with every other test in the module.
+        previousNettyLevel = nettyLogger.level
         nettyLogger.level = Level.OFF
 
         keyStore =
@@ -77,8 +80,10 @@ class WebSocketPrivateCaTest {
                     domains = listOf("localhost")
                 }
             }
-        keyStoreFile = File.createTempFile("mqtt-ws-test", ".jks")
-        keyStoreFile.outputStream().use { keyStore.store(it, password.toCharArray()) }
+        val file = File.createTempFile("mqtt-ws-test", ".jks")
+        file.deleteOnExit()
+        keyStoreFile = file
+        file.outputStream().use { keyStore.store(it, password.toCharArray()) }
 
         val embedded =
             embeddedServer(Netty, environment = applicationEnvironment { }, configure = {
@@ -119,7 +124,8 @@ class WebSocketPrivateCaTest {
     @AfterTest
     fun stopServer() {
         server?.stop(gracePeriodMillis = 0, timeoutMillis = 1_000)
-        keyStoreFile.delete()
+        keyStoreFile?.delete()
+        nettyLogger.level = previousNettyLevel
     }
 
     private val endpoint get() = MqttEndpoint.WebSocket("wss://localhost:$port/mqtt")
@@ -140,18 +146,21 @@ class WebSocketPrivateCaTest {
     fun handshakeFailsWithoutTheHook() =
         runBlocking {
             val transport = WebSocketTransportFactory().create(endpoint)
-            val failure =
-                assertFailsWith<Exception> {
-                    withTimeout(20_000) { transport.connect(endpoint) }
-                }
-            // Assert the *reason*: certificate trust, not a bad URL or an unstarted server.
-            // The JVM default trust manager reports SunCertPathBuilderException / CertPathValidatorException.
-            val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
-            assertTrue(
-                chain.any { it is CertPathBuilderException || it is CertPathValidatorException },
-                "expected a certificate-path failure, got: ${chain.map { it::class.qualifiedName }}",
-            )
-            transport.close()
+            try {
+                val failure =
+                    assertFailsWith<Exception> {
+                        withTimeout(20_000) { transport.connect(endpoint) }
+                    }
+                // Assert the *reason*: certificate trust, not a bad URL or an unstarted server.
+                // The JVM default trust manager reports SunCertPathBuilderException / CertPathValidatorException.
+                val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
+                assertTrue(
+                    chain.any { it is CertPathBuilderException || it is CertPathValidatorException },
+                    "expected a certificate-path failure, got: ${chain.map { it::class.qualifiedName }}",
+                )
+            } finally {
+                transport.close()
+            }
         }
 
     @Test
@@ -159,14 +168,17 @@ class WebSocketPrivateCaTest {
         runBlocking {
             val tm = privateCaTrustManager()
             val transport = WebSocketTransportFactory { trustManager = tm }.create(endpoint)
-            withTimeout(20_000) {
-                transport.connect(endpoint)
-                assertTrue(transport.isConnected)
-                val payload = byteArrayOf(0x10, 0x02, 0x00, 0x04)
-                transport.send(payload)
-                assertContentEquals(payload, transport.receive())
+            try {
+                withTimeout(20_000) {
+                    transport.connect(endpoint)
+                    assertTrue(transport.isConnected)
+                    val payload = byteArrayOf(0x10, 0x02, 0x00, 0x04)
+                    transport.send(payload)
+                    assertContentEquals(payload, transport.receive())
+                }
+            } finally {
+                transport.close()
             }
-            transport.close()
         }
 
     /**
@@ -183,14 +195,17 @@ class WebSocketPrivateCaTest {
                     trustManager = tm
                     serverName = "not-the-server.example.com"
                 }.create(endpoint)
-            val failure =
-                assertFailsWith<TLSException> {
-                    withTimeout(20_000) { transport.connect(endpoint) }
-                }
-            assertTrue(
-                failure.message.orEmpty().contains("not-the-server.example.com"),
-                "expected subject-name verification against the hook's serverName, got: ${failure.message}",
-            )
-            transport.close()
+            try {
+                val failure =
+                    assertFailsWith<TLSException> {
+                        withTimeout(20_000) { transport.connect(endpoint) }
+                    }
+                assertTrue(
+                    failure.message.orEmpty().contains("not-the-server.example.com"),
+                    "expected subject-name verification against the hook's serverName, got: ${failure.message}",
+                )
+            } finally {
+                transport.close()
+            }
         }
 }
