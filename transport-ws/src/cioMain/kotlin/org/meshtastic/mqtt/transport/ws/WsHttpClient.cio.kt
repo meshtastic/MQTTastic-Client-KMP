@@ -40,7 +40,7 @@ internal actual fun buildWsHttpClient(
         }
         engine {
             https {
-                configureTls?.invoke(this)
+                applyWsTls(host, configureTls)
             }
         }
     }
