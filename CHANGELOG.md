@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `WebSocketTransportFactory` now accepts an optional TLS customisation lambda, the WebSocket
+  counterpart to the `TcpTransportFactory` hook added in 0.6.0. Both take the same
+  `TLSConfigBuilder` receiver, so a single trust manager can serve `ssl://` and `wss://` brokers
+  behind a private or self-signed CA — scoped to the MQTT connection, with no app-wide
+  `network_security_config.xml` anchor. Honoured on JVM, Android, Apple, and Linux; ignored on
+  Windows (WinHttp exposes no TLS-configuration surface) and in the browser. The existing no-arg
+  constructor is unchanged (#107).
+
+### Changed
+
+- `:transport-ws` now selects its Ktor engine explicitly per platform (CIO on JVM/Android/Apple/
+  Linux, WinHttp on Windows, Js on wasmJs) instead of relying on auto-detection. The engines are
+  the same ones auto-detection resolved, so behaviour is unchanged.
+
 ## [0.6.1] - 2026-07-26
 
 **The published library artifacts are unchanged from 0.6.0.** `mqtt-client-core`,

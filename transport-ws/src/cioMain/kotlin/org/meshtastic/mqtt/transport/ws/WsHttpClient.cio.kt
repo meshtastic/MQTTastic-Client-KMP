@@ -29,7 +29,7 @@ import io.ktor.network.tls.TLSConfigBuilder
  * derives SNI from the request URL when it opens the connection, whereas this block runs once at
  * client construction. A `serverName` a caller does assign inside the hook is *not* overwritten by
  * CIO's per-request SNI — it wins, and ktor verifies the certificate's subject names against it, so
- * setting it to anything other than the broker's own hostname breaks the handshake (verified by
+ * the value must be present among the broker certificate's subject names (verified by
  * `WebSocketPrivateCaTest.serverNameSetInsideTheHookWinsOverCioRequestSni`).
  */
 internal actual fun buildWsHttpClient(
