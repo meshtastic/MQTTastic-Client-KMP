@@ -18,7 +18,6 @@ package org.meshtastic.mqtt.transport.ws
 
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
-import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocketSession
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -53,12 +52,7 @@ public class WebSocketTransport : MqttTransport {
         // Close any existing connection to prevent resource leaks on reconnect
         close()
 
-        val httpClient =
-            HttpClient {
-                install(WebSockets) {
-                    maxFrameSize = MAX_FRAME_SIZE
-                }
-            }
+        val httpClient = buildWsHttpClient(MAX_FRAME_SIZE)
         client = httpClient
 
         val wsSession =

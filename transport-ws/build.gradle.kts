@@ -46,25 +46,30 @@ kotlin {
     }
 
     sourceSets {
+        val commonMain by getting
+        // Intermediate source set for the four targets that use the CIO engine. It holds the
+        // single CIO client builder and, from Task 3, the TLS trust plumbing — written once
+        // instead of four times. Deliberately spans JVM-family and native targets, so it may
+        // only use API present in both (CIO and TLSConfigBuilder both are; TLSConfigBuilder's
+        // JVM-only `trustManager` is touched solely from the androidMain actual).
+        val cioMain by creating { dependsOn(commonMain) }
+
         commonMain.dependencies {
             api(project(":core"))
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.websockets)
         }
 
-        // Ktor HttpClient engines — one per platform family for WebSocket auto-detection.
-        jvmMain.get().dependencies {
+        cioMain.dependencies {
             implementation(libs.ktor.client.cio)
         }
-        findByName("androidMain")?.dependencies {
-            implementation(libs.ktor.client.cio)
-        }
-        findByName("appleMain")?.dependencies {
-            implementation(libs.ktor.client.cio)
-        }
-        findByName("linuxMain")?.dependencies {
-            implementation(libs.ktor.client.cio)
-        }
+
+        // Ktor HttpClient engines — CIO where available, platform engines elsewhere.
+        jvmMain.get().dependsOn(cioMain)
+        findByName("androidMain")?.dependsOn(cioMain)
+        findByName("appleMain")?.dependsOn(cioMain)
+        findByName("linuxMain")?.dependsOn(cioMain)
+
         findByName("mingwMain")?.dependencies {
             implementation(libs.ktor.client.winhttp)
         }
