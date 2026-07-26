@@ -243,6 +243,10 @@ breaking ordinary `wss://` on Windows to gain a niche capability.
   `testImplementation`-scoped and do not affect the published artifacts or the zero-dependency
   policy for main source sets.
 
+  As-built note: the server engine actually used is `ktor-server-netty`, not `ktor-server-cio` as
+  drafted above — ktor's server-side CIO engine does not support HTTPS/TLS, which this test
+  requires. `ktor-server-netty` is `testImplementation`-scoped only, same as the other two.
+
 Not covered: the Android wrapping order, for the same reason as #103 —
 `X509TrustManagerExtensions` is a framework class, so proving a caller's manager ends up inside
 `HostnameAwareTrustManager` needs an instrumentation test. Out of scope; the single call site is
