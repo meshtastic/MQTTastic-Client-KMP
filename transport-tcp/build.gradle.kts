@@ -44,7 +44,9 @@ kotlin {
         commonMain.dependencies {
             api(project(":core"))
             implementation(libs.ktor.network)
-            implementation(libs.ktor.network.tls)
+            // api, not implementation: TLSConfigBuilder appears in TcpTransportFactory's
+            // public constructor signature, so consumers need it on their compile classpath.
+            api(libs.ktor.network.tls)
         }
     }
 }
