@@ -210,20 +210,12 @@ class WebSocketPrivateCaTest {
                         withTimeout(20_000) { transport.connect(endpoint) }
                     }
                 // The type check alone cannot distinguish "serverName reached certificate
-                // verification" from "serverName was silently discarded and some other TLS
-                // failure occurred" — both throw TLSException. The substring check on the message
-                // is what proves the hook's serverName specifically drove subject-name
-                // verification, so it stays even though message text is comparatively brittle: a
-                // ktor wording change degrades this assertion rather than the type check, which
-                // still passes.
-                // The type check alone cannot distinguish "serverName reached certificate
                 // verification" from "serverName was silently discarded and some unrelated TLS
                 // failure occurred" — both would surface as TLSException here. The substring
                 // check on the message is what proves the hook's serverName specifically drove
                 // subject-name verification, so it stays even though message text is
-                // comparatively brittle: a ktor wording change degrades this assertion (and
-                // this one alone) rather than breaking the test outright, since the type checks
-                // below still hold.
+                // comparatively brittle: a ktor wording change degrades that one assertion
+                // rather than breaking the test outright, since the type check below still holds.
                 assertIs<TLSException>(
                     failure.cause,
                     "expected the TLSException to be caused by a nested certificate-verification " +

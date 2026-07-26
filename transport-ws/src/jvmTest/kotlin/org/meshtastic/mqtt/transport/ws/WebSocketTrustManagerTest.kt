@@ -82,9 +82,16 @@ class WebSocketTrustManagerTest {
     }
 
     @Test
-    fun nullHookIsANoOp() {
+    fun nullHookLeavesExistingTrustStateUntouched() {
+        // Asserts this module's contract — a null hook mutates no trust state — rather than
+        // TLSConfigBuilder's default `trustManager` value, which is ktor's implementation
+        // detail and could change without our behaviour changing. Starting from a known
+        // non-default state also catches a hook path that clears the manager rather than
+        // leaving it alone. On the JVM `configurePlatformTrust` is a no-op, so nothing else
+        // in `applyWsTls` should touch it either.
         val builder = TLSConfigBuilder()
+        builder.trustManager = FakeTrustManager
         builder.applyWsTls("broker.example.com", null)
-        assertSame(null, builder.trustManager)
+        assertSame(FakeTrustManager, builder.trustManager)
     }
 }
