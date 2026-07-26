@@ -84,7 +84,6 @@ public class TcpTransport : MqttTransport {
                 socket =
                     try {
                         if (endpoint.tls) {
-                            val tlsServerName = sniServerName(endpoint.host)
                             // Ktor launches the TLS record-pump (input/output) coroutines on the
                             // context passed here. A bare dispatcher leaves them with no parent Job
                             // and no exception handler, so a write that fails around the handshake —
@@ -99,13 +98,7 @@ public class TcpTransport : MqttTransport {
                                     // benign socket teardown
                                     CoroutineExceptionHandler { _, _ -> }
                             tlsJob = tlsContext[Job]
-                            rawSocket.tls(tlsContext) {
-                                serverName = tlsServerName
-                                // Configure trust with the real host (DNS name or IP literal),
-                                // not the SNI value: tlsServerName is null for IP literals, but
-                                // Android still needs a host for the hostname-aware trust check.
-                                configurePlatformTrust(endpoint.host)
-                            }
+                            rawSocket.tls(tlsContext) { applyMqttTls(endpoint.host) }
                         } else {
                             rawSocket
                         }
