@@ -571,7 +571,7 @@ Document the hook where a consumer hitting the issue #102 problem will actually 
 In `transport-tcp/Module.md`, insert between the existing code fence (ends line 13) and the
 "Available on JVM, Android, …" paragraph (line 15):
 
-```markdown
+````markdown
 ### Trusting a private CA
 
 If the broker's certificate is issued by a private or self-signed CA that is not in the platform
@@ -587,14 +587,14 @@ The lambda is applied after the SNI server name is set and before platform trust
 on Android a trust manager installed here is still wrapped in the hostname-aware delegate rather
 than replacing it. The added trust applies only to this MQTT connection — unlike Android's
 app-wide `network_security_config.xml` trust anchors.
-```
+````
 
 - [ ] **Step 2: Add the README section**
 
 In `README.md`, insert immediately before line 335 (`## Android / KMP Integration`), after the
 "Log levels from most to least verbose…" line that closes the Logging section:
 
-```markdown
+````markdown
 ### Custom TLS trust
 
 By default the TCP transport validates the broker certificate against the platform CA store. To
@@ -611,8 +611,10 @@ client.connect(MqttEndpoint.parse("mqtts://broker.internal:8883"))
 ```
 
 The hook is applied after the SNI server name is resolved and before platform trust is configured.
-On Android that ordering matters: your trust manager is *wrapped* by the hostname-aware trust
-manager rather than replacing it, so certificate hostname verification still happens.
+On Android that ordering means your trust manager is reached through the hostname-aware
+`checkServerTrusted(chain, authType, hostname)` overload rather than being discarded. Note that
+installing your own trust manager replaces the platform's trust decision — see the shipped
+`README.md` section for the full statement of what that does and does not preserve.
 
 This scopes the extra trust to the MQTT connection alone. It replaces the app-wide workaround of
 adding `<certificates src="user"/>` to `network_security_config.xml`, which would affect every
@@ -628,7 +630,7 @@ transportFactory = TcpTransportFactory { trustManager = myPrivateCaTrustManager 
 `TLSConfigBuilder` comes from `io.ktor:ktor-network-tls`, exposed transitively by
 `mqtt-client-transport-tcp` — no extra dependency needed. The WebSocket transport has no equivalent
 hook yet.
-```
+````
 
 - [ ] **Step 3: Verify the docs build**
 

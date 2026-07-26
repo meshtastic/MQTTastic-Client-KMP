@@ -58,6 +58,8 @@ import org.meshtastic.mqtt.packet.VariableByteInt
 public class TcpTransport(
     internal val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
 ) : MqttTransport {
+    public constructor() : this(null)
+
     private var socket: Socket? = null
     private var selectorManager: SelectorManager? = null
     private var readChannel: ByteReadChannel? = null
@@ -279,14 +281,18 @@ internal fun isIpLiteral(host: String): Boolean {
  *
  * @param configureTls optional hook applied to ktor's [TLSConfigBuilder] for every transport
  *   this factory creates. It runs after the SNI server name is set and before platform trust
- *   is configured, so on Android a trust manager installed here is wrapped in the
- *   hostname-aware delegate rather than replacing it — the caller's trust anchors stay subject
- *   to the platform's network-security-config, pinning, and Certificate Transparency policy.
- *   That wrapping is Android-only and is not subject-name matching; see [applyMqttTls].
+ *   is configured, so on Android a trust manager installed here is reached through the
+ *   hostname-aware `checkServerTrusted` overload rather than bypassing it. Note that installing
+ *   a trust manager replaces the platform's trust decision — network-security-config anchors,
+ *   pinning, and Certificate Transparency policy then hold only insofar as that manager enforces
+ *   them. The wrapping is Android-only and is not subject-name matching; see [applyMqttTls] for
+ *   the full picture before relying on it.
  */
 public class TcpTransportFactory(
     private val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
 ) : MqttTransportFactory {
+    public constructor() : this(null)
+
     override fun supports(endpoint: MqttEndpoint): Boolean = endpoint is MqttEndpoint.Tcp
 
     override fun create(endpoint: MqttEndpoint): MqttTransport = TcpTransport(configureTls)

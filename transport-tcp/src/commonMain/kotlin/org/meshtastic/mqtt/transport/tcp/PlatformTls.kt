@@ -48,18 +48,26 @@ internal expect fun TLSConfigBuilder.configurePlatformTrust(host: String)
  * 3. [configurePlatformTrust] — reads whatever trust manager is now on the builder and,
  *    on Android, wraps it in a hostname-aware delegate.
  *
- * Step 2 must precede step 3. Reversing them would let a caller-supplied trust manager
- * *replace* Android's `HostnameAwareTrustManager`, so the caller's trust anchors would no
- * longer be evaluated against the platform's domain-specific `network_security_config.xml`
- * rules, certificate pinning, or Certificate Transparency policy. Running the caller first
- * composes instead: a private-CA trust manager stays subject to those platform checks.
+ * Step 2 must precede step 3. What step 3 provides is the call path: whatever trust manager is
+ * on the builder is reached through Android's hostname-aware
+ * `checkServerTrusted(chain, authType, hostname)` overload, which `NetworkSecurityTrustManager`
+ * requires whenever `network_security_config.xml` holds any domain-specific configuration.
+ * Reversing the two steps would discard that wrapper, leaving ktor's 2-arg call to hit the bare
+ * manager.
  *
- * Note what this ordering does *not* provide. RFC 6125 subject-name matching (verifying the
- * certificate actually names the host being contacted) comes from ktor, which performs it only
- * when `serverName` is non-`null` — so it is absent for IP-literal brokers. Android's 3-arg
- * `checkServerTrusted(chain, authType, hostname)` uses the hostname for config lookup, pinning,
- * and CT policy, not for subject-name matching. On JVM and native targets
- * [configurePlatformTrust] is a no-op, so no platform policy check happens there at all.
+ * Be precise about what this ordering does *not* provide. Installing a trust manager via
+ * [configureTls] *replaces the platform's trust decision*: that manager's anchors are used
+ * instead of the platform's, and `network_security_config.xml` anchors, certificate pinning,
+ * and Certificate Transparency policy are then enforced only insofar as that manager enforces
+ * them itself. Those platform policies apply as they did before only when the caller leaves
+ * `trustManager` unset. Wrapping preserves the hostname-aware *call path*, not the platform's
+ * *policy*.
+ *
+ * RFC 6125 subject-name matching (verifying the certificate actually names the host being
+ * contacted) is separate again: it comes from ktor, which performs it only when `serverName` is
+ * non-`null` — so it is absent for IP-literal brokers. Android's 3-arg overload uses the
+ * hostname for config lookup, pinning, and CT policy, not for subject-name matching. On JVM and
+ * native targets [configurePlatformTrust] is a no-op, so no platform wrapping happens at all.
  *
  * The hook may read or replace `serverName`, but setting it to `null` disables ktor's
  * subject-name verification entirely — the only name matching this transport has on JVM and
