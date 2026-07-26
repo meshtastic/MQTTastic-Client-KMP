@@ -35,6 +35,7 @@ import java.io.File
 import java.security.KeyStore
 import java.security.cert.CertPathBuilderException
 import java.security.cert.CertPathValidatorException
+import java.security.cert.CertificateException
 import java.util.logging.Level
 import java.util.logging.Logger
 import javax.net.ssl.TrustManagerFactory
@@ -44,7 +45,6 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -161,11 +161,17 @@ class WebSocketPrivateCaTest {
                         withTimeout(20_000) { transport.connect(endpoint) }
                     }
                 // Assert the *reason*: certificate trust, not a bad URL or an unstarted server.
-                // The JVM default trust manager reports SunCertPathBuilderException / CertPathValidatorException.
+                // The JVM default trust manager reports SunCertPathBuilderException wrapped in a
+                // ValidatorException; other JDKs and JSSE providers may surface only the
+                // CertificateException layer, so accept any of the three. All of them are still
+                // trust-specific — a connectivity or URL failure arrives as an IOException
+                // subtype and would fail this assertion.
                 val chain = generateSequence<Throwable>(failure) { it.cause }.toList()
                 assertTrue(
-                    chain.any { it is CertPathBuilderException || it is CertPathValidatorException },
-                    "expected a certificate-path failure, got: ${chain.map { it::class.qualifiedName }}",
+                    chain.any {
+                        it is CertPathBuilderException || it is CertPathValidatorException || it is CertificateException
+                    },
+                    "expected a certificate-trust failure, got: ${chain.map { it::class.qualifiedName }}",
                 )
             } finally {
                 transport.close()
@@ -209,21 +215,20 @@ class WebSocketPrivateCaTest {
                     assertFailsWith<TLSException> {
                         withTimeout(20_000) { transport.connect(endpoint) }
                     }
-                // The type check alone cannot distinguish "serverName reached certificate
+                // The TLSException type alone cannot distinguish "serverName reached certificate
                 // verification" from "serverName was silently discarded and some unrelated TLS
-                // failure occurred" — both would surface as TLSException here. The substring
-                // check on the message is what proves the hook's serverName specifically drove
-                // subject-name verification, so it stays even though message text is
-                // comparatively brittle: a ktor wording change degrades that one assertion
-                // rather than breaking the test outright, since the type check below still holds.
-                assertIs<TLSException>(
-                    failure.cause,
-                    "expected the TLSException to be caused by a nested certificate-verification " +
-                        "TLSException, got: ${failure.cause}",
-                )
+                // failure occurred". Finding the hook's serverName in the failure is what proves
+                // it specifically drove subject-name verification, so that check stays even
+                // though message text is comparatively brittle — it is the only available
+                // evidence for the behaviour under test.
+                //
+                // Search the whole cause chain rather than the top-level message, and do not
+                // assert on how the exceptions nest: the nesting is incidental to the contract
+                // and has no reason to be stable across ktor versions.
+                val messages = generateSequence<Throwable>(failure) { it.cause }.mapNotNull { it.message }.toList()
                 assertTrue(
-                    failure.message.orEmpty().contains("not-the-server.example.com"),
-                    "expected subject-name verification against the hook's serverName, got: ${failure.message}",
+                    messages.any { it.contains("not-the-server.example.com") },
+                    "expected subject-name verification against the hook's serverName, got: $messages",
                 )
             } finally {
                 transport.close()
