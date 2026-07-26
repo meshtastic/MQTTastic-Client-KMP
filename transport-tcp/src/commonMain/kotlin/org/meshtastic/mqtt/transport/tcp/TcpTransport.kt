@@ -112,7 +112,9 @@ public class TcpTransport(
                         } else {
                             rawSocket
                         }
-                    } catch (e: Exception) {
+                    } catch (
+                        @Suppress("TooGenericExceptionCaught") e: Exception,
+                    ) {
                         // TLS handshake failed — close the raw socket before re-throwing
                         try {
                             rawSocket.close()
@@ -127,7 +129,9 @@ public class TcpTransport(
                 selectorManager = selector
                 readChannel = socket!!.openReadChannel()
                 writeChannel = socket!!.openWriteChannel(autoFlush = false)
-            } catch (e: Exception) {
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: Exception,
+            ) {
                 // Any failure (TCP connect, TLS handshake, channel setup) — close selector to prevent leaks
                 try {
                     socket?.close()
@@ -180,9 +184,7 @@ public class TcpTransport(
             vbiBytes[vbiLen++] = b
         } while (b.toInt() and 0x80 != 0 && vbiLen < 4)
 
-        if (vbiLen == 4 && vbiBytes[3].toInt() and 0x80 != 0) {
-            throw IllegalArgumentException("Malformed VBI: exceeds 4 bytes")
-        }
+        require(vbiLen < 4 || vbiBytes[3].toInt() and 0x80 == 0) { "Malformed VBI: exceeds 4 bytes" }
 
         val vbiResult = VariableByteInt.decode(vbiBytes, 0)
         val remainingLength = vbiResult.value
@@ -190,10 +192,8 @@ public class TcpTransport(
         // Safety cap: reject packets larger than the VBI maximum to prevent OOM
         // from a malicious/broken broker. Application-level enforcement of
         // config.maximumPacketSize happens in MqttConnection's read loop.
-        if (remainingLength > MAX_PACKET_REMAINING_LENGTH) {
-            throw IllegalArgumentException(
-                "Packet remaining length $remainingLength exceeds safety cap $MAX_PACKET_REMAINING_LENGTH",
-            )
+        require(remainingLength <= MAX_PACKET_REMAINING_LENGTH) {
+            "Packet remaining length $remainingLength exceeds safety cap $MAX_PACKET_REMAINING_LENGTH"
         }
 
         // Step 3: Read exactly remainingLength bytes

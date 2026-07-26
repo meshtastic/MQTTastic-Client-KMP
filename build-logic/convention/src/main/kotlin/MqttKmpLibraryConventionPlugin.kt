@@ -14,11 +14,14 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+import io.gitlab.arturbosch.detekt.Detekt
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.getByType
+import org.gradle.kotlin.dsl.register
+import org.gradle.kotlin.dsl.withType
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
 /**
@@ -71,5 +74,29 @@ class MqttKmpLibraryConventionPlugin : Plugin<Project> {
                     implementation(libs.findLibrary("kotlinx-coroutines-test").get())
                 }
             }
+
+            wireDetektIntoCheck()
         }
+
+    /**
+     * The detekt plugin's bare `detekt` task only knows the JVM-style `src/main/kotlin` layout, so
+     * in a KMP module it is always NO-SOURCE. The real analysis lives in the per-source-set tasks
+     * the plugin registers instead (`detektMetadataCommonMain`, `detektJvmMain`, `detektJvmTest`,
+     * `detektLinuxX64Main`, …), and none of them is wired into `check` by default.
+     *
+     * Aggregate them into a single `detektAll` task and make `check` depend on it, so both CI and
+     * the documented local gate actually perform static analysis.
+     */
+    private fun Project.wireDetektIntoCheck() {
+        pluginManager.withPlugin("io.gitlab.arturbosch.detekt") {
+            val detektAll =
+                tasks.register("detektAll") {
+                    group = "verification"
+                    description = "Runs detekt over every Kotlin source set in this module."
+                    // The bare `detekt` task is excluded: it is NO-SOURCE for KMP layouts.
+                    dependsOn(tasks.withType<Detekt>().matching { it.name != "detekt" })
+                }
+            tasks.named("check") { dependsOn(detektAll) }
+        }
+    }
 }

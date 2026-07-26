@@ -43,8 +43,8 @@ internal fun decodePacket(
     val type = PacketType.fromValue(typeValue)
 
     // MQTT 3.1.1 does not have AUTH packets
-    if (!version.supportsProperties && type == PacketType.AUTH) {
-        throw IllegalArgumentException("AUTH packets are not valid in MQTT 3.1.1")
+    require(version.supportsProperties || type != PacketType.AUTH) {
+        "AUTH packets are not valid in MQTT 3.1.1"
     }
 
     // Validate flags (PUBLISH has variable flags)

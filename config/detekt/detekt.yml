@@ -5,14 +5,40 @@ complexity:
   active: true
   LongMethod:
     threshold: 60
+    # The codec is a set of spec-driven `when` tables: one branch per packet type,
+    # reason code, or property ID (ADR-0003). Splitting them hurts byte-level
+    # reviewability against the OASIS spec rather than helping it. Long test
+    # functions are end-to-end broker/protocol flows that read best in one piece.
+    excludes: ['**/packet/**', '**/*Test.kt']
+  CyclomaticComplexMethod:
+    excludes: ['**/packet/**', '**/*Test.kt']
+  TooManyFunctions:
+    # One encode/decode function per packet type; grouping them per file is the point.
+    excludes: ['**/packet/**', '**/*Test.kt']
   LongParameterList:
     functionThreshold: 10
     constructorThreshold: 10
 
 style:
   active: true
+  # Protocol validation is a sequence of guard clauses — one `throw` per malformed-packet
+  # or illegal-state case — so the default limit of 2 fights the spec, not the code.
+  ThrowsCount:
+    max: 6
+    excludeGuardClauses: true
+  # Guard-clause-heavy decoding: one early return per short-circuit case.
+  ReturnCount:
+    max: 5
+    excludeGuardClauses: true
   MaxLineLength:
-    maxLineLength: 120
+    # Matches the ktlint_official limit applied via Spotless.
+    maxLineLength: 140
     excludeCommentStatements: true
   WildcardImport:
+    active: false
+  # This library is a wire-protocol codec: nearly every literal is a byte value, bit
+  # mask, property ID, or reason code fixed by the MQTT specification, and the
+  # surrounding code cites the spec section. The rule fires 400+ times on such
+  # literals, where naming each one adds indirection without adding meaning.
+  MagicNumber:
     active: false

@@ -33,8 +33,8 @@ jobs:
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Run spotlessCheck and detekt
-        run: ./gradlew spotlessCheck detekt --stacktrace
+      - name: Run spotlessCheck and detektAll
+        run: ./gradlew spotlessCheck detektAll --stacktrace
 
   test-jvm:
     name: Test JVM

@@ -25,7 +25,7 @@ See the **Build & Test Commands** section in [AGENTS.md](AGENTS.md) for the full
 **Before submitting a PR, ensure all checks pass:**
 
 ```bash
-./gradlew spotlessApply detekt allTests apiCheck koverVerify
+./gradlew spotlessApply detektAll allTests apiCheck koverVerify
 ```
 
 ## Code Style

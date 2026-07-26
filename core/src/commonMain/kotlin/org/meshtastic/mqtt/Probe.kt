@@ -103,9 +103,14 @@ private fun buildProbeConfig(configure: MqttConfig.Builder.() -> Unit): MqttConf
         }.build()
 
 /**
- * Test-injectable variant that takes a pre-built transport. Public-internal so
+ * Test-injectable variant that takes a pre-built transport. `internal` rather than private so
  * `commonTest` can drive each [ProbeResult] arm via [FakeTransport].
+ *
+ * `SwallowedException` is suppressed deliberately: a timeout is a normal probe outcome, not an
+ * error, and is translated into [ProbeResult.Timeout], which carries the timeout budget instead
+ * of the exception.
  */
+@Suppress("SwallowedException")
 internal suspend fun runProbe(
     config: MqttConfig,
     transport: MqttTransport,

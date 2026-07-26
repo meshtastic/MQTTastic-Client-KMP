@@ -90,11 +90,15 @@ public data class AuthChallenge(
  *
  * Not part of the public API — consumers use [MqttClient] instead.
  *
+ * `LargeClass` is suppressed deliberately: lifecycle, keepalive, read loop and the QoS 0/1/2
+ * flows share the same in-flight maps, mutexes and packet-ID counter, so splitting the class
+ * would spread that state across types without reducing it.
+ *
  * @param transport The byte-level transport to use for sending/receiving packets.
  * @param config Client configuration mapping to CONNECT packet fields (§3.1).
  * @param scope Coroutine scope for background jobs (read loop, keepalive).
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 internal class MqttConnection(
     private val transport: MqttTransport,
     private val config: MqttConfig,
@@ -186,10 +190,18 @@ internal class MqttConnection(
      * Performs the CONNECT/CONNACK handshake per §3.1/§3.2, then starts the background
      * read loop and keepalive timer.
      *
+     * The complexity suppressions are deliberate: §3.2 CONNACK carries a dozen independent server
+     * capabilities (session present, receive maximum, topic-alias maximum, maximum QoS, keepalive
+     * override, assigned client ID, …), each applied to connection state before the read loop
+     * starts, so the branching is one `if` per property in spec order. Likewise each `throw` is a
+     * distinct rejection path (unsupported version, bad reason code, malformed CONNACK property,
+     * transport failure) carrying its own reason code.
+     *
      * @param endpoint Broker endpoint (TCP or WebSocket).
      * @return The CONNACK packet from the broker.
      * @throws MqttConnectionException if the broker rejects the connection.
      */
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "NestedBlockDepth", "ThrowsCount")
     suspend fun connect(endpoint: MqttEndpoint): ConnAck {
         _connectionState.value = ConnectionState.Connecting
 
@@ -509,10 +521,15 @@ internal class MqttConnection(
     /**
      * Subscribe to one or more topic filters per §3.8.
      *
+     * `LongMethod` is suppressed deliberately: building SUBSCRIBE, awaiting the correlated SUBACK,
+     * and mapping its per-filter reason codes (§3.9) back onto the requested subscriptions is one
+     * round trip that has to stay together.
+     *
      * @param subscriptions List of topic subscriptions with QoS and options.
      * @param properties Optional MQTT 5.0 properties for the SUBSCRIBE packet.
      * @return The SUBACK packet from the broker.
      */
+    @Suppress("LongMethod")
     suspend fun subscribe(
         subscriptions: List<Subscription>,
         properties: MqttProperties = MqttProperties.EMPTY,
@@ -931,8 +948,13 @@ internal class MqttConnection(
         }
     }
 
-    /** Dispatch an incoming packet to the appropriate handler. */
-    @Suppress("CyclomaticComplexMethod")
+    /**
+     * Dispatch an incoming packet to the appropriate handler.
+     *
+     * One `when` branch per inbound packet type (§3): the dispatch table itself is the length and
+     * the complexity, hence the suppressions.
+     */
+    @Suppress("CyclomaticComplexMethod", "LongMethod")
     private suspend fun handlePacket(packet: MqttPacket) {
         when (packet) {
             is PubAck -> {

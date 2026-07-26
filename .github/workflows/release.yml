@@ -75,7 +75,7 @@ jobs:
           cache_read_only: 'false'
 
       - name: Validate before publish
-        run: ./gradlew spotlessCheck detekt jvmTest apiCheck --stacktrace
+        run: ./gradlew spotlessCheck detektAll jvmTest apiCheck --stacktrace
 
       - name: Stage signed artifacts locally
         run: ./gradlew publishToMavenLocal --stacktrace

@@ -12,7 +12,7 @@
 
 <!-- How was this tested? Which targets? -->
 
-- [ ] `./gradlew spotlessCheck detekt allTests build` passes
+- [ ] `./gradlew spotlessCheck detektAll allTests build` passes
 - [ ] New/updated tests cover the changes
 
 ## Related Issues
