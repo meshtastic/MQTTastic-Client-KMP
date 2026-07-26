@@ -81,6 +81,16 @@ kotlin {
         wasmJsMain.dependencies {
             implementation(libs.ktor.client.js)
         }
+
+        jvmTest.get().dependencies {
+            // Test-only: a local wss:// server with a generated self-signed certificate, so the
+            // private-CA path is proven rather than asserted. Not part of the published artifact.
+            // Netty, not CIO: ktor's server-side CIO engine rejects HTTPS connectors outright
+            // ("CIO Engine does not currently support HTTPS").
+            implementation(libs.ktor.server.netty)
+            implementation(libs.ktor.server.websockets)
+            implementation(libs.ktor.network.tls.certificates)
+        }
     }
 }
 
