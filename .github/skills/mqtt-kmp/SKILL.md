@@ -25,7 +25,7 @@ description: 'MQTTastic Client KMP — Kotlin Multiplatform MQTT 5.0 client libr
 - Packet codecs must match OASIS MQTT 5.0 byte-level spec exactly
 - All new features need encode/decode round-trip tests
 - Code coverage ≥80% enforced via koverVerify
-- `spotlessCheck` + `detekt` + `apiCheck` must pass
+- `spotlessCheck` + `detektAll` + `apiCheck` must pass
 
 ## File Locations
 | What | Where |
@@ -43,7 +43,7 @@ description: 'MQTTastic Client KMP — Kotlin Multiplatform MQTT 5.0 client libr
 ./gradlew allTests                 # all KMP tests
 ./gradlew jvmTest                  # JVM tests only
 ./gradlew spotlessApply            # auto-fix formatting
-./gradlew detekt                   # static analysis
+./gradlew detektAll                   # static analysis
 ./gradlew apiCheck                 # public API compatibility
 ./gradlew koverVerify              # coverage check (≥80%)
 ```

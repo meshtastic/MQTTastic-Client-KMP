@@ -84,7 +84,7 @@ All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2
 # Formatting & linting:
 ./gradlew spotlessCheck            # check formatting
 ./gradlew spotlessApply            # auto-fix formatting
-./gradlew detekt                   # static analysis
+./gradlew detektAll                # static analysis (all Kotlin source sets)
 
 # Binary compatibility & coverage:
 ./gradlew apiCheck                 # verify public API hasn't changed
@@ -96,11 +96,13 @@ All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2
 ./gradlew dokkaGeneratePublicationHtml  # generate API docs to library/build/dokka/html/
 
 # Full baseline verification:
-./gradlew spotlessCheck detekt allTests apiCheck koverVerify
+./gradlew spotlessCheck detektAll allTests apiCheck koverVerify
 
 # Publish locally:
 ./gradlew publishToMavenLocal
 ```
+
+> **`detektAll` vs `detekt`:** Always use `detektAll`. The detekt plugin's bare `detekt` task only knows the JVM-style `src/main/kotlin` layout, so in every module here it is `NO-SOURCE` and analyses nothing. `detektAll` (registered by the `mqtt.kmp.library` convention plugin) aggregates the per-source-set tasks — `detektMetadataCommonMain`, `detektJvmMain`, `detektJvmTest`, `detektAndroidMain`, `detektWasmJsMain`, `detektLinuxX64Main`, … — and is wired into `check`, so `build` covers it too.
 
 > **`allTests` vs `test`:** Always use `allTests` — it is the KMP lifecycle task that correctly covers all source sets. The bare `test` task is ambiguous in KMP projects and Gradle may silently skip targets.
 
@@ -110,7 +112,7 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 - **No Framework Bleed:** NEVER import `java.*`, `android.*`, or any platform API in `commonMain`. Use KMP equivalents: `kotlinx.coroutines.sync.Mutex` for locks, `kotlinx.io` or Ktor's `ByteReadChannel`/`ByteWriteChannel` for I/O.
 - **No Lazy Coding:** DO NOT use placeholders like `// ... existing code ...`. Always provide complete, valid code blocks for the sections you modify.
 - **Dependency Discipline:** Zero dependencies beyond Ktor + kotlinx-coroutines + kotlinx-io-bytestring (already a transitive Ktor dependency). Check `gradle/libs.versions.toml` before adding anything. Prefer removing dependencies over adding them.
-- **Zero Lint Tolerance:** A task is incomplete if `detekt` fails or `spotlessCheck` does not pass.
+- **Zero Lint Tolerance:** A task is incomplete if `detektAll` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
 - **Test Coverage:** Every new packet type, property, or protocol feature must have encode/decode round-trip tests with known byte sequences from the spec. QoS 2 flow tests must cover the full state machine including retransmission and session resumption.
 - **Internal by Default:** In `:core`, the public surface is `MqttClient`, `MqttConfig`, `MqttMessage`, `PublishProperties`, `MqttEndpoint`, `QoS`, `ConnectionState`, `ReasonCode`, `WillConfig`, `MqttLogger`, `MqttLogLevel`, `RetainHandling`, `AuthChallenge`, `MqttProtocolVersion`, the transport SPI (`MqttTransport`, `MqttTransportFactory` + its `plus` operator), the VBI framing helper (`VariableByteInt`, `VbiResult`), the convenience extensions (`messagesForTopic`, `messagesMatching`, `use`), and the `MqttClient(clientId) {}` factory. Everything else — including `MqttProperties` and the entire `MqttPacket` hierarchy — is `internal`. Transport modules add `TcpTransport`/`TcpTransportFactory` and `WebSocketTransport`/`WebSocketTransportFactory`. Enforced by the Konsist allowlist (ADR-0008) and `apiCheck`.

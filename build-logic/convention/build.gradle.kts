@@ -24,6 +24,7 @@ dependencies {
     compileOnly(libs.kotlin.gradle.plugin)
     implementation(libs.dokka.gradle.plugin)
     implementation(libs.vanniktech.publish.gradle.plugin)
+    implementation(libs.detekt.gradle.plugin)
 }
 
 gradlePlugin {
