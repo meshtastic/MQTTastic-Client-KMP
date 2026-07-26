@@ -52,7 +52,7 @@ class WebSocketTrustManagerTest {
     @Test
     fun hookInstalledTrustManagerSurvivesApplyWsTls() {
         val builder = TLSConfigBuilder()
-        builder.applyWsTls("broker.example.com") { trustManager = FakeTrustManager }
+        builder.applyWsTls("broker.example.com", configureTls = { trustManager = FakeTrustManager })
         assertSame(FakeTrustManager, builder.trustManager)
     }
 

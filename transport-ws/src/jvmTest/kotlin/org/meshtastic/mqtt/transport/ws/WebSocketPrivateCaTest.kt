@@ -44,6 +44,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -123,9 +124,17 @@ class WebSocketPrivateCaTest {
 
     @AfterTest
     fun stopServer() {
-        server?.stop(gracePeriodMillis = 0, timeoutMillis = 1_000)
-        keyStoreFile?.delete()
-        nettyLogger.level = previousNettyLevel
+        // Each cleanup step must run even if an earlier one throws — mirrors the nested
+        // try/finally pattern in TcpTransport.close().
+        try {
+            server?.stop(gracePeriodMillis = 0, timeoutMillis = 1_000)
+        } finally {
+            try {
+                keyStoreFile?.delete()
+            } finally {
+                nettyLogger.level = previousNettyLevel
+            }
+        }
     }
 
     private val endpoint get() = MqttEndpoint.WebSocket("wss://localhost:$port/mqtt")
@@ -200,6 +209,26 @@ class WebSocketPrivateCaTest {
                     assertFailsWith<TLSException> {
                         withTimeout(20_000) { transport.connect(endpoint) }
                     }
+                // The type check alone cannot distinguish "serverName reached certificate
+                // verification" from "serverName was silently discarded and some other TLS
+                // failure occurred" — both throw TLSException. The substring check on the message
+                // is what proves the hook's serverName specifically drove subject-name
+                // verification, so it stays even though message text is comparatively brittle: a
+                // ktor wording change degrades this assertion rather than the type check, which
+                // still passes.
+                // The type check alone cannot distinguish "serverName reached certificate
+                // verification" from "serverName was silently discarded and some unrelated TLS
+                // failure occurred" — both would surface as TLSException here. The substring
+                // check on the message is what proves the hook's serverName specifically drove
+                // subject-name verification, so it stays even though message text is
+                // comparatively brittle: a ktor wording change degrades this assertion (and
+                // this one alone) rather than breaking the test outright, since the type checks
+                // below still hold.
+                assertIs<TLSException>(
+                    failure.cause,
+                    "expected the TLSException to be caused by a nested certificate-verification " +
+                        "TLSException, got: ${failure.cause}",
+                )
                 assertTrue(
                     failure.message.orEmpty().contains("not-the-server.example.com"),
                     "expected subject-name verification against the hook's serverName, got: ${failure.message}",

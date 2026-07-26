@@ -51,7 +51,7 @@ class TcpTransportTrustManagerTest {
     @Test
     fun hookInstalledTrustManagerSurvivesApplyMqttTls() {
         val builder = TLSConfigBuilder()
-        builder.applyMqttTls("broker.example.com") { trustManager = FakeTrustManager }
+        builder.applyMqttTls("broker.example.com", configureTls = { trustManager = FakeTrustManager })
         assertSame(FakeTrustManager, builder.trustManager)
     }
 
@@ -61,7 +61,7 @@ class TcpTransportTrustManagerTest {
         // earlier SNI/trust coupling bug (Meshtastic-Android #5894) was exactly this
         // class of mistake.
         val builder = TLSConfigBuilder()
-        builder.applyMqttTls("192.168.1.50") { trustManager = FakeTrustManager }
+        builder.applyMqttTls("192.168.1.50", configureTls = { trustManager = FakeTrustManager })
         assertSame(FakeTrustManager, builder.trustManager)
     }
 
@@ -72,10 +72,13 @@ class TcpTransportTrustManagerTest {
         // configurePlatformTrust is a no-op, so that ordering is not observable here.
         var ranWithBuilder = false
         val builder = TLSConfigBuilder()
-        builder.applyMqttTls("broker.example.com") {
-            ranWithBuilder = true
-            trustManager = FakeTrustManager
-        }
+        builder.applyMqttTls(
+            "broker.example.com",
+            configureTls = {
+                ranWithBuilder = true
+                trustManager = FakeTrustManager
+            },
+        )
         assertNotNull(builder.trustManager)
         assertSame(FakeTrustManager, builder.trustManager)
         kotlin.test.assertTrue(ranWithBuilder)
