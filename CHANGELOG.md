@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-26
+
 ### Added
 
 - `WebSocketTransportFactory` now accepts an optional TLS customisation lambda, the WebSocket
@@ -28,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ktor engine (e.g. `ktor-client-okhttp`, common on Android) may previously have had its WebSocket
   MQTT connection served by that engine instead of CIO, with different proxy, DNS, and socket
   defaults. Such an app will now always get CIO for this transport.
+- The detekt gate is now real (#110). The bare `detekt` task that CI and the documented local gate
+  invoked is `NO-SOURCE` in every module — the plugin only recognises the JVM-style
+  `src/main/kotlin` layout, and the per-source-set tasks it registers were never wired into
+  `check` — so no static analysis had been running. A `detektAll` aggregator is now registered per
+  module and wired into `check`, and the findings it surfaced are cleared. Those fixes are
+  suppressions with written justifications plus one equivalent rewrite
+  (`throw IllegalStateException(…)` → `error(…)`); no behaviour changed and no public API moved.
 
 ## [0.6.1] - 2026-07-26
 
