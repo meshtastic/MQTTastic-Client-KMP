@@ -335,8 +335,10 @@ Log levels from most to least verbose: `TRACE` → `DEBUG` → `INFO` → `WARN`
 ### Custom TLS trust
 
 By default both transports validate the broker certificate against the platform CA store. To
-reach a broker behind a private or self-signed CA, pass a TLS customisation lambda to
-`TcpTransportFactory`. It runs against ktor's `TLSConfigBuilder`:
+reach a broker behind a private or self-signed CA, pass a TLS customisation lambda to the
+transport factory you use — `TcpTransportFactory`, `WebSocketTransportFactory`, or both, since a
+factory without the lambda keeps validating against the platform store alone. It runs against
+ktor's `TLSConfigBuilder`:
 
 ```kotlin
 import org.meshtastic.mqtt.transport.tcp.TcpTransportFactory

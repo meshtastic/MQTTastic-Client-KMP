@@ -48,8 +48,9 @@ kotlin {
     sourceSets {
         val commonMain by getting
         // Intermediate source set for the four targets that use the CIO engine. It holds the
-        // single CIO client builder and, from Task 3, the TLS trust plumbing — written once
-        // instead of four times. Deliberately spans JVM-family and native targets, so it may
+        // single CIO client builder and the TLS trust plumbing (applyWsTls and the
+        // configurePlatformTrust expect/actuals) — written once instead of four times per
+        // target. Deliberately spans JVM-family and native targets, so it may
         // only use API present in both (CIO and TLSConfigBuilder both are; TLSConfigBuilder's
         // JVM-only `trustManager` is touched solely from the androidMain actual).
         val cioMain by creating { dependsOn(commonMain) }
