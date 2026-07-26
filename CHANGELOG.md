@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-26
+
+**The published library artifacts are unchanged from 0.6.0.** `mqtt-client-core`,
+`mqtt-client-transport-tcp`, `mqtt-client-transport-ws`, and `mqtt-client-bom` are
+byte-identical; there is no reason to upgrade a consuming project from 0.6.0. This
+release exists solely to produce the sample application artifacts that 0.6.0's release
+run failed to build.
+
+### Fixed
+
+- The `:sample` module's `wasmJs` browser target had gone missing from
+  `sample/build.gradle.kts`, orphaning the fully-populated `sample/src/wasmJsMain/`
+  source set. Because the release workflow's Linux leg passes all of its sample tasks
+  to a single Gradle invocation, the unresolvable `:sample:wasmJsBrowserDistribution`
+  task aborted that invocation at task-selection time — so the 0.6.0 release shipped
+  **no Android `.apk`, no Linux `.deb`, and no wasm browser bundle** (the macOS `.dmg`
+  and Windows `.msi` legs were unaffected). The target is restored and all three
+  artifacts build again (#105).
+
+  Restoring it required moving `:transport-tcp` off the sample's `commonMain`: raw TCP
+  cannot run in a browser, so that module deliberately omits the `wasmJs` target. The
+  sample now selects its transports through a `platformTransportFactory()`
+  `expect`/`actual` seam — TCP + WebSocket on Android, desktop, and iOS; WebSocket only
+  in the browser. Sample-only; no library module changed.
+
 ## [0.6.0] - 2026-07-26
 
 ### Added
