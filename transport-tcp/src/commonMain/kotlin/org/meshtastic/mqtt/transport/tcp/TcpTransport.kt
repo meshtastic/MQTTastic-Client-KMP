@@ -276,7 +276,8 @@ internal fun isIpLiteral(host: String): Boolean {
  * Android's app-wide `network_security_config.xml` trust anchors:
  *
  * ```kotlin
- * transportFactory = TcpTransportFactory { trustManager = myTrustManager } + WebSocketTransportFactory()
+ * transportFactory = TcpTransportFactory { trustManager = myTrustManager } +
+ *     WebSocketTransportFactory { trustManager = myTrustManager }
  * ```
  *
  * @param configureTls optional hook applied to ktor's [TLSConfigBuilder] for every transport

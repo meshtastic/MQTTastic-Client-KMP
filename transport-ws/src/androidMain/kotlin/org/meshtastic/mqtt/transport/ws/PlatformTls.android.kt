@@ -36,7 +36,9 @@ import javax.net.ssl.X509TrustManager
  * overload throws whenever the config has *any* domain-specific entry, independent of
  * the target host, so an IP-only broker (a common private-broker setup) hits the same
  * failure. The [host] — an IP literal or DNS name — is a valid argument for the 3-arg
- * overload even though an IP must never be sent as the TLS SNI server name.
+ * overload even though an IP must never be sent as the TLS SNI server name in
+ * `:transport-tcp`; unlike that module, this one's CIO client does send the IP literal
+ * as SNI (see `WsHttpClient.cio.kt`), which does not affect this function's own behaviour.
  *
  * **Constraint on caller-supplied trust managers.** Whatever [X509TrustManager] is on the
  * builder must be one Android can wrap for hostname-aware checking. In practice that means it

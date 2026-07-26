@@ -59,9 +59,18 @@ unconditionally. On Windows in particular, a private CA must be installed in the
 certificate store instead.
 
 This hook does not set the SNI server name itself: the CIO client derives SNI from the request URL,
-which is also what gates ktor's RFC 6125 subject-name check. A `serverName` assigned inside the hook
-does take precedence, though — it becomes the name the certificate is verified against, so it must
-be present in the certificate's subject names.
+which is also what gates ktor's RFC 6125 subject-name check. If the hook assigns `serverName`
+itself, that value wins over CIO's per-request SNI for every connection this factory makes — it
+becomes the name the certificate is checked against instead of the host actually being contacted, so
+the certificate is no longer bound to the host you're connecting to. Only do this if the value is
+guaranteed to be present in the certificate's subject names.
+
+Unlike `mqtt-client-transport-tcp`, this transport never suppresses SNI for IP-literal hosts: CIO
+sets `serverName` from the request host unconditionally, IP literals included. One trust manager
+serves both transports, but `ssl://192.168.1.50` and `wss://192.168.1.50/mqtt` do not present
+identical SNI/name-verification behaviour — the TCP transport omits SNI for that address, the
+WebSocket transport sends it. IP-only private brokers are a common target for this feature, so this
+is worth knowing before you rely on parity between the two.
 
 Available on every target, including the browser (wasmJs) — where it is the only supported
 transport.

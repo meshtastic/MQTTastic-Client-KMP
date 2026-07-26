@@ -20,8 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `:transport-ws` now selects its Ktor engine explicitly per platform (CIO on JVM/Android/Apple/
-  Linux, WinHttp on Windows, Js on wasmJs) instead of relying on auto-detection. The engines are
-  the same ones auto-detection resolved, so behaviour is unchanged.
+  Linux, WinHttp on Windows, Js on wasmJs) instead of relying on auto-detection. These are the
+  engines the library itself ships for each target; auto-detection resolves via `ServiceLoader`
+  over the *consuming app's* classpath, not the library's, so an app that also pulls in another
+  Ktor engine (e.g. `ktor-client-okhttp`, common on Android) may previously have had its WebSocket
+  MQTT connection served by that engine instead of CIO, with different proxy, DNS, and socket
+  defaults. Such an app will now always get CIO for this transport.
 
 ## [0.6.1] - 2026-07-26
 

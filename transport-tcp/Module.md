@@ -49,3 +49,9 @@ Android actuals of `TLSConfigBuilder`; on Apple, Linux, and Windows the lambda s
 
 Available on JVM, Android, iOS, macOS, Linux, and Windows. Not available on the browser (wasmJs) —
 use `mqtt-client-transport-ws` there.
+
+`mqtt-client-transport-ws`'s `WebSocketTransportFactory` accepts the identical hook against the same
+`TLSConfigBuilder` type. If your app dials both `ssl://` and `wss://` endpoints — or a broker whose
+scheme isn't known ahead of time — configure the hook on **both** factories; a trust manager
+installed on only one leaves the other transport validating against the platform trust store alone.
+See `mqtt-client-transport-ws`'s Module.md for its per-target support table.

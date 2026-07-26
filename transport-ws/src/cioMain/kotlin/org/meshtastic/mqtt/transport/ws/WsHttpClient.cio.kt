@@ -27,9 +27,11 @@ import io.ktor.network.tls.TLSConfigBuilder
  * The caller's hook is applied to CIO's `https` [TLSConfigBuilder], which is the same builder
  * type `:transport-tcp` configures. `serverName` is deliberately not set here: the CIO *client*
  * derives SNI from the request URL when it opens the connection, whereas this block runs once at
- * client construction. A `serverName` a caller does assign inside the hook is *not* overwritten by
- * CIO's per-request SNI — it wins, and ktor verifies the certificate's subject names against it, so
- * the value must be present among the broker certificate's subject names (verified by
+ * client construction. If the hook assigns `serverName` itself, that value is *not* overwritten by
+ * CIO's per-request SNI — it wins, for every connection this factory makes, and ktor verifies the
+ * certificate's subject names against it instead of the host actually being contacted. Assigning
+ * the wrong name there silently rebinds trust to that name, so do not set it unless the value is
+ * guaranteed to be present among the broker certificate's subject names (verified by
  * `WebSocketPrivateCaTest.serverNameSetInsideTheHookWinsOverCioRequestSni`).
  */
 internal actual fun buildWsHttpClient(
