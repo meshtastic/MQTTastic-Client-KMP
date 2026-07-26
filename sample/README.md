@@ -81,7 +81,8 @@ sample/
 └── src/
     ├── commonMain/kotlin/.../sample/
     │   ├── App.kt                    # Shared Compose UI
-    │   └── MqttSampleViewModel.kt    # State management
+    │   ├── MqttSampleViewModel.kt    # State management
+    │   └── PlatformTransport.kt      # expect: which transports this platform has
     ├── androidMain/
     │   ├── kotlin/.../MainActivity.kt
     │   ├── AndroidManifest.xml

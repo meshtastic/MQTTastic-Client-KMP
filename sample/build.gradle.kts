@@ -28,6 +28,14 @@ kotlin {
         }
     }
 
+    // Browser demo. `binaries.executable()` is what creates the
+    // `wasmJsBrowserDistribution` task the release workflow zips up.
+    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+        binaries.executable()
+    }
+
     sourceSets {
         commonMain.dependencies {
             implementation(compose.runtime)
@@ -44,21 +52,30 @@ kotlin {
             implementation(libs.lifecycle.viewmodel.compose)
             implementation(libs.lifecycle.runtime.compose)
             implementation(project(":core"))
-            // The sample parses arbitrary broker URIs (tcp:// or ws://), so it pulls in both
-            // transports and combines their factories. A real consumer would depend on only the
-            // transport(s) it actually uses.
-            implementation(project(":transport-tcp"))
+            // `:transport-ws` is the only transport that builds for the browser, so it is the
+            // one every target shares. `:transport-tcp` has no wasmJs variant (raw TCP sockets
+            // are unavailable in a browser) and is therefore added per non-web target below.
+            // `platformTransportFactory()` combines whatever is available on each platform.
             implementation(project(":transport-ws"))
             implementation(libs.meshtastic.protobufs)
             implementation(libs.kotlinx.io.bytestring)
         }
 
+        androidMain.dependencies {
+            implementation(project(":transport-tcp"))
+        }
+
         val desktopMain by getting
         desktopMain.dependencies {
+            implementation(project(":transport-tcp"))
             implementation(compose.desktop.currentOs)
             implementation(libs.kotlinx.coroutines.core)
             // Provides Dispatchers.Main on JVM desktop (Swing/AWT EDT).
             implementation(libs.kotlinx.coroutines.swing)
+        }
+
+        iosMain.dependencies {
+            implementation(project(":transport-tcp"))
         }
 
         commonTest.dependencies {
