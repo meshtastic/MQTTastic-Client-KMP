@@ -58,6 +58,11 @@ kotlin {
             api(project(":core"))
             implementation(libs.ktor.client.core)
             implementation(libs.ktor.client.websockets)
+            // api, not implementation: TLSConfigBuilder appears in WebSocketTransportFactory's
+            // public constructor signature, so consumers need it on their compile classpath.
+            // ktor-network-tls publishes a klib for every target this module builds, wasmJs
+            // included — `trustManager` is a JVM/Android-only property of that builder.
+            api(libs.ktor.network.tls)
         }
 
         cioMain.dependencies {

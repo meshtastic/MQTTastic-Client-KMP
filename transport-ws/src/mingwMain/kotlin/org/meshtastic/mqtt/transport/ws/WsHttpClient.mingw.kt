@@ -19,9 +19,21 @@ package org.meshtastic.mqtt.transport.ws
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.winhttp.WinHttp
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.network.tls.TLSConfigBuilder
 
-/** WinHttp engine — Windows. Trust is handled by the platform certificate store. */
-internal actual fun buildWsHttpClient(maxFrameSize: Long): HttpClient =
+/**
+ * WinHttp engine — Windows. Trust is handled by the platform certificate store.
+ *
+ * [configureTls] is ignored: `WinHttpClientEngineConfig` exposes no TLS-configuration surface.
+ * Documented in `Module.md`. Switching Windows to CIO would make the hook work, but CIO's
+ * native TLS has no Windows trust-store integration, so it would risk breaking ordinary `wss://`.
+ */
+@Suppress("UNUSED_PARAMETER")
+internal actual fun buildWsHttpClient(
+    host: String,
+    maxFrameSize: Long,
+    configureTls: (TLSConfigBuilder.() -> Unit)?,
+): HttpClient =
     HttpClient(WinHttp) {
         install(WebSockets) {
             this.maxFrameSize = maxFrameSize

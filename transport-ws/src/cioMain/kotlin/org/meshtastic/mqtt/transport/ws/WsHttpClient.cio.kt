@@ -19,11 +19,28 @@ package org.meshtastic.mqtt.transport.ws
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.network.tls.TLSConfigBuilder
 
-/** CIO engine — JVM, Android, Apple, and Linux. */
-internal actual fun buildWsHttpClient(maxFrameSize: Long): HttpClient =
+/**
+ * CIO engine — JVM, Android, Apple, and Linux.
+ *
+ * The caller's hook is applied to CIO's `https` [TLSConfigBuilder], which is the same builder
+ * type `:transport-tcp` configures. `serverName` is deliberately not set here: the CIO *client*
+ * derives SNI from the request URL when it opens the connection, whereas this block runs once at
+ * client construction.
+ */
+internal actual fun buildWsHttpClient(
+    host: String,
+    maxFrameSize: Long,
+    configureTls: (TLSConfigBuilder.() -> Unit)?,
+): HttpClient =
     HttpClient(CIO) {
         install(WebSockets) {
             this.maxFrameSize = maxFrameSize
+        }
+        engine {
+            https {
+                configureTls?.invoke(this)
+            }
         }
     }

@@ -19,9 +19,20 @@ package org.meshtastic.mqtt.transport.ws
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
 import io.ktor.client.plugins.websocket.WebSockets
+import io.ktor.network.tls.TLSConfigBuilder
 
-/** Js engine — browser (wasmJs). Trust is entirely the browser's; nothing is configurable. */
-internal actual fun buildWsHttpClient(maxFrameSize: Long): HttpClient =
+/**
+ * Js engine — browser (wasmJs).
+ *
+ * [configureTls] is ignored: a browser page cannot influence TLS trust in any way. Documented
+ * in `Module.md`.
+ */
+@Suppress("UNUSED_PARAMETER")
+internal actual fun buildWsHttpClient(
+    host: String,
+    maxFrameSize: Long,
+    configureTls: (TLSConfigBuilder.() -> Unit)?,
+): HttpClient =
     HttpClient(Js) {
         install(WebSockets) {
             this.maxFrameSize = maxFrameSize

@@ -17,6 +17,7 @@
 package org.meshtastic.mqtt.transport.ws
 
 import io.ktor.client.HttpClient
+import io.ktor.network.tls.TLSConfigBuilder
 
 /**
  * Builds the [HttpClient] used for the WebSocket connection, with the WebSockets plugin
@@ -25,6 +26,17 @@ import io.ktor.client.HttpClient
  * Engine auto-detection cannot be used here: configuring engine-level TLS requires naming
  * the engine, and a star-projected `HttpClientConfig<*>` cannot reach `engine { }` at all.
  *
+ * [configureTls] is honoured only where the engine exposes a TLS configuration — CIO, on JVM,
+ * Android, Apple, and Linux. On Windows (WinHttp) and in the browser (wasmJs / Js) it is
+ * silently ignored: WinHttp exposes no TLS-config surface and the browser cannot influence
+ * trust at all.
+ *
+ * @param host the broker host from the endpoint URL, used for trust evaluation.
  * @param maxFrameSize the WebSocket frame safety cap, in bytes.
+ * @param configureTls optional caller customisation of the engine's TLS configuration.
  */
-internal expect fun buildWsHttpClient(maxFrameSize: Long): HttpClient
+internal expect fun buildWsHttpClient(
+    host: String,
+    maxFrameSize: Long,
+    configureTls: (TLSConfigBuilder.() -> Unit)?,
+): HttpClient

@@ -19,6 +19,8 @@ package org.meshtastic.mqtt.transport.ws
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.webSocketSession
+import io.ktor.http.Url
+import io.ktor.network.tls.TLSConfigBuilder
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
@@ -32,11 +34,19 @@ import org.meshtastic.mqtt.MqttTransportFactory
 /**
  * WebSocket-based [MqttTransport] for all platforms, including the browser (wasmJs).
  *
- * Uses Ktor's multiplatform HttpClient with engine auto-detection (CIO on JVM/Android/Apple/Linux,
+ * Uses Ktor's multiplatform HttpClient with a per-platform engine (CIO on JVM/Android/Apple/Linux,
  * WinHttp on Windows, Js on wasmJs/browser). One binary WebSocket frame = one complete MQTT packet,
  * so no stream parsing is needed — the WebSocket layer handles framing.
+ *
+ * @param configureTls optional hook applied to the engine's TLS configuration before platform
+ *   trust is configured. Use it to trust a private or self-signed CA for this connection only.
+ *   Honoured on JVM, Android, Apple, and Linux; ignored on Windows and in the browser.
  */
-public class WebSocketTransport : MqttTransport {
+public class WebSocketTransport(
+    internal val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
+) : MqttTransport {
+    public constructor() : this(null)
+
     private var client: HttpClient? = null
     private var session: DefaultClientWebSocketSession? = null
     private val sendMutex = Mutex()
@@ -52,7 +62,7 @@ public class WebSocketTransport : MqttTransport {
         // Close any existing connection to prevent resource leaks on reconnect
         close()
 
-        val httpClient = buildWsHttpClient(MAX_FRAME_SIZE)
+        val httpClient = buildWsHttpClient(Url(endpoint.url).host, MAX_FRAME_SIZE, configureTls)
         client = httpClient
 
         val wsSession =
@@ -117,9 +127,31 @@ public class WebSocketTransport : MqttTransport {
  * Add `org.meshtastic:mqtt-client-transport-ws` and pass an instance to
  * [org.meshtastic.mqtt.MqttConfig.Builder.transportFactory]. This is the only transport available
  * on the browser (wasmJs) target.
+ *
+ * To trust a broker whose certificate chain is not in the platform CA store — a private or
+ * self-signed CA — supply [configureTls]. The scope is this MQTT connection only, unlike Android's
+ * app-wide `network_security_config.xml` trust anchors:
+ *
+ * ```kotlin
+ * transportFactory = WebSocketTransportFactory { trustManager = myTrustManager }
+ * ```
+ *
+ * @param configureTls optional hook applied to ktor's [TLSConfigBuilder] for every transport this
+ *   factory creates. It runs before platform trust is configured, so on Android a trust manager
+ *   installed here is reached through the hostname-aware `checkServerTrusted` overload rather than
+ *   bypassing it. Note that installing a trust manager replaces the platform's trust decision —
+ *   network-security-config anchors, pinning, and Certificate Transparency policy then hold only
+ *   insofar as that manager enforces them. Honoured on JVM, Android, Apple, and Linux; silently
+ *   ignored on Windows (WinHttp has no TLS-config surface) and in the browser (which cannot
+ *   influence trust). On Apple and Linux `TLSConfigBuilder` has no `trustManager`, so little is
+ *   configurable there in practice.
  */
-public class WebSocketTransportFactory : MqttTransportFactory {
+public class WebSocketTransportFactory(
+    private val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
+) : MqttTransportFactory {
+    public constructor() : this(null)
+
     override fun supports(endpoint: MqttEndpoint): Boolean = endpoint is MqttEndpoint.WebSocket
 
-    override fun create(endpoint: MqttEndpoint): MqttTransport = WebSocketTransport()
+    override fun create(endpoint: MqttEndpoint): MqttTransport = WebSocketTransport(configureTls)
 }
