@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-26
+
+### Added
+- **TLS trust customisation for the TCP transport** (#103). `TcpTransportFactory` now
+  accepts an optional `configureTls: (TLSConfigBuilder.() -> Unit)?` lambda, so a caller
+  can reach a broker whose certificate chain is anchored in a private or self-signed CA
+  without replacing the transport wholesale:
+
+  ```kotlin
+  transportFactory = TcpTransportFactory { trustManager = myTrustManager } +
+      WebSocketTransportFactory()
+  ```
+
+  The hook runs **before** platform trust is applied, so an explicitly supplied
+  `trustManager` wins over the platform default. Purely additive: the no-argument
+  constructor is retained, so existing `TcpTransportFactory()` call sites compile and
+  link unchanged. On Android this replaces the previous workaround of opting the entire
+  app into user-installed CAs via `network_security_config.xml`, which affected every
+  HTTPS connection the app made. See `transport-tcp/Module.md` for the trust-ordering
+  details and caveats.
+
+### Changed
+- The public API surface is now locked by `explicitApi()` plus checked-in ABI dumps for
+  the JVM **and** klib (native/wasm) surfaces, enforced by `apiCheck` in CI (#87). No
+  existing declaration changed — this guards the surface against accidental drift.
+- `transport-ws` now has test coverage for `WebSocketTransportFactory`; the module
+  previously shipped with no tests of its own (#94).
+- Build tooling: AGP 9.3.1 (#100), Kover 0.9.9 (#84). **Kotlin remains 2.4.10**, so
+  native and iOS consumers need no toolchain change when upgrading from 0.5.0.
+
+### Security
+- Every third-party GitHub Action is pinned to a full commit SHA, and OpenSSF Scorecard
+  analysis now runs on the repository (#89, #96). CI-only — published artifacts are
+  byte-for-byte unaffected.
+
 ## [0.5.0] - 2026-07-16
 
 ### Changed
