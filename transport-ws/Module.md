@@ -25,6 +25,9 @@ val client = MqttClient("sensor") {
 }
 ```
 
+(`trustManager` itself is available only on the JVM and Android actuals of `TLSConfigBuilder` — see
+the per-target table below for the other platforms.)
+
 The lambda is applied before platform trust configuration. On Android that ordering means the trust
 manager on the builder is reached through the hostname-aware
 `checkServerTrusted(chain, authType, hostname)` overload, which the platform requires whenever

@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counterpart to the `TcpTransportFactory` hook added in 0.6.0. Both take the same
   `TLSConfigBuilder` receiver, so a single trust manager can serve `ssl://` and `wss://` brokers
   behind a private or self-signed CA — scoped to the MQTT connection, with no app-wide
-  `network_security_config.xml` anchor. Honoured on JVM, Android, Apple, and Linux; ignored on
-  Windows (WinHttp exposes no TLS-configuration surface) and in the browser. The existing no-arg
-  constructor is unchanged (#107).
+  `network_security_config.xml` anchor. The lambda runs on JVM, Android, Apple, and Linux; ignored
+  on Windows (WinHttp exposes no TLS-configuration surface) and in the browser. The private-CA
+  trust manager itself is available only on JVM and Android, where `TLSConfigBuilder` exposes
+  `trustManager` — on Apple and Linux the lambda still runs but has no equivalent property to set.
+  The existing no-arg constructor is unchanged (#107).
 
 ### Changed
 

@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Every change is additive and binary-compatible. `WebSocketTransportFactory()` and `WebSocketTransport()` must keep linking for already-compiled callers — declare the zero-arg secondary constructors explicitly, because klib ABI dumps list constructors individually.
-- No new runtime dependencies outside the ktor / kotlinx-coroutines / kotlinx-io umbrella. `ktor-server-cio`, `ktor-server-websockets`, and `ktor-network-tls-certificates` are added in Task 5 as `testImplementation` only.
+- No new runtime dependencies outside the ktor / kotlinx-coroutines / kotlinx-io umbrella. `ktor-server-cio`, `ktor-server-websockets`, and `ktor-network-tls-certificates` are added in Task 5 as `testImplementation` only. **As-built:** the server engine used is `ktor-server-netty`, not `ktor-server-cio` — ktor's server-side CIO engine does not support HTTPS/TLS, which this test requires. Still `testImplementation`-scoped only.
 - `:core` gains nothing. No ktor TLS types may reach it (ADR-0006, enforced by `core/build.gradle.kts`'s `verifyModuleBoundary`).
 - `:transport-ws` must not depend on `:transport-tcp`. `configurePlatformTrust` is deliberately duplicated; each copy's KDoc names its sibling.
 - Ordering rule, non-negotiable: the caller's hook runs **before** `configurePlatformTrust`, so Android wraps the caller's trust manager rather than replacing it.
@@ -701,7 +701,7 @@ internal actual fun TLSConfigBuilder.configurePlatformTrust(host: String) {
 — read that file and copy it, changing only the `package` line to
 `org.meshtastic.mqtt.transport.ws` and adding this paragraph to the function's KDoc:
 
-```
+```text
  * **Sibling copy** of `:transport-tcp`'s `PlatformTls.android.kt`. Any fix here must be applied
  * there too, and vice versa.
 ```
@@ -714,7 +714,7 @@ were reviewed in #103.
 
 In `transport-tcp/src/commonMain/kotlin/org/meshtastic/mqtt/transport/tcp/PlatformTls.kt`, append to the KDoc of `configurePlatformTrust` (just before the `@param host` line):
 
-```
+```text
  * **Sibling copy.** The same logic is duplicated in
  * `transport-ws/src/cioMain/kotlin/org/meshtastic/mqtt/transport/ws/PlatformTls.kt` and its
  * actuals, because `:transport-ws` cannot depend on this module. **Any fix here must be applied
@@ -771,6 +771,11 @@ The test that actually discharges the issue's acceptance criterion instead of as
 
 - [ ] **Step 1: Add the test-only dependencies**
 
+**As-built note:** this step drafted `ktor-server-cio` as the test server engine. It was replaced
+with `ktor-server-netty` during implementation — ktor's server-side CIO engine does not support
+HTTPS/TLS, which this test requires. `ktor-server-netty` is `testImplementation`-scoped only, same
+as the other two. The draft below is left as originally written.
+
 In `gradle/libs.versions.toml`, under `[libraries]` next to the other `ktor-` entries:
 
 ```toml
@@ -794,6 +799,10 @@ In `transport-ws/build.gradle.kts`, inside `sourceSets { … }`, after the `wasm
 - [ ] **Step 2: Write the failing test**
 
 Create `transport-ws/src/jvmTest/kotlin/org/meshtastic/mqtt/transport/ws/WebSocketPrivateCaTest.kt` (GPL header first):
+
+**As-built note:** the draft below uses `embeddedServer(CIO, …)`. The shipped test uses
+`embeddedServer(Netty, …)` instead, for the same reason noted in Step 1 — ktor's server-side CIO
+engine rejects HTTPS. The draft is left as originally written.
 
 ```kotlin
 package org.meshtastic.mqtt.transport.ws
@@ -1005,7 +1014,7 @@ git commit -m "test(transport): prove private-CA wss:// reachability via the hoo
 Insert this before the closing "Available on every target…" paragraph, mirroring the structure of
 `transport-tcp/Module.md`'s "Trusting a private CA" section:
 
-```markdown
+````markdown
 ## Trusting a private CA
 
 If the broker's certificate is issued by a private or self-signed CA that is not in the platform
@@ -1054,10 +1063,10 @@ certificate store instead.
 
 Unlike the TCP transport, this hook does not set the SNI server name: the CIO client derives SNI
 from the request URL, which is also what gates ktor's RFC 6125 subject-name check.
-```
+````
 
-Note for the implementer: the fenced `kotlin` block above is nested inside a fenced markdown block
-in *this plan*. Write it into `Module.md` as a normal triple-backtick block.
+Note for the implementer: the outer fence above uses four backticks only so the nested ` ```kotlin `
+block renders correctly *in this plan*. Write it into `Module.md` as a normal triple-backtick block.
 
 - [ ] **Step 2: Update the README**
 
@@ -1069,7 +1078,7 @@ Two edits in the "Custom TLS trust" section:
 2. Replace the composition snippet and the final paragraph (currently ending "The WebSocket
    transport has no equivalent hook yet.") with:
 
-```markdown
+````markdown
 The hook composes with transport selection as usual, and both transports take the same lambda type,
 so one trust manager can serve both:
 
@@ -1085,13 +1094,13 @@ Apple and Linux the hook still runs, but `TLSConfigBuilder` exposes a different 
 there. The WebSocket hook is additionally ignored on Windows (the WinHttp engine has no
 TLS-configuration surface) and in the browser (which cannot influence trust) — see
 `transport-ws/Module.md` for the per-target table.
-```
+````
 
 - [ ] **Step 3: Update `AGENTS.md`**
 
 In the module layout block, change the `:transport-ws` entry to note the new source set:
 
-```
+```text
 :transport-ws              commonMain (WebSocketTransport) + cioMain (CIO engine + TLS trust hook)
                            + per-platform Ktor engine deps. Targets: all, incl. wasmJs.
 ```

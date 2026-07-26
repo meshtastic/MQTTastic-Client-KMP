@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
  *
  * The hook only runs during a real TLS handshake, so these tests pin the surrounding
  * contract: endpoint selection, transport type, hook forwarding, and `+` composition.
- * The handshake itself is covered by the JVM end-to-end test in Task 5.
+ * The handshake itself is covered by the JVM end-to-end test, [WebSocketPrivateCaTest].
  */
 class WebSocketTransportFactoryTlsTest {
     private val endpoint = MqttEndpoint.WebSocket("wss://broker.example.com/mqtt")

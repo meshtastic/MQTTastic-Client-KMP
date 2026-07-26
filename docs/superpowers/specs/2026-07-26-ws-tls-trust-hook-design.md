@@ -120,7 +120,7 @@ internal expect fun buildWsHttpClient(
 A new intermediate source set `cioMain` holds the single CIO implementation, so it is written once
 rather than four times:
 
-```
+```text
 commonMain            expect buildWsHttpClient
   └─ cioMain          actual (CIO) + expect TLSConfigBuilder.configurePlatformTrust
        ├─ jvmMain     actual configurePlatformTrust — no-op
@@ -171,6 +171,11 @@ is configured once at client construction. Setting `serverName` there would be a
 Whether a `serverName` a caller assigns inside the hook survives CIO's own assignment is a ktor
 precedence detail to confirm during implementation and document in whichever direction it turns
 out; the hook's advertised purpose is trust, not SNI.
+
+As-built note: confirmed. A `serverName` the hook assigns **wins** over CIO's per-request SNI —
+it becomes the name ktor verifies the certificate's subject names against, for every connection
+the factory creates. See `WebSocketPrivateCaTest.serverNameSetInsideTheHookWinsOverCioRequestSni`
+for the test that discharges this.
 
 What the ordering does **not** provide is unchanged from #103 and must be restated in the KDoc:
 installing a trust manager *replaces the platform's trust decision*. Network-security-config
