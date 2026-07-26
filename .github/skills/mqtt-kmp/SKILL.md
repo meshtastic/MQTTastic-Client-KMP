@@ -43,7 +43,7 @@ description: 'MQTTastic Client KMP — Kotlin Multiplatform MQTT 5.0 client libr
 ./gradlew allTests                 # all KMP tests
 ./gradlew jvmTest                  # JVM tests only
 ./gradlew spotlessApply            # auto-fix formatting
-./gradlew detektAll                   # static analysis
+./gradlew detektAll                # static analysis
 ./gradlew apiCheck                 # public API compatibility
 ./gradlew koverVerify              # coverage check (≥80%)
 ```
