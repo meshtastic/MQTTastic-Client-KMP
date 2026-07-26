@@ -69,31 +69,29 @@ public class WebSocketTransport : MqttTransport {
     }
 
     override suspend fun send(bytes: ByteArray) {
-        val ws = session ?: throw IllegalStateException("Not connected")
+        val ws = session ?: error("Not connected")
         sendMutex.withLock {
             ws.send(Frame.Binary(true, bytes))
         }
     }
 
     override suspend fun receive(): ByteArray {
-        val ws = session ?: throw IllegalStateException("Not connected")
+        val ws = session ?: error("Not connected")
         val frame = ws.incoming.receive()
         return when (frame) {
             is Frame.Binary -> {
-                if (frame.data.size > MAX_FRAME_SIZE) {
-                    throw IllegalArgumentException(
-                        "WebSocket frame size ${frame.data.size} exceeds safety cap $MAX_FRAME_SIZE",
-                    )
+                require(frame.data.size <= MAX_FRAME_SIZE) {
+                    "WebSocket frame size ${frame.data.size} exceeds safety cap $MAX_FRAME_SIZE"
                 }
                 frame.readBytes()
             }
 
             is Frame.Close -> {
-                throw IllegalStateException("WebSocket closed by server")
+                error("WebSocket closed by server")
             }
 
             else -> {
-                throw IllegalStateException("Unexpected frame type: ${frame.frameType}")
+                error("Unexpected frame type: ${frame.frameType}")
             }
         }
     }

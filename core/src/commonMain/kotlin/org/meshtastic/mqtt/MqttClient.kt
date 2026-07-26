@@ -710,6 +710,10 @@ public class MqttClient
 
         // --- Private helpers ---
 
+        // One linear sequence: negotiate the protocol version, build the connection, connect,
+        // then fall back to 3.1.1 on an unsupported-version CONNACK. Splitting the fallback out
+        // would separate it from the state it has to unwind.
+        @Suppress("LongMethod", "NestedBlockDepth")
         private suspend fun connectInternal(endpoint: MqttEndpoint) {
             val effectiveVersion = negotiatedProtocolVersion
             val effectiveConfig =
@@ -756,7 +760,9 @@ public class MqttClient
                     val fallbackConn = MqttConnection(fallbackTransport, fallbackConfig, scope, log)
                     try {
                         fallbackConn.connect(endpoint)
-                    } catch (fallbackError: Exception) {
+                    } catch (
+                        @Suppress("TooGenericExceptionCaught") fallbackError: Exception,
+                    ) {
                         try {
                             fallbackTransport.close()
                         } catch (
@@ -871,6 +877,9 @@ public class MqttClient
             redirectForwardJob = null
         }
 
+        // The backoff loop, its attempt bookkeeping, and the resubscribe-on-success step form a
+        // single retry policy; the length is the loop body, not branching complexity.
+        @Suppress("LongMethod")
         private suspend fun startReconnect() {
             connectionMutex.withLock {
                 if (reconnectJob?.isActive == true) return
@@ -985,10 +994,17 @@ public class MqttClient
 
         private fun requireConnection(): MqttConnection {
             check(!closed) { "Client has been closed and cannot be reused" }
-            return connection ?: throw IllegalStateException("Not connected")
+            return connection ?: error("Not connected")
         }
 
-        /** Wrap internal [MqttConnectionException] into the public [MqttException] hierarchy. */
+        /**
+         * Wrap internal [MqttConnectionException] into the public [MqttException] hierarchy.
+         *
+         * The internal exception is deliberately not chained as the cause (`SwallowedException`):
+         * its own cause and reason code are carried over, and the internal type is not part of
+         * the public API.
+         */
+        @Suppress("SwallowedException")
         private suspend inline fun wrapConnectionErrors(block: () -> Unit) {
             try {
                 block()
