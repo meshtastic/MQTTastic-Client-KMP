@@ -332,6 +332,42 @@ val config = MqttConfig(
 
 Log levels from most to least verbose: `TRACE` → `DEBUG` → `INFO` → `WARN` → `ERROR` → `NONE`.
 
+### Custom TLS trust
+
+By default the TCP transport validates the broker certificate against the platform CA store. To
+reach a broker behind a private or self-signed CA, pass a TLS customisation lambda to
+`TcpTransportFactory`. It runs against ktor's `TLSConfigBuilder`:
+
+```kotlin
+import org.meshtastic.mqtt.transport.tcp.TcpTransportFactory
+
+val client = MqttClient("my-client") {
+    transportFactory = TcpTransportFactory { trustManager = myPrivateCaTrustManager }
+}
+client.connect(MqttEndpoint.parse("mqtts://broker.internal:8883"))
+```
+
+The hook is applied after the SNI server name is resolved and before platform trust is configured.
+On Android that ordering matters: your trust manager is *wrapped* by the hostname-aware trust
+manager rather than replacing it, so certificate hostname verification still happens.
+
+This scopes the extra trust to the MQTT connection alone. It replaces the app-wide workaround of
+adding `<certificates src="user"/>` to `network_security_config.xml`, which would affect every
+HTTPS connection the app makes.
+
+The hook composes with transport selection as usual:
+
+```kotlin
+transportFactory = TcpTransportFactory { trustManager = myPrivateCaTrustManager } +
+    WebSocketTransportFactory()
+```
+
+`TLSConfigBuilder` comes from `io.ktor:ktor-network-tls`, exposed transitively by
+`mqtt-client-transport-tcp` — no extra dependency needed. The WebSocket transport has no equivalent
+hook yet. `trustManager` specifically is available on the JVM and Android actuals of
+`TLSConfigBuilder`; on Apple, Linux, and Windows targets the hook still runs, but `TLSConfigBuilder`
+exposes a different set of properties there.
+
 ## Android / KMP Integration
 
 The library is designed as a drop-in MQTT client for KMP projects. Consumer ProGuard/R8 rules are bundled automatically.
