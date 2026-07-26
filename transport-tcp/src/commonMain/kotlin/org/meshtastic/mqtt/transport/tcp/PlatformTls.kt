@@ -36,3 +36,53 @@ import io.ktor.network.tls.TLSConfigBuilder
  *   host for the hostname-aware trust check even though it must not be sent as SNI.
  */
 internal expect fun TLSConfigBuilder.configurePlatformTrust(host: String)
+
+/**
+ * Applies the MQTT TLS configuration to this [TLSConfigBuilder] in the one correct order.
+ *
+ * This is the single call site for TLS setup, so the ordering below cannot drift:
+ *
+ * 1. `serverName` — the SNI value, `null` for IP literals (RFC 6066 §3 forbids them).
+ * 2. [configureTls] — the caller's hook, so it can read or override the SNI value and
+ *    install its own trust manager (e.g. a private CA).
+ * 3. [configurePlatformTrust] — reads whatever trust manager is now on the builder and,
+ *    on Android, wraps it in a hostname-aware delegate.
+ *
+ * Step 2 must precede step 3. What step 3 provides is the call path: whatever trust manager is
+ * on the builder is reached through Android's hostname-aware
+ * `checkServerTrusted(chain, authType, hostname)` overload, which `NetworkSecurityTrustManager`
+ * requires whenever `network_security_config.xml` holds any domain-specific configuration.
+ * Reversing the two steps would discard that wrapper, leaving ktor's 2-arg call to hit the bare
+ * manager.
+ *
+ * Be precise about what this ordering does *not* provide. Installing a trust manager via
+ * [configureTls] *replaces the platform's trust decision*: that manager's anchors are used
+ * instead of the platform's, and `network_security_config.xml` anchors, certificate pinning,
+ * and Certificate Transparency policy are then enforced only insofar as that manager enforces
+ * them itself. Those platform policies apply as they did before only when the caller leaves
+ * `trustManager` unset. Wrapping preserves the hostname-aware *call path*, not the platform's
+ * *policy*.
+ *
+ * RFC 6125 subject-name matching (verifying the certificate actually names the host being
+ * contacted) is separate again: it comes from ktor, which performs it only when `serverName` is
+ * non-`null` — so it is absent for IP-literal brokers. Android's 3-arg overload uses the
+ * hostname for config lookup, pinning, and CT policy, not for subject-name matching. On JVM and
+ * native targets [configurePlatformTrust] is a no-op, so no platform wrapping happens at all.
+ *
+ * The hook may read or replace `serverName`, but setting it to `null` disables ktor's
+ * subject-name verification entirely — the only name matching this transport has on JVM and
+ * native — so do not do that unless you verify the peer identity yourself.
+ *
+ * @param host the broker host (DNS name or IP literal), used for both SNI and trust evaluation.
+ * @param configureTls optional caller customisation; `null` preserves the default behaviour.
+ * @param platformTrust test seam for [configurePlatformTrust]; production callers use the default.
+ */
+internal fun TLSConfigBuilder.applyMqttTls(
+    host: String,
+    configureTls: (TLSConfigBuilder.() -> Unit)? = null,
+    platformTrust: TLSConfigBuilder.(String) -> Unit = { configurePlatformTrust(it) },
+) {
+    serverName = sniServerName(host)
+    configureTls?.invoke(this)
+    platformTrust(host)
+}

@@ -37,6 +37,19 @@ import javax.net.ssl.X509TrustManager
  * the target host, so an IP-only broker (a common private-broker setup) hits the same
  * failure. The [host] — an IP literal or DNS name — is a valid argument for the 3-arg
  * overload even though an IP must never be sent as the TLS SNI server name.
+ *
+ * **Constraint on caller-supplied trust managers.** Whatever [X509TrustManager] is on the
+ * builder must be one Android can wrap for hostname-aware checking. In practice that means it
+ * must come from a [TrustManagerFactory] (which yields the platform's `TrustManagerImpl`), or
+ * it must itself declare a `checkServerTrusted(X509Certificate[], String, String)` method.
+ * A hand-written `X509TrustManager` that implements only the two-arg overloads cannot be
+ * wrapped, and this function throws [IllegalArgumentException] rather than silently dropping
+ * Android's policy checks. To trust a private CA, load it into a [KeyStore] and initialise a
+ * [TrustManagerFactory] with that store.
+ *
+ * Note that the hostname passed to the 3-arg overload drives network-security-config lookup,
+ * certificate pinning, and Certificate Transparency policy — it does **not** perform RFC 6125
+ * subject-name matching. That comes from ktor and only when the SNI server name is set.
  */
 internal actual fun TLSConfigBuilder.configurePlatformTrust(host: String) {
     if (host.isBlank()) return
@@ -48,7 +61,20 @@ internal actual fun TLSConfigBuilder.configurePlatformTrust(host: String) {
             tmf.trustManagers.filterIsInstance<X509TrustManager>().first()
         }
 
-    trustManager = HostnameAwareTrustManager(baseTm, host)
+    trustManager =
+        try {
+            HostnameAwareTrustManager(baseTm, host)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException(
+                "Android cannot wrap the configured X509TrustManager (${baseTm::class.java.name}) " +
+                    "for hostname-aware certificate checking. The trust manager must either be " +
+                    "obtained from TrustManagerFactory (which yields the platform TrustManagerImpl) " +
+                    "or declare checkServerTrusted(X509Certificate[], String, String). To trust a " +
+                    "private CA, load it into a KeyStore and initialise a TrustManagerFactory with " +
+                    "that KeyStore instead of hand-implementing X509TrustManager.",
+                e,
+            )
+        }
 }
 
 /**

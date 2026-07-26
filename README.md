@@ -332,6 +332,64 @@ val config = MqttConfig(
 
 Log levels from most to least verbose: `TRACE` → `DEBUG` → `INFO` → `WARN` → `ERROR` → `NONE`.
 
+### Custom TLS trust
+
+By default the TCP transport validates the broker certificate against the platform CA store. To
+reach a broker behind a private or self-signed CA, pass a TLS customisation lambda to
+`TcpTransportFactory`. It runs against ktor's `TLSConfigBuilder`:
+
+```kotlin
+import org.meshtastic.mqtt.transport.tcp.TcpTransportFactory
+
+val client = MqttClient("my-client") {
+    transportFactory = TcpTransportFactory { trustManager = myPrivateCaTrustManager }
+}
+client.connect(MqttEndpoint.parse("mqtts://broker.internal:8883"))
+```
+
+The hook is applied after the SNI server name is resolved and before platform trust is configured.
+On Android that ordering means your trust manager is reached through the hostname-aware
+`checkServerTrusted(chain, authType, hostname)` overload, which the platform requires whenever
+`network_security_config.xml` holds any domain-specific configuration — rather than being discarded
+in favour of the platform wrapper.
+
+Be clear about what that does *not* buy you. Installing your own trust manager **replaces the
+platform's trust decision**: your anchors are used instead of the platform's, and
+`network_security_config.xml` anchors, certificate pinning, and Certificate Transparency policy are
+then enforced only insofar as your manager enforces them itself. Those platform policies apply as
+before only if you leave `trustManager` unset. The wrapping preserves the hostname-aware *call
+path*, not the platform's *policy*.
+
+RFC 6125 subject-name matching is separate again. Android's 3-arg overload uses the hostname for
+policy lookup, not for subject-name matching; that check comes from ktor and only runs when the SNI
+server name is set, so it is absent for IP-literal brokers such as `mqtts://192.168.1.50:8883`. On
+JVM and native targets there is no platform trust wrapping at all, so ktor's SNI-gated subject-name
+check is the only peer-identity verification beyond chain validation. If your trust manager accepts
+any chain, nothing else will stop a mismatched certificate.
+
+On Android the manager must be one `X509TrustManagerExtensions` can wrap: either obtained from a
+`TrustManagerFactory` initialised with a `KeyStore` containing your CA, or declaring the three-arg
+`checkServerTrusted(chain, authType, host)` that the platform looks up reflectively. A hand-written
+`X509TrustManager` implementing only the two-arg overload cannot be wrapped, and the handshake fails
+with an `IllegalArgumentException` explaining this.
+
+This scopes the extra trust to the MQTT connection alone. It replaces the app-wide workaround of
+adding `<certificates src="user"/>` to `network_security_config.xml`, which would affect every
+HTTPS connection the app makes.
+
+The hook composes with transport selection as usual:
+
+```kotlin
+transportFactory = TcpTransportFactory { trustManager = myPrivateCaTrustManager } +
+    WebSocketTransportFactory()
+```
+
+`TLSConfigBuilder` comes from `io.ktor:ktor-network-tls`, exposed transitively by
+`mqtt-client-transport-tcp` — no extra dependency needed. The WebSocket transport has no equivalent
+hook yet. `trustManager` specifically is available on the JVM and Android actuals of
+`TLSConfigBuilder`; on Apple, Linux, and Windows targets the hook still runs, but `TLSConfigBuilder`
+exposes a different set of properties there.
+
 ## Android / KMP Integration
 
 The library is designed as a drop-in MQTT client for KMP projects. Consumer ProGuard/R8 rules are bundled automatically.

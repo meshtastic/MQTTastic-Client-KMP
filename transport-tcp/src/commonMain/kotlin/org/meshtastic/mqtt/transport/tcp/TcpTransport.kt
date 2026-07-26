@@ -22,6 +22,7 @@ import io.ktor.network.sockets.aSocket
 import io.ktor.network.sockets.isClosed
 import io.ktor.network.sockets.openReadChannel
 import io.ktor.network.sockets.openWriteChannel
+import io.ktor.network.tls.TLSConfigBuilder
 import io.ktor.network.tls.tls
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.ByteWriteChannel
@@ -48,8 +49,17 @@ import org.meshtastic.mqtt.packet.VariableByteInt
  * TCP is stream-oriented, so [receive] must reconstruct MQTT packet boundaries by
  * parsing the fixed header and Variable Byte Integer remaining length from the byte
  * stream, then reading exactly that many payload bytes.
+ *
+ * @param configureTls optional hook applied to ktor's [TLSConfigBuilder] during the TLS
+ *   handshake, after the SNI server name is set and before platform trust is configured.
+ *   Use it to trust a private or self-signed CA for this connection only. Ignored for
+ *   non-TLS endpoints.
  */
-public class TcpTransport : MqttTransport {
+public class TcpTransport(
+    internal val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
+) : MqttTransport {
+    public constructor() : this(null)
+
     private var socket: Socket? = null
     private var selectorManager: SelectorManager? = null
     private var readChannel: ByteReadChannel? = null
@@ -84,7 +94,6 @@ public class TcpTransport : MqttTransport {
                 socket =
                     try {
                         if (endpoint.tls) {
-                            val tlsServerName = sniServerName(endpoint.host)
                             // Ktor launches the TLS record-pump (input/output) coroutines on the
                             // context passed here. A bare dispatcher leaves them with no parent Job
                             // and no exception handler, so a write that fails around the handshake —
@@ -99,13 +108,7 @@ public class TcpTransport : MqttTransport {
                                     // benign socket teardown
                                     CoroutineExceptionHandler { _, _ -> }
                             tlsJob = tlsContext[Job]
-                            rawSocket.tls(tlsContext) {
-                                serverName = tlsServerName
-                                // Configure trust with the real host (DNS name or IP literal),
-                                // not the SNI value: tlsServerName is null for IP literals, but
-                                // Android still needs a host for the hostname-aware trust check.
-                                configurePlatformTrust(endpoint.host)
-                            }
+                            rawSocket.tls(tlsContext) { applyMqttTls(endpoint.host, configureTls) }
                         } else {
                             rawSocket
                         }
@@ -267,9 +270,30 @@ internal fun isIpLiteral(host: String): Boolean {
  *
  * Add `org.meshtastic:mqtt-client-transport-tcp` and pass an instance to
  * [org.meshtastic.mqtt.MqttConfig.Builder.transportFactory].
+ *
+ * To trust a broker whose certificate chain is not in the platform CA store — a private or
+ * self-signed CA — supply [configureTls]. The scope is this MQTT connection only, unlike
+ * Android's app-wide `network_security_config.xml` trust anchors:
+ *
+ * ```kotlin
+ * transportFactory = TcpTransportFactory { trustManager = myTrustManager } + WebSocketTransportFactory()
+ * ```
+ *
+ * @param configureTls optional hook applied to ktor's [TLSConfigBuilder] for every transport
+ *   this factory creates. It runs after the SNI server name is set and before platform trust
+ *   is configured, so on Android a trust manager installed here is reached through the
+ *   hostname-aware `checkServerTrusted` overload rather than bypassing it. Note that installing
+ *   a trust manager replaces the platform's trust decision — network-security-config anchors,
+ *   pinning, and Certificate Transparency policy then hold only insofar as that manager enforces
+ *   them. The wrapping is Android-only and is not subject-name matching; see [applyMqttTls] for
+ *   the full picture before relying on it.
  */
-public class TcpTransportFactory : MqttTransportFactory {
+public class TcpTransportFactory(
+    private val configureTls: (TLSConfigBuilder.() -> Unit)? = null,
+) : MqttTransportFactory {
+    public constructor() : this(null)
+
     override fun supports(endpoint: MqttEndpoint): Boolean = endpoint is MqttEndpoint.Tcp
 
-    override fun create(endpoint: MqttEndpoint): MqttTransport = TcpTransport()
+    override fun create(endpoint: MqttEndpoint): MqttTransport = TcpTransport(configureTls)
 }

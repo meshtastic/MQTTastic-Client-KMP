@@ -16,6 +16,7 @@
  */
 package org.meshtastic.mqtt.transport.tcp
 
+import io.ktor.network.tls.TLSConfigBuilder
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -61,5 +62,76 @@ class TcpTransportTlsTest {
         assertFalse(isIpLiteral("example.com"))
         assertFalse(isIpLiteral("a1.example.com"))
         assertFalse(isIpLiteral("mqtt.local"))
+    }
+
+    @Test
+    fun applyMqttTlsSetsSniForDnsHost() {
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls("broker.example.com")
+        assertEquals("broker.example.com", builder.serverName)
+    }
+
+    @Test
+    fun applyMqttTlsSuppressesSniForIpLiteral() {
+        val ipv4 = TLSConfigBuilder()
+        ipv4.applyMqttTls("192.168.1.50")
+        assertNull(ipv4.serverName)
+
+        val ipv6 = TLSConfigBuilder()
+        ipv6.applyMqttTls("2001:db8::1")
+        assertNull(ipv6.serverName)
+    }
+
+    @Test
+    fun applyMqttTlsInvokesCallerHookExactlyOnce() {
+        var calls = 0
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls("broker.example.com") { calls++ }
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun applyMqttTlsRunsCallerHookAfterServerNameIsSet() {
+        // The hook must observe serverName already assigned, so a caller can read or
+        // override it. This also pins the hook ahead of configurePlatformTrust, which
+        // on Android wraps whatever trustManager the hook installed.
+        var observed: String? = "not-yet-run"
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls("broker.example.com") { observed = serverName }
+        assertEquals("broker.example.com", observed)
+    }
+
+    @Test
+    fun applyMqttTlsRunsCallerHookBeforePlatformTrust() {
+        // Security-relevant ordering: the caller hook must run BEFORE platform trust
+        // configuration. Reversed, a caller-supplied trust manager would replace Android's
+        // hostname-aware wrapper instead of being wrapped by it, dropping the platform's
+        // network-security-config, pinning, and CT policy checks. The platformTrust seam
+        // makes that order observable on every target.
+        val order = mutableListOf<String>()
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls(
+            host = "broker.example.com",
+            configureTls = { order += "callerHook" },
+            platformTrust = { order += "platformTrust" },
+        )
+        assertEquals(listOf("callerHook", "platformTrust"), order)
+    }
+
+    @Test
+    fun applyMqttTlsPassesTrustHostToPlatformTrustEvenWhenSniSuppressed() {
+        // IP literals suppress SNI but must still reach the platform trust hook with the raw host.
+        var trustHost: String? = null
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls(host = "192.168.1.50", platformTrust = { trustHost = it })
+        assertNull(builder.serverName)
+        assertEquals("192.168.1.50", trustHost)
+    }
+
+    @Test
+    fun applyMqttTlsWithoutHookStillSetsSni() {
+        val builder = TLSConfigBuilder()
+        builder.applyMqttTls("mqtt.local", configureTls = null)
+        assertEquals("mqtt.local", builder.serverName)
     }
 }
