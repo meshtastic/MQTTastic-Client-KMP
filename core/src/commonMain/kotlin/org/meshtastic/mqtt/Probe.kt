@@ -123,7 +123,7 @@ internal suspend fun runProbeNegotiating(
     timeoutMs: Long,
 ): ProbeResult {
     val start = TimeSource.Monotonic.markNow()
-    val attempt = runProbeAttempt(config, createTransport(), endpoint, timeoutMs)
+    val attempt = runProbeAttempt(config, createTransport, endpoint, timeoutMs)
     val remainingMs = timeoutMs - start.elapsedNow().inWholeMilliseconds
 
     // Fall back only when the first (MQTT 5.0) attempt indicates the broker doesn't speak
@@ -139,7 +139,7 @@ internal suspend fun runProbeNegotiating(
             runCatching { config.validateV311Compatibility() }.isSuccess
     return if (v5Refused && canFallBack && remainingMs > 0) {
         val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
-        runProbeAttempt(fallbackConfig, createTransport(), endpoint, remainingMs).result
+        runProbeAttempt(fallbackConfig, createTransport, endpoint, remainingMs).result
     } else {
         attempt.result
     }
@@ -155,7 +155,7 @@ internal suspend fun runProbe(
     transport: MqttTransport,
     endpoint: MqttEndpoint,
     timeoutMs: Long,
-): ProbeResult = runProbeAttempt(config, transport, endpoint, timeoutMs).result
+): ProbeResult = runProbeAttempt(config, { transport }, endpoint, timeoutMs).result
 
 /** Outcome of one probe attempt, plus the phase signal driving 5.0 → 3.1.1 fallback. */
 private class ProbeAttempt(
@@ -164,7 +164,11 @@ private class ProbeAttempt(
 )
 
 /**
- * One CONNECT/CONNACK probe attempt against a pre-built transport.
+ * One CONNECT/CONNACK probe attempt, against a transport it builds via [createTransport].
+ *
+ * The transport is built inside the classified path on purpose: a factory can reject the endpoint
+ * synchronously (a composite factory with no delegate that supports it), and [probe] promises to
+ * report failures as a [ProbeResult] rather than throw.
  *
  * `SwallowedException` is suppressed deliberately: a timeout is a normal probe outcome, not an
  * error, and is translated into [ProbeResult.Timeout], which carries the timeout budget instead
@@ -173,10 +177,23 @@ private class ProbeAttempt(
 @Suppress("SwallowedException")
 private suspend fun runProbeAttempt(
     config: MqttConfig,
-    transport: MqttTransport,
+    createTransport: () -> MqttTransport,
     endpoint: MqttEndpoint,
     timeoutMs: Long,
 ): ProbeAttempt {
+    val transport =
+        try {
+            createTransport()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Throwable,
+        ) {
+            return ProbeAttempt(
+                classifyProbeFailure(e, fallbackTimeoutMs = timeoutMs),
+                closedBeforeConnAck = false,
+            )
+        }
     val probeScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineName("MqttProbe"))
     val connection = MqttConnection(transport, config, probeScope)

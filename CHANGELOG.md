@@ -67,6 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unexpected packet type, an AUTH packet during an MQTT 3.1.1 handshake — took a rethrow path that
   skipped transport cleanup, as did an invalid Maximum QoS value in the CONNACK. Handshake cleanup
   is now centralised and covers every rejection path.
+- Cancelling `connect()` mid-handshake no longer leaks the socket either. The cancellation branch
+  rethrows to preserve structured concurrency and so bypassed the failure paths' cleanup; it now
+  closes the transport on a `NonCancellable` context, because the coroutine is already cancelled
+  and a plain suspending close would abort immediately.
+- `probe()` now reports a transport-factory failure as a `ProbeResult` instead of throwing. A
+  composite factory with no delegate for the endpoint throws synchronously from `create()`, which
+  was evaluated outside the classified path and escaped as a raw `IllegalArgumentException`.
 
 ## [0.7.0] - 2026-07-26
 

@@ -17,8 +17,11 @@
 package org.meshtastic.mqtt
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.mqtt.packet.ConnAck
 import org.meshtastic.mqtt.packet.MqttProperties
@@ -29,6 +32,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /**
  * `connect()` must distinguish a broker that refused the CONNECT from a network that failed
@@ -247,6 +251,27 @@ class ConnectFailureClassificationTest {
             assertFailsWith<MqttException.ProtocolError> {
                 client.connect(endpoint)
             }
+
+            client.close()
+        }
+
+    @Test
+    fun cancellingConnectMidHandshakeReleasesTheSocket() =
+        runTest {
+            // The socket is already open by the time the caller gives up, and the cancellation
+            // branch rethrows without going through the failure paths — so it needs its own
+            // cleanup, on a non-cancellable context.
+            val transport = FakeTransport()
+            val client = MqttClient(config(), transport, this)
+
+            // No CONNACK is ever enqueued, so the handshake parks in awaitConnAck.
+            val job = launch { client.connect(endpoint) }
+            runCurrent()
+            assertTrue(transport.isConnected, "precondition: the transport should be open")
+
+            job.cancelAndJoin()
+
+            assertFalse(transport.isConnected, "transport must be closed when connect() is cancelled")
 
             client.close()
         }

@@ -329,6 +329,10 @@ internal class MqttConnection(
                 failure = ConnectFailure.TRANSPORT,
             )
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
+            // Cancelled mid-handshake, so the socket may already be open. Cleanup runs on a
+            // non-cancellable context because this coroutine is already cancelled and a plain
+            // suspending close would abort immediately, leaking the transport.
+            withContext(NonCancellable) { abandonHandshake() }
             throw e // Preserve structured concurrency — do not wrap cancellation
         } catch (
             @Suppress("TooGenericExceptionCaught") e: Exception,

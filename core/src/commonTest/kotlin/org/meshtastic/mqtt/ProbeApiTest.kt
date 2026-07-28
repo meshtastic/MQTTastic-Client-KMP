@@ -279,6 +279,24 @@ class ProbeApiTest {
             assertEquals(1, transportsCreated)
         }
 
+    // --- Transport-factory failures ---
+
+    @Test
+    fun probe_transportFactoryThrows_isReportedAsAProbeResult() =
+        runTest {
+            // A composite factory with no delegate for the endpoint throws synchronously from
+            // create(). probe() promises a ProbeResult for failures, so this must not escape.
+            val result =
+                runProbeNegotiating(
+                    probeConfig(),
+                    { throw IllegalArgumentException("No registered MqttTransportFactory supports endpoint") },
+                    endpoint,
+                    timeoutMs = 5_000,
+                )
+
+            assertIs<ProbeResult.Other>(result)
+        }
+
     // --- Validation ---
 
     @Test
