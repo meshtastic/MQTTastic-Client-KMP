@@ -57,10 +57,26 @@ public sealed class MqttException(
     ) : MqttException(reasonCode, message, cause)
 
     /**
-     * The connection was lost unexpectedly.
+     * The connection attempt failed before the broker accepted or refused it.
+     *
+     * Covers transport-level failures during [MqttClient.connect] — DNS resolution, TCP connect,
+     * TLS handshake, a socket that closed mid-handshake, and a CONNACK that never arrived. The
+     * broker never expressed an opinion, so the attempt is worth retrying; contrast
+     * [ConnectionRejected], which carries the broker's own refusal and will fail the same way
+     * against the same configuration.
+     */
+    public class ConnectionFailed(
+        reasonCode: ReasonCode,
+        message: String,
+        cause: Throwable? = null,
+    ) : MqttException(reasonCode, message, cause)
+
+    /**
+     * The connection was lost unexpectedly, after it had been established.
      *
      * Emitted when the transport fails, keepalive times out, or the broker
-     * sends a DISCONNECT packet.
+     * sends a DISCONNECT packet. A failure during the initial handshake is
+     * [ConnectionFailed] instead.
      */
     public class ConnectionLost(
         reasonCode: ReasonCode,
@@ -106,6 +122,12 @@ internal fun Throwable.toMqttException(defaultReasonCode: ReasonCode = ReasonCod
                     cause = this.cause,
                     serverReference = this.serverReference,
                 )
+            } else if (this.failure == ConnectFailure.TRANSPORT) {
+                MqttException.ConnectionFailed(
+                    reasonCode = this.reasonCode,
+                    message = this.message ?: "Connection failed",
+                    cause = this.cause,
+                )
             } else {
                 MqttException.ConnectionLost(
                     reasonCode = this.reasonCode,
@@ -121,5 +143,49 @@ internal fun Throwable.toMqttException(defaultReasonCode: ReasonCode = ReasonCod
                 message = this.message ?: this::class.simpleName ?: "Unknown error",
                 cause = this,
             )
+        }
+    }
+
+/**
+ * Map a handshake failure to the public [MqttException] the [MqttClient.connect] caller sees.
+ *
+ * Classification follows which side failed, not the reason code: a broker may refuse a CONNECT
+ * with `PROTOCOL_ERROR`, and a transport failure synthesises `UNSPECIFIED_ERROR`, so the reason
+ * code alone cannot separate "the broker said no" from "the network flaked". Only
+ * [ConnectFailure.BROKER_REFUSAL] becomes [MqttException.ConnectionRejected]; retrying the others
+ * against the same configuration may well succeed.
+ *
+ * Falls back to [toMqttException] when the origin is unset, which happens only for failures
+ * raised outside the CONNECT/CONNACK handshake.
+ */
+internal fun MqttConnectionException.toConnectException(): MqttException =
+    when (failure) {
+        ConnectFailure.BROKER_REFUSAL -> {
+            MqttException.ConnectionRejected(
+                reasonCode = reasonCode,
+                message = message ?: "Connection refused by broker",
+                cause = cause,
+                serverReference = serverReference,
+            )
+        }
+
+        ConnectFailure.PROTOCOL_VIOLATION -> {
+            MqttException.ProtocolError(
+                reasonCode = reasonCode,
+                message = message ?: "Protocol error during connect",
+                cause = cause,
+            )
+        }
+
+        ConnectFailure.TRANSPORT -> {
+            MqttException.ConnectionFailed(
+                reasonCode = reasonCode,
+                message = message ?: "Connection failed",
+                cause = cause,
+            )
+        }
+
+        null -> {
+            toMqttException()
         }
     }

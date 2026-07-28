@@ -233,13 +233,12 @@ internal class MqttConnection(
 
             if (connAck.reasonCode != ReasonCode.SUCCESS) {
                 log.error(TAG) { "Connection refused: ${connAck.reasonCode}" }
-                transport.close()
-                _connectionState.value = ConnectionState.Disconnected.Idle
                 val serverRef = connAck.properties.serverReference
                 throw MqttConnectionException(
                     connAck.reasonCode,
                     "Connection refused: ${connAck.reasonCode}",
                     serverReference = serverRef,
+                    failure = ConnectFailure.BROKER_REFUSAL,
                 )
             }
 
@@ -252,11 +251,10 @@ internal class MqttConnection(
                 log.error(TAG) {
                     "Protocol error: sessionPresent=true with cleanStart=true (§3.2.2.1.1)"
                 }
-                transport.close()
-                _connectionState.value = ConnectionState.Disconnected.Idle
                 throw MqttConnectionException(
                     ReasonCode.PROTOCOL_ERROR,
                     "Server set sessionPresent=true with cleanStart=true (§3.2.2.1.1)",
+                    failure = ConnectFailure.PROTOCOL_VIOLATION,
                 )
             }
 
@@ -282,6 +280,7 @@ internal class MqttConnection(
                                 throw MqttConnectionException(
                                     ReasonCode.PROTOCOL_ERROR,
                                     "Invalid Maximum QoS value $value in CONNACK (§3.2.2.3.4)",
+                                    failure = ConnectFailure.PROTOCOL_VIOLATION,
                                 )
                             }
                         }
@@ -315,22 +314,19 @@ internal class MqttConnection(
 
             return connAck
         } catch (e: MqttConnectionException) {
+            // Every handshake rejection lands here, including the ones awaitConnAck raises, so
+            // the socket is released on all of them rather than only where the throw is inline.
+            abandonHandshake()
             throw e
         } catch (e: TimeoutCancellationException) {
             // awaitConnAck timed out — map to a meaningful connection error
             log.error(TAG) { "Connection timed out waiting for CONNACK" }
-            try {
-                transport.close()
-            } catch (
-                @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
-            ) {
-                // Best-effort transport close
-            }
-            _connectionState.value = ConnectionState.Disconnected.Idle
+            abandonHandshake()
             throw MqttConnectionException(
                 ReasonCode.UNSPECIFIED_ERROR,
                 "Connection timed out: no CONNACK received within ${ACK_TIMEOUT_MS}ms",
                 e,
+                failure = ConnectFailure.TRANSPORT,
             )
         } catch (e: kotlin.coroutines.cancellation.CancellationException) {
             throw e // Preserve structured concurrency — do not wrap cancellation
@@ -338,22 +334,32 @@ internal class MqttConnection(
             @Suppress("TooGenericExceptionCaught") e: Exception,
         ) {
             log.error(TAG, throwable = e) { "Connection failed: ${e.message}" }
-            try {
-                transport.close()
-            } catch (
-                @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
-            ) {
-                // Best-effort transport close on handshake failure
-            }
-            _connectionState.value = ConnectionState.Disconnected.Idle
+            abandonHandshake()
             if (awaitingConnAck) {
                 throw ConnectionClosedBeforeConnAckException(
                     "Connection closed before CONNACK: ${e.message}",
                     e,
                 )
             }
-            throw MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, "Connection failed: ${e.message}", e)
+            throw MqttConnectionException(
+                ReasonCode.UNSPECIFIED_ERROR,
+                "Connection failed: ${e.message}",
+                e,
+                failure = ConnectFailure.TRANSPORT,
+            )
         }
+    }
+
+    /** Release the socket and reset state after a failed CONNECT/CONNACK handshake. */
+    private suspend fun abandonHandshake() {
+        try {
+            transport.close()
+        } catch (
+            @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+        ) {
+            // Best-effort transport close on handshake failure
+        }
+        _connectionState.value = ConnectionState.Disconnected.Idle
     }
 
     /**
@@ -378,6 +384,7 @@ internal class MqttConnection(
                             throw MqttConnectionException(
                                 ReasonCode.PROTOCOL_ERROR,
                                 "Received AUTH packet during MQTT 3.1.1 handshake",
+                                failure = ConnectFailure.PROTOCOL_VIOLATION,
                             )
                         }
                         _authChallenges.emit(
@@ -394,6 +401,7 @@ internal class MqttConnection(
                         throw MqttConnectionException(
                             ReasonCode.PROTOCOL_ERROR,
                             "Expected CONNACK or AUTH during handshake, got ${response.packetType}",
+                            failure = ConnectFailure.PROTOCOL_VIOLATION,
                         )
                     }
                 }
@@ -1428,12 +1436,17 @@ internal class MqttConnection(
  *
  * @property reasonCode The MQTT 5.0 reason code from the broker.
  * @property serverReference Server reference from CONNACK/DISCONNECT for redirect handling (§4.13).
+ * @property failure Which side of the handshake produced the failure, or `null` outside the
+ *   CONNECT/CONNACK handshake. Reason codes alone cannot carry this: a broker may legitimately
+ *   refuse a CONNECT with `PROTOCOL_ERROR`, and a transport failure has no broker reason code at
+ *   all, so both arrive as reason codes the connect path would otherwise classify identically.
  */
 internal open class MqttConnectionException(
     val reasonCode: ReasonCode,
     message: String,
     cause: Throwable? = null,
     val serverReference: String? = null,
+    val failure: ConnectFailure? = null,
 ) : Exception(message, cause) {
     /**
      * `true` when the failure was a broker closing the connection between CONNECT being
@@ -1452,12 +1465,37 @@ internal open class MqttConnectionException(
  * TLS handshake, DNS) deliberately stay plain [MqttConnectionException]s so real network
  * errors are never masked by a pointless retry. A CONNACK timeout is also excluded: the
  * broker kept the connection open, so retrying with 3.1.1 would just double the wait.
+ *
+ * Still a [ConnectFailure.TRANSPORT] failure: the broker never answered, so once the 3.1.1
+ * fallback has been exhausted this surfaces to the caller as [MqttException.ConnectionFailed].
  */
 internal class ConnectionClosedBeforeConnAckException(
     message: String,
     cause: Throwable? = null,
-) : MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, message, cause) {
+) : MqttConnectionException(
+        ReasonCode.UNSPECIFIED_ERROR,
+        message,
+        cause,
+        failure = ConnectFailure.TRANSPORT,
+    ) {
     override val closedBeforeConnAck: Boolean get() = true
+}
+
+/**
+ * Which side of the CONNECT/CONNACK handshake produced a [MqttConnectionException].
+ *
+ * The distinction drives retry policy: only [BROKER_REFUSAL] means the broker saw the CONNECT
+ * and said no, so a retry with the same configuration will fail the same way.
+ */
+internal enum class ConnectFailure {
+    /** The broker answered with a CONNACK carrying a non-SUCCESS reason code (§3.2.2.2). */
+    BROKER_REFUSAL,
+
+    /** The broker answered, but violated the spec (malformed CONNACK, wrong packet type). */
+    PROTOCOL_VIOLATION,
+
+    /** Transport or I/O failed before any CONNACK arrived — DNS, TCP, TLS, EOF, or timeout. */
+    TRANSPORT,
 }
 
 /**

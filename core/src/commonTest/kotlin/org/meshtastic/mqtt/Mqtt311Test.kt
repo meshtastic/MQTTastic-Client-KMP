@@ -940,7 +940,8 @@ class Mqtt311Test {
                     transport
                 }
 
-            assertFailsWith<MqttException.ConnectionRejected> {
+            // The broker closed without answering, so this is a transport failure — not a refusal.
+            assertFailsWith<MqttException.ConnectionFailed> {
                 client.connect(endpoint)
             }
             assertEquals(1, transportsCreated)
@@ -971,7 +972,7 @@ class Mqtt311Test {
                     transport
                 }
 
-            assertFailsWith<MqttException.ConnectionRejected> {
+            assertFailsWith<MqttException.ConnectionFailed> {
                 client.connect(endpoint)
             }
             assertEquals(1, transportsCreated)
@@ -984,7 +985,7 @@ class Mqtt311Test {
     fun noFallbackWhenConnectWriteItselfFails() =
         runTest {
             // A failure while WRITING the CONNECT packet (broken pipe) is not a
-            // silent close while awaiting CONNACK — no fallback.
+            // silent close while awaiting CONNACK — no fallback, and still a transport failure.
             var transportsCreated = 0
             val transport = FakeTransport(MqttProtocolVersion.V5_0)
             transport.sendError = RuntimeException("Broken pipe")
@@ -1001,7 +1002,7 @@ class Mqtt311Test {
                     transport
                 }
 
-            assertFailsWith<MqttException.ConnectionRejected> {
+            assertFailsWith<MqttException.ConnectionFailed> {
                 client.connect(endpoint)
             }
             assertEquals(1, transportsCreated)

@@ -231,10 +231,8 @@ internal fun classifyProbeFailure(
             serverReference = error.serverReference,
         )
     }
-    if (error is MqttConnectionException && error.cause == null) {
-        // CONNACK refusal path: MqttConnection throws MqttConnectionException directly (no cause)
-        // when the broker returns a non-SUCCESS reason code. Treat as a Rejected outcome so
-        // probe consumers can surface the broker's reason code to the user.
+    if (error is MqttConnectionException && error.failure == ConnectFailure.BROKER_REFUSAL) {
+        // CONNACK refusal: report the broker's own reason code so probe consumers can surface it.
         return ProbeResult.Rejected(
             reasonCode = error.reasonCode,
             message = error.message ?: "Broker rejected the connection",

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `MqttException.ConnectionFailed` — a new subtype for a connect attempt that failed before the
+  broker accepted or refused it: DNS, TCP connect, TLS handshake, a socket that closed
+  mid-handshake, or a CONNACK that never arrived.
+
+### Changed
+
+- **`connect()` no longer reports every failure as `MqttException.ConnectionRejected`.** It now
+  classifies by which side of the handshake failed, because a consumer cannot write a correct retry
+  policy without that distinction: a rejection means the broker read the CONNECT and said no, so
+  retrying the same configuration is pointless, whereas a network failure is exactly what a retry
+  is for. Previously both arrived as `ConnectionRejected`, so a TCP timeout or a TLS chain failure
+  was indistinguishable from a bad password — a caller that stopped on `ConnectionRejected` gave up
+  permanently on a transient network blip, and one that retried hammered a broker that would never
+  accept it. Downstream consumers had to reach past the type and re-derive the answer from reason
+  codes.
+
+  `connect()` now throws:
+
+  - `ConnectionRejected` only for a genuine CONNACK carrying an error reason code — including an
+    unsupported protocol version that could not be renegotiated, and including a CONNACK whose
+    reason code is `PROTOCOL_ERROR`, since the broker still answered. `serverReference` is
+    preserved.
+  - `ConnectionFailed` for transport and I/O failures, with the original platform exception kept as
+    `cause`.
+  - `ProtocolError` when the broker answered but violated the spec (a malformed CONNACK, an
+    unexpected packet type mid-handshake).
+
+  Reason codes alone could not express this — a broker may legitimately refuse a CONNECT with
+  `PROTOCOL_ERROR`, and a transport failure has no broker reason code at all and synthesises
+  `UNSPECIFIED_ERROR` — so the connection layer now records the failure's origin explicitly.
+
+  **Migration:** callers matching `MqttException.ConnectionRejected` to stop retrying keep working
+  and get more accurate: only real refusals land there now. Code that relied on `ConnectionRejected`
+  as the catch-all for *any* connect failure should add a `ConnectionFailed` branch, or catch
+  `MqttException`. Auto-reconnect behaviour is unchanged — it already classified by reason code and
+  never stopped on a transport failure.
+
 ### Fixed
 
 - MQTT 5.0 → 3.1.1 version negotiation now also triggers when a broker **silently closes** the
@@ -18,11 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `MqttClient.probe` now retry once with MQTT 3.1.1 when `negotiateVersion` is enabled (the
   default). The fallback is phase-gated: it fires only when the connection failed *after* the
   CONNECT packet was written and *before* a CONNACK arrived. DNS, TCP, and TLS failures — and
-  CONNACK timeouts, where the broker kept the connection open — keep their current behaviour, so
-  real network errors are never masked and dead hosts don't pay a doubled connect latency. The
-  probe's retry runs within the remaining `timeoutMs` budget, preserving its total wall-clock
-  contract. `probe` additionally gains the explicit `UNSUPPORTED_PROTOCOL_VERSION` fallback the
-  client already had, so probing a 3.1.1-only broker now reports `Success` instead of `Rejected`.
+  CONNACK timeouts, where the broker kept the connection open — do not trigger it, so real network
+  errors are never masked and dead hosts don't pay a doubled connect latency. Those failures are
+  still reported accurately, as `ConnectionFailed` per the classification change above. The probe's
+  retry runs within the remaining `timeoutMs` budget, preserving its total wall-clock contract.
+  `probe` additionally gains the explicit `UNSUPPORTED_PROTOCOL_VERSION` fallback the client
+  already had, so probing a 3.1.1-only broker now reports `Success` instead of `Rejected`.
+- A failed handshake no longer leaks the socket. Rejections raised while awaiting CONNACK — an
+  unexpected packet type, an AUTH packet during an MQTT 3.1.1 handshake — took a rethrow path that
+  skipped transport cleanup, as did an invalid Maximum QoS value in the CONNACK. Handshake cleanup
+  is now centralised and covers every rejection path.
 
 ## [0.7.0] - 2026-07-26
 

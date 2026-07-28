@@ -723,6 +723,10 @@ sealed class org.meshtastic.mqtt/MqttException : kotlin/Exception { // org.mesht
     final val reasonCode // org.meshtastic.mqtt/MqttException.reasonCode|{}reasonCode[0]
         final fun <get-reasonCode>(): org.meshtastic.mqtt/ReasonCode // org.meshtastic.mqtt/MqttException.reasonCode.<get-reasonCode>|<get-reasonCode>(){}[0]
 
+    final class ConnectionFailed : org.meshtastic.mqtt/MqttException { // org.meshtastic.mqtt/MqttException.ConnectionFailed|null[0]
+        constructor <init>(org.meshtastic.mqtt/ReasonCode, kotlin/String, kotlin/Throwable? = ...) // org.meshtastic.mqtt/MqttException.ConnectionFailed.<init>|<init>(org.meshtastic.mqtt.ReasonCode;kotlin.String;kotlin.Throwable?){}[0]
+    }
+
     final class ConnectionLost : org.meshtastic.mqtt/MqttException { // org.meshtastic.mqtt/MqttException.ConnectionLost|null[0]
         constructor <init>(org.meshtastic.mqtt/ReasonCode, kotlin/String, kotlin/Throwable? = ...) // org.meshtastic.mqtt/MqttException.ConnectionLost.<init>|<init>(org.meshtastic.mqtt.ReasonCode;kotlin.String;kotlin.Throwable?){}[0]
     }
