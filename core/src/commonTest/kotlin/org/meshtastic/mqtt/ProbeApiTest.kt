@@ -200,6 +200,85 @@ class ProbeApiTest {
             }
         }
 
+    // --- Version negotiation (5.0 → 3.1.1 fallback) ---
+
+    @Test
+    fun probe_silentCloseAfterV5Connect_fallsBackTo311AndSucceeds() =
+        runTest {
+            // Broker accepts the socket, consumes the MQTT 5.0 CONNECT, then closes
+            // without a CONNACK — the probe must retry with 3.1.1 and succeed.
+            val v5Transport = FakeTransport()
+            v5Transport.receiveError = RuntimeException("Not enough data available")
+            val v311Transport = FakeTransport(MqttProtocolVersion.V3_1_1)
+            v311Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            val transports = mutableListOf<MqttTransport>(v5Transport, v311Transport)
+
+            val result =
+                runProbeNegotiating(probeConfig(), { transports.removeAt(0) }, endpoint, timeoutMs = 5_000)
+
+            assertIs<ProbeResult.Success>(result)
+        }
+
+    @Test
+    fun probe_unsupportedProtocolVersionConnack_fallsBackTo311AndSucceeds() =
+        runTest {
+            val v5Transport = FakeTransport()
+            v5Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+            val v311Transport = FakeTransport(MqttProtocolVersion.V3_1_1)
+            v311Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            val transports = mutableListOf<MqttTransport>(v5Transport, v311Transport)
+
+            val result =
+                runProbeNegotiating(probeConfig(), { transports.removeAt(0) }, endpoint, timeoutMs = 5_000)
+
+            assertIs<ProbeResult.Success>(result)
+        }
+
+    @Test
+    fun probe_transportFailureBeforeConnectWritten_doesNotFallBack() =
+        runTest {
+            // TCP-level failure before the CONNECT packet exists: no retry, one transport.
+            var transportsCreated = 0
+            val transport = FakeTransport()
+            transport.connectError = RuntimeException("Connection refused")
+
+            val result =
+                runProbeNegotiating(
+                    probeConfig(),
+                    {
+                        transportsCreated++
+                        transport
+                    },
+                    endpoint,
+                    timeoutMs = 5_000,
+                )
+
+            assertIs<ProbeResult.TcpFailure>(result)
+            assertEquals(1, transportsCreated)
+        }
+
+    @Test
+    fun probe_silentClose_negotiateVersionDisabled_doesNotFallBack() =
+        runTest {
+            var transportsCreated = 0
+            val transport = FakeTransport()
+            transport.receiveError = RuntimeException("Not enough data available")
+
+            val result =
+                runProbeNegotiating(
+                    probeConfig().copy(negotiateVersion = false),
+                    {
+                        transportsCreated++
+                        transport
+                    },
+                    endpoint,
+                    timeoutMs = 5_000,
+                )
+
+            assertIs<ProbeResult.Other>(result)
+            assertEquals(1, transportsCreated)
+        }
+
     // --- Validation ---
 
     @Test

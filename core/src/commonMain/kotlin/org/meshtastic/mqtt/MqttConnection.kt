@@ -214,14 +214,22 @@ internal class MqttConnection(
 
         log.debug(TAG) { "Establishing transport connection to $endpoint" }
 
+        // Tracks the handshake phase so the generic catch below can tell a broker that
+        // closed the connection *after* the CONNECT packet was written (some brokers
+        // silently drop unsupported protocol versions instead of answering with an
+        // UNSUPPORTED_PROTOCOL_VERSION CONNACK) apart from TCP/TLS/DNS failures that
+        // happen before CONNECT was ever sent.
+        var awaitingConnAck = false
         try {
             transport.connect(endpoint)
             val connectPacket = buildConnectPacket()
             log.debug(TAG) { "Sending CONNECT (clientId='${config.clientId}', cleanStart=${config.cleanStart})" }
             sendPacket(connectPacket)
+            awaitingConnAck = true
 
             // Read responses until CONNACK; AUTH packets may interleave for enhanced auth (§4.12)
             val connAck = awaitConnAck()
+            awaitingConnAck = false
 
             if (connAck.reasonCode != ReasonCode.SUCCESS) {
                 log.error(TAG) { "Connection refused: ${connAck.reasonCode}" }
@@ -338,6 +346,12 @@ internal class MqttConnection(
                 // Best-effort transport close on handshake failure
             }
             _connectionState.value = ConnectionState.Disconnected.Idle
+            if (awaitingConnAck) {
+                throw ConnectionClosedBeforeConnAckException(
+                    "Connection closed before CONNACK: ${e.message}",
+                    e,
+                )
+            }
             throw MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, "Connection failed: ${e.message}", e)
         }
     }
@@ -1415,12 +1429,36 @@ internal class MqttConnection(
  * @property reasonCode The MQTT 5.0 reason code from the broker.
  * @property serverReference Server reference from CONNACK/DISCONNECT for redirect handling (§4.13).
  */
-internal class MqttConnectionException(
+internal open class MqttConnectionException(
     val reasonCode: ReasonCode,
     message: String,
     cause: Throwable? = null,
     val serverReference: String? = null,
-) : Exception(message, cause)
+) : Exception(message, cause) {
+    /**
+     * `true` when the failure was a broker closing the connection between CONNECT being
+     * written and CONNACK arriving — see [ConnectionClosedBeforeConnAckException].
+     */
+    open val closedBeforeConnAck: Boolean get() = false
+}
+
+/**
+ * The transport failed *after* the CONNECT packet was written but *before* a CONNACK
+ * arrived — typically a broker that silently closes the connection instead of answering
+ * an unsupported CONNECT (e.g. older brokers/gateways dropping MQTT 5.0 CONNECTs).
+ *
+ * [MqttClient] and the probe path use this phase distinction to fall back to MQTT 3.1.1
+ * when version negotiation is enabled. Failures before CONNECT was written (TCP connect,
+ * TLS handshake, DNS) deliberately stay plain [MqttConnectionException]s so real network
+ * errors are never masked by a pointless retry. A CONNACK timeout is also excluded: the
+ * broker kept the connection open, so retrying with 3.1.1 would just double the wait.
+ */
+internal class ConnectionClosedBeforeConnAckException(
+    message: String,
+    cause: Throwable? = null,
+) : MqttConnectionException(ReasonCode.UNSPECIFIED_ERROR, message, cause) {
+    override val closedBeforeConnAck: Boolean get() = true
+}
 
 /**
  * Represents a server redirect instruction received via CONNACK or DISCONNECT (§4.13).

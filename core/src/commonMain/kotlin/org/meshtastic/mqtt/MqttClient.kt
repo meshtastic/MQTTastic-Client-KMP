@@ -729,14 +729,20 @@ public class MqttClient
             try {
                 conn.connect(endpoint)
             } catch (e: MqttConnectionException) {
-                // Version fallback: if broker rejected V5_0, try V3_1_1 on a fresh transport
-                if (
-                    e.reasonCode == ReasonCode.UNSUPPORTED_PROTOCOL_VERSION &&
-                    effectiveVersion == MqttProtocolVersion.V5_0 &&
-                    config.negotiateVersion
-                ) {
+                // Version fallback: if broker rejected V5_0 — either explicitly with an
+                // UNSUPPORTED_PROTOCOL_VERSION CONNACK, or silently by closing the connection
+                // after the CONNECT was written without ever answering (many older brokers and
+                // gateways do this) — try V3_1_1 on a fresh transport.
+                val silentClose = e.closedBeforeConnAck
+                val v5Refused = e.reasonCode == ReasonCode.UNSUPPORTED_PROTOCOL_VERSION || silentClose
+                if (v5Refused && effectiveVersion == MqttProtocolVersion.V5_0 && config.negotiateVersion) {
                     log.info(TAG) {
-                        "Broker rejected MQTT 5.0 — falling back to MQTT 3.1.1"
+                        if (silentClose) {
+                            "Broker closed the connection without answering the MQTT 5.0 CONNECT — " +
+                                "falling back to MQTT 3.1.1"
+                        } else {
+                            "Broker rejected MQTT 5.0 — falling back to MQTT 3.1.1"
+                        }
                     }
                     // Validate the config is compatible with 3.1.1 before retrying
                     try {

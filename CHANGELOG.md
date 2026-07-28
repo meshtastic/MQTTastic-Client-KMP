@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- MQTT 5.0 → 3.1.1 version negotiation now also triggers when a broker **silently closes** the
+  connection on an MQTT 5.0 CONNECT instead of answering with an `UNSUPPORTED_PROTOCOL_VERSION`
+  CONNACK. Many older brokers and gateways (observed live on `mqtt.defcon.run:4433`) drop the
+  connection without any reply, which previously surfaced as a bare transport error
+  (`EOFException: Not enough data available`) — the Meshtastic Android app misreported it as a
+  credentials problem, while iOS clients, which speak 3.1.1 natively, connected fine. The client
+  and `MqttClient.probe` now retry once with MQTT 3.1.1 when `negotiateVersion` is enabled (the
+  default). The fallback is phase-gated: it fires only when the connection failed *after* the
+  CONNECT packet was written and *before* a CONNACK arrived. DNS, TCP, and TLS failures — and
+  CONNACK timeouts, where the broker kept the connection open — keep their current behaviour, so
+  real network errors are never masked and dead hosts don't pay a doubled connect latency. The
+  probe's retry runs within the remaining `timeoutMs` budget, preserving its total wall-clock
+  contract. `probe` additionally gains the explicit `UNSUPPORTED_PROTOCOL_VERSION` fallback the
+  client already had, so probing a 3.1.1-only broker now reports `Success` instead of `Rejected`.
+
 ## [0.7.0] - 2026-07-26
 
 ### Added
