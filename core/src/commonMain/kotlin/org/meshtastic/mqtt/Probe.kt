@@ -27,6 +27,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.meshtastic.mqtt.packet.MqttProperties
+import kotlin.time.TimeSource
 
 /**
  * Default timeout for [MqttClient.probe], in milliseconds.
@@ -49,6 +50,11 @@ public const val DEFAULT_PROBE_TIMEOUT_MS: Long = 5_000
  * default; override via [configure] if your broker enforces specific credentials
  * or client identifiers. `autoReconnect` is forced to `false` regardless of the
  * configure block — probes are always single-shot.
+ *
+ * Version negotiation matches [MqttClient.connect]: when `negotiateVersion` is enabled
+ * (the default) and the broker either rejects the MQTT 5.0 CONNECT with
+ * `UNSUPPORTED_PROTOCOL_VERSION` or closes the connection without answering it, the
+ * probe retries once with MQTT 3.1.1 within the remaining [timeoutMs] budget.
  *
  * ## Example
  * ```kotlin
@@ -75,48 +81,119 @@ public suspend fun MqttClient.Companion.probe(
     configure: MqttConfig.Builder.() -> Unit = {},
 ): ProbeResult {
     require(timeoutMs > 0) { "timeoutMs must be > 0, got: $timeoutMs" }
-    val config = buildProbeConfig(configure)
-    val transport =
-        (
-            config.transportFactory ?: error(
-                "probe() requires a transportFactory. Set it in the configure block, " +
-                    "e.g. transportFactory = TcpTransportFactory().",
-            )
-        ).create(endpoint)
-    return runProbe(config, transport, endpoint, timeoutMs)
+    // Transient probe config: force autoReconnect=false and default keepAliveSeconds=0 so
+    // the probe never starts a keepalive loop, but let the caller override clientId,
+    // credentials, will, etc.
+    val config =
+        MqttConfig
+            .Builder()
+            .apply {
+                clientId = ""
+                keepAliveSeconds = 0
+                cleanStart = true
+                configure()
+                autoReconnect = false
+            }.build()
+    val factory =
+        config.transportFactory ?: error(
+            "probe() requires a transportFactory. Set it in the configure block, " +
+                "e.g. transportFactory = TcpTransportFactory().",
+        )
+    return runProbeNegotiating(config, { factory.create(endpoint) }, endpoint, timeoutMs)
 }
 
 /**
- * Build the transient config used by [probe]. Forces `autoReconnect = false` and
- * defaults `keepAliveSeconds = 0` so the probe never starts a keepalive loop, but
- * lets the caller override clientId, credentials, will, etc.
+ * Run a probe with the same MQTT version negotiation [MqttClient.connect] performs: when
+ * [MqttConfig.negotiateVersion] is enabled and an MQTT 5.0 CONNECT is either rejected with
+ * `UNSUPPORTED_PROTOCOL_VERSION` or the broker closes the connection without answering it
+ * (a silent close after CONNECT was written — common on older brokers and gateways), retry
+ * once with MQTT 3.1.1 on a fresh transport.
+ *
+ * The retry runs within whatever remains of the caller's [timeoutMs] budget, so the probe's
+ * "total wall-clock budget" contract holds across both attempts. Failures before CONNECT was
+ * written (DNS, TCP, TLS) never trigger the retry — see [ConnectionClosedBeforeConnAckException].
+ *
+ * `internal` rather than private so `commonTest` can drive the negotiation arms via
+ * [FakeTransport]-producing factories.
  */
-private fun buildProbeConfig(configure: MqttConfig.Builder.() -> Unit): MqttConfig =
-    MqttConfig
-        .Builder()
-        .apply {
-            clientId = ""
-            keepAliveSeconds = 0
-            cleanStart = true
-            configure()
-            autoReconnect = false
-        }.build()
+internal suspend fun runProbeNegotiating(
+    config: MqttConfig,
+    createTransport: () -> MqttTransport,
+    endpoint: MqttEndpoint,
+    timeoutMs: Long,
+): ProbeResult {
+    val start = TimeSource.Monotonic.markNow()
+    val attempt = runProbeAttempt(config, createTransport, endpoint, timeoutMs)
+    val remainingMs = timeoutMs - start.elapsedNow().inWholeMilliseconds
+
+    // Fall back only when the first (MQTT 5.0) attempt indicates the broker doesn't speak
+    // 5.0 — an explicit UNSUPPORTED_PROTOCOL_VERSION CONNACK or a silent close after the
+    // CONNECT was written — and the config both permits negotiation and can be expressed
+    // in 3.1.1.
+    val v5Refused =
+        attempt.closedBeforeConnAck ||
+            (attempt.result as? ProbeResult.Rejected)?.reasonCode == ReasonCode.UNSUPPORTED_PROTOCOL_VERSION
+    val canFallBack =
+        config.negotiateVersion &&
+            config.protocolVersion == MqttProtocolVersion.V5_0 &&
+            runCatching { config.validateV311Compatibility() }.isSuccess
+    return if (v5Refused && canFallBack && remainingMs > 0) {
+        val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
+        runProbeAttempt(fallbackConfig, createTransport, endpoint, remainingMs).result
+    } else {
+        attempt.result
+    }
+}
 
 /**
- * Test-injectable variant that takes a pre-built transport. `internal` rather than private so
- * `commonTest` can drive each [ProbeResult] arm via [FakeTransport].
+ * Test-injectable variant that takes a pre-built transport and performs a single attempt with
+ * no version negotiation. `internal` rather than private so `commonTest` can drive each
+ * [ProbeResult] arm via [FakeTransport].
+ */
+internal suspend fun runProbe(
+    config: MqttConfig,
+    transport: MqttTransport,
+    endpoint: MqttEndpoint,
+    timeoutMs: Long,
+): ProbeResult = runProbeAttempt(config, { transport }, endpoint, timeoutMs).result
+
+/** Outcome of one probe attempt, plus the phase signal driving 5.0 → 3.1.1 fallback. */
+private class ProbeAttempt(
+    val result: ProbeResult,
+    val closedBeforeConnAck: Boolean,
+)
+
+/**
+ * One CONNECT/CONNACK probe attempt, against a transport it builds via [createTransport].
+ *
+ * The transport is built inside the classified path on purpose: a factory can reject the endpoint
+ * synchronously (a composite factory with no delegate that supports it), and [probe] promises to
+ * report failures as a [ProbeResult] rather than throw.
  *
  * `SwallowedException` is suppressed deliberately: a timeout is a normal probe outcome, not an
  * error, and is translated into [ProbeResult.Timeout], which carries the timeout budget instead
  * of the exception.
  */
 @Suppress("SwallowedException")
-internal suspend fun runProbe(
+private suspend fun runProbeAttempt(
     config: MqttConfig,
-    transport: MqttTransport,
+    createTransport: () -> MqttTransport,
     endpoint: MqttEndpoint,
     timeoutMs: Long,
-): ProbeResult {
+): ProbeAttempt {
+    val transport =
+        try {
+            createTransport()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Throwable,
+        ) {
+            return ProbeAttempt(
+                classifyProbeFailure(e, fallbackTimeoutMs = timeoutMs),
+                closedBeforeConnAck = false,
+            )
+        }
     val probeScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Default + CoroutineName("MqttProbe"))
     val connection = MqttConnection(transport, config, probeScope)
@@ -128,16 +205,21 @@ internal suspend fun runProbe(
             } else {
                 ProbeServerInfo() // Empty info for MQTT 3.1.1
             }
-        ProbeResult.Success(serverInfo = serverInfo)
+        ProbeAttempt(ProbeResult.Success(serverInfo = serverInfo), closedBeforeConnAck = false)
     } catch (e: TimeoutCancellationException) {
-        ProbeResult.Timeout(durationMs = timeoutMs)
+        ProbeAttempt(ProbeResult.Timeout(durationMs = timeoutMs), closedBeforeConnAck = false)
     } catch (e: CancellationException) {
         // External cancellation — propagate to preserve structured concurrency.
         throw e
+    } catch (e: MqttConnectionException) {
+        ProbeAttempt(
+            classifyProbeFailure(e, fallbackTimeoutMs = timeoutMs),
+            closedBeforeConnAck = e.closedBeforeConnAck,
+        )
     } catch (
         @Suppress("TooGenericExceptionCaught") e: Throwable,
     ) {
-        classifyProbeFailure(e, fallbackTimeoutMs = timeoutMs)
+        ProbeAttempt(classifyProbeFailure(e, fallbackTimeoutMs = timeoutMs), closedBeforeConnAck = false)
     } finally {
         // Tear down on a non-cancellable context so probe cleanup is reliable
         // even if the caller's coroutine is being cancelled.
@@ -166,10 +248,8 @@ internal fun classifyProbeFailure(
             serverReference = error.serverReference,
         )
     }
-    if (error is MqttConnectionException && error.cause == null) {
-        // CONNACK refusal path: MqttConnection throws MqttConnectionException directly (no cause)
-        // when the broker returns a non-SUCCESS reason code. Treat as a Rejected outcome so
-        // probe consumers can surface the broker's reason code to the user.
+    if (error is MqttConnectionException && error.failure == ConnectFailure.BROKER_REFUSAL) {
+        // CONNACK refusal: report the broker's own reason code so probe consumers can surface it.
         return ProbeResult.Rejected(
             reasonCode = error.reasonCode,
             message = error.message ?: "Broker rejected the connection",

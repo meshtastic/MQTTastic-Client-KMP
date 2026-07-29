@@ -882,4 +882,132 @@ class Mqtt311Test {
 
             client.close()
         }
+
+    @Test
+    fun versionFallbackOnSilentCloseBeforeConnack() =
+        runTest {
+            // Some brokers (e.g. older brokers/gateways behind TLS terminators) close the
+            // connection on an MQTT 5.0 CONNECT without ever answering — no
+            // UNSUPPORTED_PROTOCOL_VERSION CONNACK. The client must still fall back to 3.1.1.
+            val v5Transport = FakeTransport(MqttProtocolVersion.V5_0)
+            val v311Transport = FakeTransport(MqttProtocolVersion.V3_1_1)
+            val transports = mutableListOf(v5Transport, v311Transport)
+
+            // V5 attempt: connect succeeds, CONNECT is written, then the broker closes.
+            v5Transport.receiveError = RuntimeException("Not enough data available")
+            // 3.1.1 retry: broker answers a normal CONNACK.
+            v311Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = true,
+                )
+            val client = MqttClient(config, this) { transports.removeAt(0) }
+
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
+            assertEquals(MqttProtocolVersion.V3_1_1, client.negotiatedProtocolVersion)
+
+            // The V5 CONNECT really was written before the silent close…
+            assertIs<Connect>(v5Transport.decodeSentPackets().first())
+            // …and the retry used protocolLevel 4 (MQTT 3.1.1).
+            val sentConnect = v311Transport.decodeSentPackets().first() as Connect
+            assertEquals(4, sentConnect.protocolLevel)
+
+            client.close()
+        }
+
+    @Test
+    fun noFallbackOnSilentCloseWhenNegotiateVersionDisabled() =
+        runTest {
+            var transportsCreated = 0
+            val transport = FakeTransport(MqttProtocolVersion.V5_0)
+            transport.receiveError = RuntimeException("Not enough data available")
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = false,
+                )
+            val client =
+                MqttClient(config, this) {
+                    transportsCreated++
+                    transport
+                }
+
+            // The broker closed without answering, so this is a transport failure — not a refusal.
+            assertFailsWith<MqttException.ConnectionFailed> {
+                client.connect(endpoint)
+            }
+            assertEquals(1, transportsCreated)
+            assertEquals(MqttProtocolVersion.V5_0, client.negotiatedProtocolVersion)
+
+            client.close()
+        }
+
+    @Test
+    fun noFallbackWhenTransportFailsBeforeConnectWritten() =
+        runTest {
+            // A TCP/TLS/DNS failure happens before the CONNECT packet is ever written.
+            // Falling back would mask the real network error and double connect latency
+            // on dead hosts, so exactly one transport must be created.
+            var transportsCreated = 0
+            val transport = FakeTransport(MqttProtocolVersion.V5_0)
+            transport.connectError = RuntimeException("Connection refused")
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = true,
+                )
+            val client =
+                MqttClient(config, this) {
+                    transportsCreated++
+                    transport
+                }
+
+            assertFailsWith<MqttException.ConnectionFailed> {
+                client.connect(endpoint)
+            }
+            assertEquals(1, transportsCreated)
+            assertEquals(MqttProtocolVersion.V5_0, client.negotiatedProtocolVersion)
+
+            client.close()
+        }
+
+    @Test
+    fun noFallbackWhenConnectWriteItselfFails() =
+        runTest {
+            // A failure while WRITING the CONNECT packet (broken pipe) is not a
+            // silent close while awaiting CONNACK — no fallback, and still a transport failure.
+            var transportsCreated = 0
+            val transport = FakeTransport(MqttProtocolVersion.V5_0)
+            transport.sendError = RuntimeException("Broken pipe")
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = true,
+                )
+            val client =
+                MqttClient(config, this) {
+                    transportsCreated++
+                    transport
+                }
+
+            assertFailsWith<MqttException.ConnectionFailed> {
+                client.connect(endpoint)
+            }
+            assertEquals(1, transportsCreated)
+            assertEquals(MqttProtocolVersion.V5_0, client.negotiatedProtocolVersion)
+
+            client.close()
+        }
 }

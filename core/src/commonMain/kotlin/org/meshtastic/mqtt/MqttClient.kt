@@ -363,9 +363,23 @@ public class MqttClient
          * `SERVER_MOVED` with a Server Reference property), the client automatically follows
          * the redirect up to [MAX_REDIRECTS] times (§4.13).
          *
+         * Failures are classified by which side of the handshake produced them, so a caller can
+         * tell an unusable configuration from a bad network and pick a retry policy accordingly.
+         *
          * @param endpoint Broker endpoint (TCP or WebSocket).
-         * @throws MqttException.ConnectionRejected if the broker rejects the connection.
+         * @throws MqttException.ConnectionRejected if the broker answered with a CONNACK carrying
+         *   an error reason code — including an unsupported protocol version that could not be
+         *   renegotiated. Retrying the same configuration will fail the same way.
+         * @throws MqttException.ConnectionFailed if the transport failed before any CONNACK
+         *   arrived (DNS, TCP, TLS, a socket closed mid-handshake, or a CONNACK timeout). The
+         *   broker never expressed an opinion, so a retry may succeed.
+         * @throws MqttException.ProtocolError if the broker answered but violated the spec.
+         *
+         * `SwallowedException` is suppressed deliberately: the internal exception is not chained as
+         * the cause, because [toConnectException] carries over its reason code, message, server
+         * reference and its own cause, and the internal type is not part of the public API.
          */
+        @Suppress("SwallowedException")
         @Throws(MqttException::class, kotlin.coroutines.cancellation.CancellationException::class)
         public suspend fun connect(endpoint: MqttEndpoint) {
             try {
@@ -395,16 +409,10 @@ public class MqttClient
                     connectWithRedirect(endpoint, redirectsRemaining = MAX_REDIRECTS)
                 }
             } catch (e: MqttConnectionException) {
-                val rejected =
-                    MqttException.ConnectionRejected(
-                        reasonCode = e.reasonCode,
-                        message = e.message ?: "Connection failed",
-                        cause = e.cause,
-                        serverReference = e.serverReference,
-                    )
+                val failure = e.toConnectException()
                 // Forwarding hasn't started yet (connection==null on failure), so we own the state.
-                _connectionState.value = ConnectionState.Disconnected(reason = rejected)
-                throw rejected
+                _connectionState.value = ConnectionState.Disconnected(reason = failure)
+                throw failure
             }
         }
 
@@ -729,14 +737,20 @@ public class MqttClient
             try {
                 conn.connect(endpoint)
             } catch (e: MqttConnectionException) {
-                // Version fallback: if broker rejected V5_0, try V3_1_1 on a fresh transport
-                if (
-                    e.reasonCode == ReasonCode.UNSUPPORTED_PROTOCOL_VERSION &&
-                    effectiveVersion == MqttProtocolVersion.V5_0 &&
-                    config.negotiateVersion
-                ) {
+                // Version fallback: if broker rejected V5_0 — either explicitly with an
+                // UNSUPPORTED_PROTOCOL_VERSION CONNACK, or silently by closing the connection
+                // after the CONNECT was written without ever answering (many older brokers and
+                // gateways do this) — try V3_1_1 on a fresh transport.
+                val silentClose = e.closedBeforeConnAck
+                val v5Refused = e.reasonCode == ReasonCode.UNSUPPORTED_PROTOCOL_VERSION || silentClose
+                if (v5Refused && effectiveVersion == MqttProtocolVersion.V5_0 && config.negotiateVersion) {
                     log.info(TAG) {
-                        "Broker rejected MQTT 5.0 — falling back to MQTT 3.1.1"
+                        if (silentClose) {
+                            "Broker closed the connection without answering the MQTT 5.0 CONNECT — " +
+                                "falling back to MQTT 3.1.1"
+                        } else {
+                            "Broker rejected MQTT 5.0 — falling back to MQTT 3.1.1"
+                        }
                     }
                     // Validate the config is compatible with 3.1.1 before retrying
                     try {
