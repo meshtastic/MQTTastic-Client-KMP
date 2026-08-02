@@ -4,6 +4,9 @@ inputs:
   cache_read_only:
     description: 'Whether Gradle cache is read-only'
     default: 'true'
+  develocity_access_key:
+    description: 'Access key for the OSS Community Develocity Instance (Build Scan publishing and remote cache writes)'
+    required: false
 runs:
   using: composite
   steps:
@@ -30,3 +33,4 @@ runs:
         cache-read-only: ${{ inputs.cache_read_only }}
         cache-cleanup: on-success
         add-job-summary: always
+        develocity-access-key: ${{ inputs.develocity_access_key }}

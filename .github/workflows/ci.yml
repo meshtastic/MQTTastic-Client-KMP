@@ -14,11 +14,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
-  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
-  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
-
 jobs:
   lint:
     name: Lint
@@ -32,6 +27,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Run spotlessCheck and detektAll
         run: ./gradlew spotlessCheck detektAll --stacktrace
@@ -48,6 +44,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Run JVM tests and verify coverage
         run: ./gradlew jvmTest koverVerify --stacktrace
@@ -77,6 +74,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Run Linux native tests
         run: ./gradlew linuxX64Test --stacktrace
@@ -93,6 +91,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Run macOS and iOS simulator tests
         run: ./gradlew macosArm64Test iosSimulatorArm64Test --stacktrace
@@ -109,6 +108,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Run wasmJs browser tests
         run: ./gradlew wasmJsBrowserTest --stacktrace
@@ -125,6 +125,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Run Windows native tests
         shell: bash
@@ -142,6 +143,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       # apiCheck now validates the klib/native ABI too, so it compiles native
       # klibs and needs the Kotlin/Native toolchain. Cache ~/.konan to avoid
@@ -170,6 +172,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: ${{ github.event_name == 'pull_request' }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Build
         run: ./gradlew build --stacktrace
@@ -188,6 +191,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: 'false'
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Compute snapshot version
         id: version

@@ -30,11 +30,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
   cancel-in-progress: false
 
-env:
-  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
-  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
-  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
-
 permissions:
   contents: write
   id-token: write
@@ -73,6 +68,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: 'false'
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Validate before publish
         run: ./gradlew spotlessCheck detektAll jvmTest apiCheck --stacktrace
@@ -188,6 +184,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: 'false'
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Build sample artifacts
         shell: bash

@@ -8,6 +8,7 @@
 [![CI](https://github.com/meshtastic/MQTTastic-Client-KMP/actions/workflows/ci.yml/badge.svg)](https://github.com/meshtastic/MQTTastic-Client-KMP/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/meshtastic/MQTTastic-Client-KMP/graph/badge.svg)](https://codecov.io/gh/meshtastic/MQTTastic-Client-KMP)
 [![API Docs](https://img.shields.io/badge/API%20Docs-latest-blue.svg)](https://meshtastic.github.io/MQTTastic-Client-KMP)
+[![Revved up by Develocity](https://img.shields.io/badge/Revved%20up%20by-Develocity-06A0CE?logo=Gradle&labelColor=02303A)](https://community.develocity.cloud/scans?search.rootProjectNames=MQTTastic-Client-KMP)
 
 A fully-featured **MQTT 5.0 and 3.1.1** client library for **Kotlin Multiplatform** — connecting JVM, Android, iOS, macOS, Linux, Windows, and browsers through a single, idiomatic Kotlin API.
 
