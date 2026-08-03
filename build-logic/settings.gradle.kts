@@ -19,6 +19,15 @@
 // Standalone settings for the included build. Re-uses the same version catalog
 // as the main build so plugin versions stay in lockstep.
 
+plugins {
+    id("com.gradle.develocity") version "4.5.0"
+    id("com.gradle.common-custom-user-data-gradle-plugin") version "2.8.0"
+}
+
+// Included builds do not inherit the root's settings configuration; without its
+// own, this build silently drops to local-cache-only and publishes no scan.
+apply(from = "../gradle/develocity.settings.gradle")
+
 dependencyResolutionManagement {
     repositories {
         gradlePluginPortal()

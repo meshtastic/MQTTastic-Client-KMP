@@ -14,11 +14,6 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
-env:
-  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
-  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
-  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
-
 jobs:
   build-docs:
     name: Build Documentation
@@ -29,6 +24,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: 'false'
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Generate API documentation
         run: ./gradlew dokkaGeneratePublicationHtml --stacktrace
