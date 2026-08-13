@@ -16,6 +16,7 @@
  */
 package org.meshtastic.mqtt
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import org.meshtastic.mqtt.packet.MqttPacket
@@ -58,6 +59,29 @@ internal class FakeTransport(
     /** Optional callback invoked after each successful [connect] — use to enqueue response packets. */
     var onConnect: (() -> Unit)? = null
 
+    // -- Teardown-race instrumentation --
+
+    /**
+     * When non-null, [send] suspends on this until it completes — a write held in flight.
+     *
+     * Real byte channels are single-writer: closing the socket while a write is in flight
+     * corrupts the shared segment list (KTOR-7729). Gating a send lets a test hold that window
+     * open and assert teardown waits for it.
+     */
+    var sendGate: CompletableDeferred<Unit>? = null
+
+    /** Number of [send] calls currently suspended inside the transport. */
+    var sendsInFlight = 0
+        private set
+
+    /** Times [close] was entered while a [send] was in flight. Must stay 0. */
+    var closesDuringSend = 0
+        private set
+
+    /** Times [close] was called, whether or not the transport was connected. */
+    var closeCount = 0
+        private set
+
     // -- MqttTransport implementation --
 
     override suspend fun connect(endpoint: MqttEndpoint) {
@@ -74,7 +98,13 @@ internal class FakeTransport(
     override suspend fun send(bytes: ByteArray) {
         check(_isConnected) { "Not connected" }
         sendError?.let { throw it }
-        _sentPackets.add(bytes.copyOf())
+        sendsInFlight++
+        try {
+            sendGate?.await()
+            _sentPackets.add(bytes.copyOf())
+        } finally {
+            sendsInFlight--
+        }
     }
 
     override suspend fun receive(): ByteArray {
@@ -87,6 +117,8 @@ internal class FakeTransport(
     }
 
     override suspend fun close() {
+        closeCount++
+        if (sendsInFlight > 0) closesDuringSend++
         _isConnected = false
         receiveChannel.close()
     }
@@ -122,6 +154,10 @@ internal class FakeTransport(
         sendError = null
         receiveError = null
         onConnect = null
+        sendGate = null
+        sendsInFlight = 0
+        closesDuringSend = 0
+        closeCount = 0
         receiveChannel.close()
         receiveChannel = Channel(Channel.UNLIMITED)
     }

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Teardown no longer races an in-flight write on the transport's byte channel.** Closing the
+  socket while another coroutine sat inside `writeFully`/`flush` mutated one kotlinx.io segment
+  list from two coroutines and corrupted it — surfacing as `Segment.compact` "Check failed.", or a
+  `NullPointerException` inside ktor's TLS `writeRecord` as the `cio-tls-closer` coroutine flushed
+  close_notify through the same channel. Ktor's byte channels are single-writer and callers must
+  serialize (YouTrack [KTOR-7729](https://youtrack.jetbrains.com/issue/KTOR-7729), open upstream).
+  Frame writes were already serialized, but every teardown path — `disconnect()`, `abort()`, the
+  fatal-error handler, and a broker-initiated DISCONNECT — closed the transport outside that lock,
+  and the keepalive was a second writer racing the close. Teardown now takes the send lock first,
+  cancels and joins the read loop and keepalive while holding it (so the keepalive can only be
+  cancelled parked in `delay`, never mid-write), then writes any DISCONNECT and closes, all under
+  the one lock. `TcpTransport.close()` and `WebSocketTransport.close()` do the same for direct SPI
+  users. The wait is bounded at 2 seconds so a writer wedged on a dead peer cannot stall a
+  reconnect; past that the close proceeds regardless and the DISCONNECT is skipped.
+
+  Most visible under reconnect churn on flaky mobile networks with many concurrent publishers.
+  Fixes [#123](https://github.com/meshtastic/MQTTastic-Client-KMP/issues/123).
+
+- Fatal-error teardown could skip closing the transport. `handleFatalError` cancelled the read loop
+  before sending its DISCONNECT and closing, so when it was invoked *from* that read loop the very
+  cancellation it had just requested aborted the rest of the teardown at the next suspension point
+  and the exception was swallowed as best-effort. Teardown now runs non-cancellably.
+
 ## [0.8.0] - 2026-07-29
 
 ### Added

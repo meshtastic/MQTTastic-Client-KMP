@@ -27,6 +27,7 @@ import io.ktor.websocket.readBytes
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.mqtt.MqttEndpoint
 import org.meshtastic.mqtt.MqttTransport
 import org.meshtastic.mqtt.MqttTransportFactory
@@ -73,8 +74,8 @@ public class WebSocketTransport(
     }
 
     override suspend fun send(bytes: ByteArray) {
-        val ws = session ?: error("Not connected")
         sendMutex.withLock {
+            val ws = session ?: error("Not connected")
             ws.send(Frame.Binary(true, bytes))
         }
     }
@@ -100,7 +101,31 @@ public class WebSocketTransport(
         }
     }
 
+    /**
+     * Close the session, waiting first for any in-flight [send] to finish.
+     *
+     * `session.close()` writes a close frame and then tears down the same outgoing channel a
+     * concurrent [send] may be writing into. Ktor's byte channels are single-writer — two
+     * coroutines mutating one channel's kotlinx.io segment list corrupt it (YouTrack KTOR-7729) —
+     * so the close runs under the same [sendMutex] that serializes frames.
+     *
+     * The wait is bounded by [CLOSE_QUIESCE_TIMEOUT_MS]: a stalled peer must not be able to hold
+     * teardown open, and closing is what unblocks a wedged writer.
+     */
     override suspend fun close() {
+        val quiesced =
+            withTimeoutOrNull(CLOSE_QUIESCE_TIMEOUT_MS) {
+                sendMutex.lock()
+                true
+            } != null
+        try {
+            closeResources()
+        } finally {
+            if (quiesced) sendMutex.unlock()
+        }
+    }
+
+    private suspend fun closeResources() {
         try {
             session?.close()
         } finally {
@@ -118,6 +143,14 @@ public class WebSocketTransport(
         const val MAX_FRAME_SIZE = 16L * 1024 * 1024 // 16 MB
     }
 }
+
+/**
+ * How long [WebSocketTransport.close] waits for an in-flight send before closing the session anyway.
+ *
+ * File-private rather than a companion constant: a `const val` in the companion of a public class
+ * is emitted as a public static field on JVM, which would widen the published API surface.
+ */
+private const val CLOSE_QUIESCE_TIMEOUT_MS = 2_000L
 
 /**
  * [MqttTransportFactory] that builds a [WebSocketTransport] for [MqttEndpoint.WebSocket] endpoints.

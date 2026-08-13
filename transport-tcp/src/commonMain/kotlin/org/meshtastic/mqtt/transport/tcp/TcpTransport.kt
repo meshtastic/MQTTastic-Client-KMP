@@ -38,6 +38,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.mqtt.MqttEndpoint
 import org.meshtastic.mqtt.MqttTransport
 import org.meshtastic.mqtt.MqttTransportFactory
@@ -155,8 +156,8 @@ public class TcpTransport(
     }
 
     override suspend fun send(bytes: ByteArray) {
-        val channel = writeChannel ?: error("Not connected")
         sendMutex.withLock {
+            val channel = writeChannel ?: error("Not connected")
             channel.writeFully(bytes)
             channel.flush()
         }
@@ -211,7 +212,39 @@ public class TcpTransport(
         return packet
     }
 
+    /**
+     * Close the socket, waiting first for any in-flight [send] to finish.
+     *
+     * `socket.close()` cancels the same [io.ktor.utils.io.ByteChannel] a concurrent
+     * `writeFully`/`flush` is writing into — and for TLS, hands it to ktor's `cio-tls-closer`
+     * coroutine, which flushes a close_notify record through it. That channel is single-writer:
+     * two coroutines mutating its kotlinx.io segment list corrupt it, surfacing as
+     * `Segment.compact` "Check failed." or a NullPointerException inside `writeRecord`
+     * (YouTrack KTOR-7729, open upstream — callers must serialize). Holding [sendMutex] across
+     * the close makes teardown part of the same single-writer discipline as [send].
+     *
+     * [MqttConnection][org.meshtastic.mqtt.MqttTransport] already quiesces its own writer before
+     * calling this, so the lock is normally uncontended; the guard matters for direct SPI users
+     * and for a `close()` racing a `send()` from another caller.
+     *
+     * The wait is bounded: a peer that has stopped reading can block `writeFully` until the TCP
+     * timeout, and closing the socket is what unblocks it, so after
+     * [CLOSE_QUIESCE_TIMEOUT_MS] the close proceeds regardless.
+     */
     override suspend fun close() {
+        val quiesced =
+            withTimeoutOrNull(CLOSE_QUIESCE_TIMEOUT_MS) {
+                sendMutex.lock()
+                true
+            } != null
+        try {
+            closeResources()
+        } finally {
+            if (quiesced) sendMutex.unlock()
+        }
+    }
+
+    private fun closeResources() {
         try {
             socket?.close()
         } finally {
@@ -241,6 +274,14 @@ public class TcpTransport(
         const val MAX_PACKET_REMAINING_LENGTH = 16 * 1024 * 1024 // 16 MB
     }
 }
+
+/**
+ * How long [TcpTransport.close] waits for an in-flight send before closing the socket anyway.
+ *
+ * File-private rather than a companion constant: a `const val` in the companion of a public class
+ * is emitted as a public static field on JVM, which would widen the published API surface.
+ */
+private const val CLOSE_QUIESCE_TIMEOUT_MS = 2_000L
 
 /**
  * Returns the TLS SNI server name to advertise for [host], or `null` for IP literals.
