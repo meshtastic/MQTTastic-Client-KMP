@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,6 +37,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.bytestring.ByteString
 import org.meshtastic.mqtt.packet.Auth
 import org.meshtastic.mqtt.packet.ConnAck
@@ -357,7 +359,7 @@ internal class MqttConnection(
     /** Release the socket and reset state after a failed CONNECT/CONNACK handshake. */
     private suspend fun abandonHandshake() {
         try {
-            transport.close()
+            shutdownTransport()
         } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
         ) {
@@ -421,14 +423,14 @@ internal class MqttConnection(
     suspend fun disconnect(reasonCode: ReasonCode = ReasonCode.SUCCESS) {
         log.debug(TAG) { "Disconnecting with reasonCode=$reasonCode" }
         failAllPendingAcks()
-        stopBackgroundJobs()
 
         try {
             if (transport.isConnected) {
                 // MQTT 3.1.1: DISCONNECT has no variable header/payload — always send empty
                 // MQTT 5.0: send with reason code and optional properties
-                sendPacket(Disconnect(reasonCode = reasonCode))
-                transport.close()
+                shutdownTransport(Disconnect(reasonCode = reasonCode))
+            } else {
+                shutdownTransport()
             }
         } finally {
             resetConnectionState()
@@ -445,12 +447,9 @@ internal class MqttConnection(
     suspend fun abort() {
         log.debug(TAG) { "Aborting connection (no DISCONNECT)" }
         failAllPendingAcks()
-        stopBackgroundJobs()
 
         try {
-            if (transport.isConnected) {
-                transport.close()
-            }
+            shutdownTransport()
         } finally {
             resetConnectionState()
         }
@@ -700,21 +699,30 @@ internal class MqttConnection(
 
     /** Send a packet over the transport, guarded by [sendMutex] for wire-level serialization. */
     private suspend fun sendPacket(packet: MqttPacket) {
-        sendMutex.withLock {
-            val bytes = packet.encode(version)
+        sendMutex.withLock { sendPacketLocked(packet) }
+    }
 
-            // Enforce broker's Maximum Packet Size on outbound packets (§3.2.2.3.6)
-            serverMaximumPacketSize?.let { maxSize ->
-                require(bytes.size <= maxSize) {
-                    "Outbound ${packet.packetType} (${bytes.size} bytes) exceeds server " +
-                        "Maximum Packet Size ($maxSize) (§3.2.2.3.6)"
-                }
+    /**
+     * Write a packet to the transport. The caller must already hold [sendMutex].
+     *
+     * Only [sendPacket] and [shutdownTransport] call this: teardown sends its DISCONNECT
+     * inside the same lock acquisition that closes the socket, so nothing can slip onto the
+     * wire — or into the underlying byte channel — between the two.
+     */
+    private suspend fun sendPacketLocked(packet: MqttPacket) {
+        val bytes = packet.encode(version)
+
+        // Enforce broker's Maximum Packet Size on outbound packets (§3.2.2.3.6)
+        serverMaximumPacketSize?.let { maxSize ->
+            require(bytes.size <= maxSize) {
+                "Outbound ${packet.packetType} (${bytes.size} bytes) exceeds server " +
+                    "Maximum Packet Size ($maxSize) (§3.2.2.3.6)"
             }
-
-            log.trace(TAG) { "Sending ${packet.packetType} (${bytes.size} bytes)" }
-            transport.send(bytes)
-            lastSendMark = timeSource.markNow()
         }
+
+        log.trace(TAG) { "Sending ${packet.packetType} (${bytes.size} bytes)" }
+        transport.send(bytes)
+        lastSendMark = timeSource.markNow()
     }
 
     /** Register a pending ack deferred for the given packet ID, guarded by [acksMutex]. */
@@ -922,37 +930,19 @@ internal class MqttConnection(
             }
 
         log.error(TAG) { "Fatal error — tearing down connection" }
-        stopBackgroundJobs()
         try {
-            if (transport.isConnected) {
-                if (version.supportsProperties) {
-                    // §4.13: Send DISCONNECT with appropriate reason code before closing
-                    sendPacket(Disconnect(reasonCode = effectiveReasonCode))
-                }
-                // MQTT 3.1.1: no DISCONNECT with reason code — just close the transport
-            }
-        } catch (
-            @Suppress("SwallowedException") _: kotlin.coroutines.cancellation.CancellationException,
-        ) {
-            // Scope cancelled during best-effort DISCONNECT — continue cleanup
+            // §4.13: MQTT 5.0 announces the reason before closing; 3.1.1 has no DISCONNECT
+            // reason code, so it just closes.
+            shutdownTransport(
+                disconnect = if (version.supportsProperties) Disconnect(reasonCode = effectiveReasonCode) else null,
+            )
         } catch (
             @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
         ) {
-            // Best-effort DISCONNECT — transport may already be broken
-        }
-        try {
-            transport.close()
-        } catch (
-            @Suppress("SwallowedException") _: kotlin.coroutines.cancellation.CancellationException,
-        ) {
-            // Scope cancelled during best-effort close — continue cleanup
-        } catch (
-            @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
-        ) {
-            // Best-effort transport close
+            // Best-effort teardown — the transport may already be broken
         }
         // Use NonCancellable to ensure cleanup completes even when the calling job
-        // (read loop or keepalive) was cancelled by stopBackgroundJobs() above.
+        // (read loop or keepalive) was cancelled by shutdownTransport() above.
         withContext(NonCancellable) {
             failAllPendingAcks()
             val reason =
@@ -1071,8 +1061,7 @@ internal class MqttConnection(
                         ),
                     )
                 }
-                stopBackgroundJobs()
-                transport.close()
+                shutdownTransport()
                 failAllPendingAcks()
                 _connectionState.value =
                     ConnectionState.Disconnected(
@@ -1239,11 +1228,79 @@ internal class MqttConnection(
 
     // --- Private: Helpers ---
 
-    private fun stopBackgroundJobs() {
-        keepAliveJob?.cancel()
-        readLoopJob?.cancel()
+    /**
+     * Close the transport without ever overlapping an in-flight write.
+     *
+     * The transport's byte channel is single-writer. Ktor's is not merely undocumented on this
+     * point — closing a socket while another coroutine sits inside `writeFully`/`flush` mutates
+     * one kotlinx.io segment list from two coroutines and corrupts it, surfacing as
+     * `Segment.compact` "Check failed." or a NullPointerException deep inside the TLS record
+     * writer (YouTrack KTOR-7729, still open upstream). So teardown has to join the same
+     * single-writer discipline as [sendPacket] rather than run beside it.
+     *
+     * Order matters:
+     * 1. Take [sendMutex]. No writer is inside `transport.send` once it is held.
+     * 2. Cancel the read loop and keepalive *while holding it*, so the keepalive can only ever be
+     *    cancelled parked in `delay` — never midway through a write — and join them so a cancelled
+     *    writer cannot resume after the socket is gone.
+     * 3. Write [disconnect], if any, and close the transport, still under the lock.
+     *
+     * If a writer is wedged (a dead peer with a full socket buffer blocks `writeFully` until the
+     * TCP timeout), waiting for it forever would hang teardown and, with auto-reconnect, the
+     * client. So the wait is bounded by [WRITER_QUIESCE_TIMEOUT_MS]; past that the socket is closed
+     * regardless — which is also what unblocks the stuck writer — and the DISCONNECT is skipped,
+     * since writing it is exactly the unsafe act being avoided.
+     *
+     * The body is [NonCancellable] because the read loop and keepalive both call this and it
+     * cancels them: on a plain context every suspension point after step 2 would abort and leak
+     * the socket.
+     */
+    private suspend fun shutdownTransport(disconnect: Disconnect? = null) {
+        // Captured before entering NonCancellable — inside it, the current Job is the
+        // withContext coroutine rather than the read-loop/keepalive job we must not join.
+        val callerJob = currentCoroutineContext()[Job]
+        withContext(NonCancellable) {
+            val quiesced =
+                withTimeoutOrNull(WRITER_QUIESCE_TIMEOUT_MS) {
+                    sendMutex.lock()
+                    true
+                } != null
+            if (!quiesced) {
+                log.warn(TAG) {
+                    "Writer still in flight after ${WRITER_QUIESCE_TIMEOUT_MS}ms — closing transport anyway"
+                }
+            }
+            try {
+                stopBackgroundJobs(callerJob)
+                if (disconnect != null && quiesced && transport.isConnected) {
+                    try {
+                        sendPacketLocked(disconnect)
+                    } catch (
+                        @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
+                    ) {
+                        // Best-effort DISCONNECT — the transport may already be broken
+                    }
+                }
+                transport.close()
+            } finally {
+                if (quiesced) sendMutex.unlock()
+            }
+        }
+    }
+
+    /**
+     * Cancel and join the read loop and keepalive jobs.
+     *
+     * [callerJob] is the job this teardown is running on, if any; it is cancelled but not joined,
+     * because the read loop and the keepalive both reach here through [handleFatalError] and a job
+     * cannot join itself.
+     */
+    private suspend fun stopBackgroundJobs(callerJob: Job?) {
+        val jobs = listOfNotNull(keepAliveJob, readLoopJob)
         keepAliveJob = null
         readLoopJob = null
+        jobs.forEach { it.cancel() }
+        jobs.filter { it !== callerJob }.forEach { it.join() }
     }
 
     /** Build a CONNECT packet from [config] per §3.1. */
@@ -1424,6 +1481,15 @@ internal class MqttConnection(
 
         /** Timeout for waiting on acknowledgement packets (30 seconds). */
         const val ACK_TIMEOUT_MS = 30_000L
+
+        /**
+         * How long teardown waits for an in-flight write to finish before closing anyway.
+         *
+         * Long enough that a normal write completes first — that is what keeps the socket close
+         * off the byte channel's writer — and short enough that a writer wedged on a dead peer
+         * cannot stall a reconnect. See [shutdownTransport].
+         */
+        const val WRITER_QUIESCE_TIMEOUT_MS = 2_000L
 
         /** Keepalive factor: send PINGREQ at 75% of keep alive interval. */
         const val KEEPALIVE_FACTOR = 750 // keepAliveSeconds * 750 = milliseconds at 75%

@@ -129,6 +129,23 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 
 Send PINGREQ every `keepAliveSeconds * 0.75` if no other packet was sent. If no PINGRESP within `keepAliveSeconds`, treat connection as dead and trigger reconnect (if enabled) or disconnect.
 
+### Single-writer discipline
+
+Ktor's byte channels are single-writer: two coroutines touching one channel corrupt its kotlinx.io
+segment list (`Segment.compact` "Check failed.", or an NPE in the TLS `writeRecord` path — see
+[KTOR-7729](https://youtrack.jetbrains.com/issue/KTOR-7729), open upstream). **Closing counts as
+writing** — `socket.close()` cancels that same channel and, under TLS, hands it to ktor's
+`cio-tls-closer` coroutine to flush close_notify.
+
+So `sendMutex` guards teardown as well as sends. `MqttConnection.shutdownTransport` is the only
+path that closes the transport: it takes `sendMutex`, cancels and joins the read loop and keepalive
+while holding it, then writes any DISCONNECT and closes — all under one lock acquisition, in a
+`NonCancellable` block because the loops it cancels are usually its own caller. Both transports
+guard `close()` the same way for direct SPI users. Every wait is bounded (2s) so a writer wedged on
+a dead peer cannot stall a reconnect.
+
+Anything new that writes to the transport, or closes it, has to join this discipline.
+
 ### TCP vs WebSocket framing
 
 - **TCP** (`TcpTransport.receive()`): Parse fixed header byte → decode variable-length remaining length → read exactly that many bytes. Handle partial reads correctly — this is the trickiest part.
