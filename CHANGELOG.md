@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1]
+
 ### Fixed
 
 - **Teardown no longer races an in-flight write on the transport's byte channel.** Closing the
@@ -31,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before sending its DISCONNECT and closing, so when it was invoked *from* that read loop the very
   cancellation it had just requested aborted the rest of the teardown at the next suspension point
   and the exception was swallowed as best-effort. Teardown now runs non-cancellably.
+
+### Changed
+
+- Update the Ktor ecosystem to v3.5.2 (#116).
+- Update `actions/setup-java` to v5.7.0 (#117); update `github/codeql-action` to v4.37.4
+  through v4.37.6 (#115, #120, #121).
+- Update build tools (#122).
+
+### Added
+
+- Onboarded to the OSS Community Develocity instance for Build Scans and remote caching
+  (#118).
 
 ## [0.8.0] - 2026-07-29
 
