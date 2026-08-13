@@ -155,6 +155,7 @@ internal class FakeTransport(
         receiveError = null
         onConnect = null
         sendGate = null
+        sendsInFlight = 0
         closesDuringSend = 0
         closeCount = 0
         receiveChannel.close()

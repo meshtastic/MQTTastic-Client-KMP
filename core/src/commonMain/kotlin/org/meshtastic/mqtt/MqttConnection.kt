@@ -1251,6 +1251,10 @@ internal class MqttConnection(
      * regardless — which is also what unblocks the stuck writer — and the DISCONNECT is skipped,
      * since writing it is exactly the unsafe act being avoided.
      *
+     * Every other wait here is bounded for the same reason: the job joins by
+     * [JOB_JOIN_TIMEOUT_MS], and the DISCONNECT write itself, which the same dead peer would
+     * otherwise block indefinitely while holding teardown open.
+     *
      * The body is [NonCancellable] because the read loop and keepalive both call this and it
      * cancels them: on a plain context every suspension point after step 2 would abort and leak
      * the socket.
@@ -1274,7 +1278,11 @@ internal class MqttConnection(
                 stopBackgroundJobs(callerJob)
                 if (disconnect != null && quiesced && transport.isConnected) {
                     try {
-                        sendPacketLocked(disconnect)
+                        // Bounded: the same dead peer that blocks a publish blocks this write, and
+                        // the close that follows is what frees the socket. Abandoning the write
+                        // does not reopen the race — this coroutine holds the lock, so the
+                        // abandoned write and the close are sequential on one writer.
+                        withTimeoutOrNull(WRITER_QUIESCE_TIMEOUT_MS) { sendPacketLocked(disconnect) }
                     } catch (
                         @Suppress("TooGenericExceptionCaught", "SwallowedException") _: Exception,
                     ) {
@@ -1300,7 +1308,16 @@ internal class MqttConnection(
         keepAliveJob = null
         readLoopJob = null
         jobs.forEach { it.cancel() }
-        jobs.filter { it !== callerJob }.forEach { it.join() }
+        jobs.filter { it !== callerJob }.forEach { job ->
+            // Bounded, because cancelling a job does not interrupt a NonCancellable section: a
+            // read loop already inside its own teardown runs that to completion first, and an
+            // unbounded join would stack its budget onto ours and delay a reconnect. Giving up
+            // on the join is safe — [sendMutex] is held for the rest of the teardown, so a job
+            // that outlives this wait cannot reach the transport's writer either way.
+            if (withTimeoutOrNull(JOB_JOIN_TIMEOUT_MS) { job.join() } == null) {
+                log.warn(TAG) { "Background job did not finish within ${JOB_JOIN_TIMEOUT_MS}ms — closing anyway" }
+            }
+        }
     }
 
     /** Build a CONNECT packet from [config] per §3.1. */
@@ -1490,6 +1507,14 @@ internal class MqttConnection(
          * cannot stall a reconnect. See [shutdownTransport].
          */
         const val WRITER_QUIESCE_TIMEOUT_MS = 2_000L
+
+        /**
+         * How long teardown waits for a cancelled background job to finish.
+         *
+         * Cancellation does not interrupt a `NonCancellable` section, so a job already inside its
+         * own teardown finishes that first; without a bound its budget would stack onto ours.
+         */
+        const val JOB_JOIN_TIMEOUT_MS = 2_000L
 
         /** Keepalive factor: send PINGREQ at 75% of keep alive interval. */
         const val KEEPALIVE_FACTOR = 750 // keepAliveSeconds * 750 = milliseconds at 75%

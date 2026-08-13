@@ -146,6 +146,26 @@ class TeardownRaceTest {
         }
 
     @Test
+    fun teardownClosesEvenIfDisconnectWriteBlocks() =
+        runTest {
+            val transport = FakeTransport()
+            val connection = MqttConnection(transport, config(), this)
+            connected(transport, connection)
+
+            // Nothing in flight, so teardown takes the lock immediately and writes its DISCONNECT
+            // — into a socket whose buffer the dead peer never drains. The close that frees it
+            // must not sit behind that write.
+            transport.sendGate = CompletableDeferred()
+            val disconnector = launch { connection.disconnect() }
+            advanceTimeBy(MqttConnection.WRITER_QUIESCE_TIMEOUT_MS + 1)
+            advanceUntilIdle()
+
+            assertEquals(1, transport.closeCount, "close must not wait on a blocked DISCONNECT")
+            assertFalse(transport.isConnected)
+            disconnector.join()
+        }
+
+    @Test
     fun keepAliveCannotWriteAfterTeardown() =
         runTest {
             val transport = FakeTransport()
