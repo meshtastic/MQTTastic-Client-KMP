@@ -35,7 +35,9 @@ dependencyResolutionManagement {
 // equivalent and needs no cross-project access.
 // ---------------------------------------------------------------------------
 val gitVersion: Provider<String> = providers.exec {
-    commandLine("git", "describe", "--tags", "--match", "v*")
+    // --exclude keeps prerelease-shaped tags (v0.9.0-rc1) from being read as releases: describe then
+    // falls back to the last stable tag and the arithmetic below yields the usual next-patch SNAPSHOT.
+    commandLine("git", "describe", "--tags", "--match", "v*", "--exclude", "v*-*")
     isIgnoreExitValue = true
 }.standardOutput.asText.map { raw ->
     val desc = raw.trim()
@@ -57,6 +59,14 @@ val resolvedVersion: String =
     providers.gradleProperty("VERSION_NAME")
         .orElse(gitVersion)
         .get()
+        .also { version ->
+            // Fail configuration with a message that names the problem: sample/androidApp derives its
+            // versionCode by destructuring MAJOR.MINOR.PATCH with toInt(), so a blank or two-part
+            // version would otherwise surface as a bare NumberFormatException deep in that module.
+            require(version.matches(Regex("\\d+\\.\\d+\\.\\d+(-.+)?"))) {
+                "Version '$version' is not MAJOR.MINOR.PATCH[-suffix]; check the VERSION_NAME property or git tags"
+            }
+        }
 
 // Copied into a local before the lambda closes over it: a top-level `val` in a settings script is a
 // field of the script object, so referencing it directly would capture the script itself — which the
