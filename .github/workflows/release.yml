@@ -38,7 +38,13 @@ permissions:
 jobs:
   publish:
     name: Publish to Maven Central
-    runs-on: macos-26
+    # Linux publishes every target. Kotlin/Native cross-compiles the Apple klibs
+    # from any host, and this job runs no Apple tests to begin with — its gate is
+    # spotlessCheck/detektAll/jvmTest/apiCheck — so the macOS runner was only ever
+    # compiling klibs. Verified on 2.4.10: a Linux publishToMavenLocal emits the
+    # same 30 artifacts the 0.8.1 release shipped, iOS and macOS klibs included.
+    # (The sample-artifacts matrix below still uses macOS, for the Apple sample.)
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
       ref: ${{ steps.ver.outputs.ref }}
@@ -69,6 +75,14 @@ jobs:
         with:
           cache_read_only: 'false'
           develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+
+      - name: Cache Konan (Kotlin/Native toolchain)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
 
       - name: Validate before publish
         run: ./gradlew spotlessCheck detektAll jvmTest apiCheck --stacktrace
