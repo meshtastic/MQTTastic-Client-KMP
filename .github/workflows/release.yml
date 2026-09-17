@@ -87,6 +87,19 @@ jobs:
       - name: Validate before publish
         run: ./gradlew spotlessCheck detektAll jvmTest apiCheck --stacktrace
 
+      - name: Verify the changelog has a section for this version
+        # `getChangelog` below does NOT fail when the declared version has no
+        # section — it silently returns the most recent released one, which would
+        # ship the PREVIOUS release's notes as this release's body. Check here
+        # instead, alongside the other pre-publish gates.
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          if ! grep -qE "^## \\[${VERSION}\\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' section — run './gradlew patchChangelog -PVERSION_NAME=$VERSION' and commit it before tagging."
+            exit 1
+          fi
+          echo "✓ CHANGELOG.md has a section for $VERSION"
+
       - name: Stage signed artifacts locally
         run: ./gradlew publishToMavenLocal --stacktrace
         env:
@@ -147,6 +160,26 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
 
+      - name: Render release notes
+        # The changelog section for this version IS the release notes. The
+        # alternative — `generate_release_notes: true` — describes the release from
+        # commit titles, which drifts from the hand-written entries the moment
+        # either is edited. The gate above already proved the section exists.
+        if: inputs.dry_run != true
+        run: |
+          # Capture first so a Gradle failure fails this step (a pipeline would hide
+          # it — GitHub's default shell sets -e but not -o pipefail).
+          NOTES=$(./gradlew --console=plain -q getChangelog --no-header --no-links \
+            -PVERSION_NAME="${{ steps.ver.outputs.version }}")
+          # `-q` silences task output, but Develocity still prints the build-scan URL
+          # on its own line. `sed` rather than `grep -v`: grep exits 1 when it filters
+          # everything, which would fail the step on an empty section.
+          printf '%s\n' "$NOTES" \
+            | sed -E '/^(Publishing build scan|https:\/\/community\.develocity\.cloud)/d' \
+            > release-notes.md
+          echo "--- rendered release notes ---"
+          cat release-notes.md
+
       - name: Create GitHub Release
         # tag_name is explicit because on workflow_dispatch github.ref is a
         # branch, not the release tag. For an existing release (e.g. one
@@ -155,7 +188,7 @@ jobs:
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: v${{ steps.ver.outputs.version }}
-          generate_release_notes: true
+          body_path: release-notes.md
 
   sample-artifacts:
     name: Build sample (${{ matrix.label }})

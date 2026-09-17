@@ -18,6 +18,9 @@ android-targetSdk = "36"
 vanniktechMavenPublish = "0.37.0"
 spotless = "8.10.2"
 detekt = "1.23.8"
+# JetBrains gradle-changelog-plugin: parses and renders the hand-written
+# CHANGELOG.md. It never generates an entry from a commit.
+changelog = "2.5.0"
 bcv = "0.18.2"
 dokka = "2.2.0"
 kover = "0.9.9"
@@ -72,6 +75,7 @@ composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "k
 vanniktech-mavenPublish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktechMavenPublish" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }
 bcv = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "bcv" }
 dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
