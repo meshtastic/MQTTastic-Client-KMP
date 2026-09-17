@@ -63,7 +63,8 @@ data class MeshtasticInfo(
     val payloadText: String?,
     val hopLimit: Int,
     val rxSnr: Float,
-    val rxRssi: Int,
+    /** Null when the packet carries no RSSI reading. 0 dBm is a valid reading, not a sentinel. */
+    val rxRssi: Int?,
     val isEncrypted: Boolean,
 )
 
