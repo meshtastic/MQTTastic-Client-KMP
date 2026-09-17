@@ -732,7 +732,7 @@ private fun MeshtasticRow(msg: DisplayMessage, info: MeshtasticInfo, accent: Col
                 buildString {
                     append(formatElapsed(msg.receivedAt))
                     append(" · ${info.gatewayId}")
-                    if (info.rxRssi != 0) append(" · ${info.rxRssi} dBm")
+                    info.rxRssi?.let { append(" · $it dBm") }
                     if (info.rxSnr != 0f) append(" · ${info.rxSnr} SNR")
                 },
                 maxLines = 1,
