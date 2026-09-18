@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.2]
+
+Maintenance release. The committed ABI dumps are unchanged from 0.8.1, so
+nothing a consumer compiles against has moved.
+
+### Changed
+
+- `org.meshtastic:protobufs` 2.8.0. Only the unpublished `sample` module reads
+  it, so this does not reach the published artifacts.
+- Kotlin 2.4.20, AGP 9.4.0, Gradle 9.7.1 and Compose Multiplatform 1.12.0.
+- Releases publish from a Linux runner rather than macOS.
+- The configuration cache runs in parallel, and version assignment no longer
+  depends on the build's own identity.
+
+### Fixed
+
+- The sample treats `rx_rssi` as optional rather than reading an absent value
+  as 0. Sample-only; the published artifacts are unaffected.
+
+### Build
+
+- CI runs on JDK 25. The Gradle daemon stays pinned to Java 21, because detekt
+  1.23.8 analyses in-process and its shaded IntelliJ parser rejects a
+  `java.version` of 25.
+- A release now describes itself once, from this file: the workflow fails when
+  a version has no section here, and the release body is rendered from that
+  section instead of from commit titles.
+
 ## [0.8.1]
 
 ### Fixed
