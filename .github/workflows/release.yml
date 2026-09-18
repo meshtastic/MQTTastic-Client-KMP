@@ -95,13 +95,38 @@ jobs:
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
           # awk, not grep -E: the version is a literal and its dots are ERE
-          # wildcards. `index($0, v) == 1` is "this line starts with exactly
-          # this string", with no escaping to get wrong.
-          if ! awk -v v="## [$VERSION]" 'index($0, v) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
+          # wildcards, so `1.2.3` would match `1x2x3`. Match the whole heading,
+          # bare or with patchChangelog's " - DATE" suffix, so no other version
+          # and no suffixed variant can satisfy the gate.
+          if ! awk -v v="## [$VERSION]" '$0 == v || index($0, v " -") == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no '## [$VERSION]' section — run './gradlew patchChangelog -PVERSION_NAME=$VERSION' and commit it before tagging."
             exit 1
           fi
           echo "✓ CHANGELOG.md has a section for $VERSION"
+
+      - name: Render release notes
+        # The changelog section for this version IS the release notes. The
+        # alternative — `generate_release_notes: true` — describes the release from
+        # commit titles, which drifts from the hand-written entries the moment
+        # either is edited. The gate above already proved the section exists.
+        #
+        # Runs before anything is published, and on a dry run too: rendering is the
+        # first step that actually parses the changelog, and Sonatype rejects
+        # re-uploads, so a render that fails after publication leaves a half-made
+        # release that cannot be retried.
+        run: |
+          # Capture first so a Gradle failure fails this step (a pipeline would hide
+          # it — GitHub's default shell sets -e but not -o pipefail).
+          NOTES=$(./gradlew --console=plain -q getChangelog --no-header --no-links \
+            -PVERSION_NAME="${{ steps.ver.outputs.version }}")
+          # `-q` silences task output, but Develocity still prints the build-scan URL
+          # on its own line. `sed` rather than `grep -v`: grep exits 1 when it filters
+          # everything, which would fail the step on an empty section.
+          printf '%s\n' "$NOTES" \
+            | sed -E '/^(Publishing build scan|https:\/\/community\.develocity\.cloud)/d' \
+            > release-notes.md
+          echo "--- rendered release notes ---"
+          cat release-notes.md
 
       - name: Stage signed artifacts locally
         run: ./gradlew publishToMavenLocal --stacktrace
@@ -162,26 +187,6 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
-
-      - name: Render release notes
-        # The changelog section for this version IS the release notes. The
-        # alternative — `generate_release_notes: true` — describes the release from
-        # commit titles, which drifts from the hand-written entries the moment
-        # either is edited. The gate above already proved the section exists.
-        if: inputs.dry_run != true
-        run: |
-          # Capture first so a Gradle failure fails this step (a pipeline would hide
-          # it — GitHub's default shell sets -e but not -o pipefail).
-          NOTES=$(./gradlew --console=plain -q getChangelog --no-header --no-links \
-            -PVERSION_NAME="${{ steps.ver.outputs.version }}")
-          # `-q` silences task output, but Develocity still prints the build-scan URL
-          # on its own line. `sed` rather than `grep -v`: grep exits 1 when it filters
-          # everything, which would fail the step on an empty section.
-          printf '%s\n' "$NOTES" \
-            | sed -E '/^(Publishing build scan|https:\/\/community\.develocity\.cloud)/d' \
-            > release-notes.md
-          echo "--- rendered release notes ---"
-          cat release-notes.md
 
       - name: Create GitHub Release
         # tag_name is explicit because on workflow_dispatch github.ref is a
