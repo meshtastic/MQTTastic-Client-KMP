@@ -95,10 +95,11 @@ jobs:
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
           # awk, not grep -E: the version is a literal and its dots are ERE
-          # wildcards, so `1.2.3` would match `1x2x3`. Match the whole heading,
-          # bare or with patchChangelog's " - DATE" suffix, so no other version
-          # and no suffixed variant can satisfy the gate.
-          if ! awk -v v="## [$VERSION]" '$0 == v || index($0, v " -") == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
+          # wildcards, so `1.2.3` would match `1x2x3`. A prefix match is exactly
+          # the plugin's own acceptance set - `getChangelog` renders any heading
+          # starting `## [VERSION]`, suffix or not - so the gate neither passes
+          # what it would reject nor rejects what it would render.
+          if ! awk -v v="## [$VERSION]" 'index($0, v) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no '## [$VERSION]' section — run './gradlew patchChangelog -PVERSION_NAME=$VERSION' and commit it before tagging."
             exit 1
           fi
