@@ -741,6 +741,15 @@ sealed class org.meshtastic.mqtt/MqttException : kotlin/Exception { // org.mesht
     final class ProtocolError : org.meshtastic.mqtt/MqttException { // org.meshtastic.mqtt/MqttException.ProtocolError|null[0]
         constructor <init>(org.meshtastic.mqtt/ReasonCode, kotlin/String, kotlin/Throwable? = ...) // org.meshtastic.mqtt/MqttException.ProtocolError.<init>|<init>(org.meshtastic.mqtt.ReasonCode;kotlin.String;kotlin.Throwable?){}[0]
     }
+
+    final class SubscriptionRefused : org.meshtastic.mqtt/MqttException { // org.meshtastic.mqtt/MqttException.SubscriptionRefused|null[0]
+        constructor <init>(org.meshtastic.mqtt/ReasonCode, kotlin/String, kotlin.collections/Map<kotlin/String, org.meshtastic.mqtt/ReasonCode>, kotlin.collections/List<kotlin/String>, kotlin/Throwable? = ...) // org.meshtastic.mqtt/MqttException.SubscriptionRefused.<init>|<init>(org.meshtastic.mqtt.ReasonCode;kotlin.String;kotlin.collections.Map<kotlin.String,org.meshtastic.mqtt.ReasonCode>;kotlin.collections.List<kotlin.String>;kotlin.Throwable?){}[0]
+
+        final val granted // org.meshtastic.mqtt/MqttException.SubscriptionRefused.granted|{}granted[0]
+            final fun <get-granted>(): kotlin.collections/List<kotlin/String> // org.meshtastic.mqtt/MqttException.SubscriptionRefused.granted.<get-granted>|<get-granted>(){}[0]
+        final val refused // org.meshtastic.mqtt/MqttException.SubscriptionRefused.refused|{}refused[0]
+            final fun <get-refused>(): kotlin.collections/Map<kotlin/String, org.meshtastic.mqtt/ReasonCode> // org.meshtastic.mqtt/MqttException.SubscriptionRefused.refused.<get-refused>|<get-refused>(){}[0]
+    }
 }
 
 sealed class org.meshtastic.mqtt/ProbeResult { // org.meshtastic.mqtt/ProbeResult|null[0]

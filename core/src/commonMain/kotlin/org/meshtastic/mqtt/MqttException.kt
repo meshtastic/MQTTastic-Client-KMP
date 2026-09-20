@@ -95,6 +95,30 @@ public sealed class MqttException(
         message: String,
         cause: Throwable? = null,
     ) : MqttException(reasonCode, message, cause)
+
+    /**
+     * The broker refused one or more topic filters in its SUBACK (§3.9.3).
+     *
+     * A refusal is the server's decision, not a fault: the connection is healthy, the SUBSCRIBE
+     * arrived, and the broker answered `Not authorized`, `Topic filter invalid`, `Quota exceeded`
+     * or another code at 0x80 and above. It is an exception rather than a return value because the
+     * alternative is a client that believes it is subscribed and receives nothing - a state no
+     * caller can tell apart from a quiet topic.
+     *
+     * [refused] names every filter the broker rejected and the code it gave for each, and [granted]
+     * every filter it accepted, because a SUBACK answers each filter separately: a call naming five
+     * filters can have four live subscriptions and one refusal. Those four are recorded and stay
+     * subscribed; catching this and reading [granted] is how a caller continues with them.
+     *
+     * [reasonCode] is the first refusal's code, so the base class carries something meaningful.
+     */
+    public class SubscriptionRefused(
+        reasonCode: ReasonCode,
+        message: String,
+        public val refused: Map<String, ReasonCode>,
+        public val granted: List<String>,
+        cause: Throwable? = null,
+    ) : MqttException(reasonCode, message, cause)
 }
 
 /**

@@ -167,6 +167,19 @@ Track each packet ID through: PUBLISH → PUBREC → PUBREL → PUBCOMP. Persist
 
 Monotonically increasing 16-bit counter wrapping at 65535 using `Mutex`-guarded state. Track in-flight packets in a map keyed by packet ID for PUBACK/PUBREC/PUBREL/PUBCOMP correlation.
 
+### Subscription refusals
+
+A SUBACK answers each filter separately (§3.9.3), and a code at 0x80 and above is the broker
+refusing that one. `subscribe` records the granted filters and then throws
+`MqttException.SubscriptionRefused`, carrying both sets: a refusal that returned normally would
+leave the caller believing it was subscribed to something it will hear nothing on, which no client
+can tell apart from a quiet topic. A reason-code count that does not match the filters sent is a
+`ProtocolError` rather than a truncated pairing.
+
+`resubscribe` after a reconnect is the deliberate exception - it drops the refused filter and logs
+it, because a throw inside the reconnect loop fails the whole attempt and would cost every other
+subscription just re-established.
+
 ### Flow control
 
 Honor the server's Receive Maximum property — do not exceed the allowed number of concurrent in-flight QoS 1/2 publishes. Use a semaphore or similar mechanism to block `publish()` when the limit is reached.
