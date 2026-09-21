@@ -33,6 +33,14 @@ nothing a consumer compiles against has moved.
 - A release now describes itself once, from this file: the workflow fails when
   a version has no section here, and the release body is rendered from that
   section instead of from commit titles.
+- **CodeQL scans the workflows only.** The `java-kotlin` analysis is gone until
+  CodeQL can read the Kotlin this project is built with: a traced build loads
+  its Kotlin compiler plugin, which refuses ours ("Kotlin version 2.4.20 is too
+  recent"), and buildless extraction never loads that plugin, so it finds no
+  Kotlin and there is no Java here to fall back on. Both measured. It had failed
+  every run since it was re-enabled on 18 Sep, a day after Kotlin went to 2.4.20,
+  so nothing is lost that was working - a permanently red check is worse than an
+  absent one, because it teaches everyone to scroll past the check list.
 
 ## [0.8.1]
 
