@@ -990,6 +990,20 @@ public class MqttClient
                 )
             }
             val paired = subscriptions.zip(subAck.reasonCodes)
+            // §3.9.3 fixes the codes a SUBACK may carry, and the decoder accepts any byte the
+            // enum knows. A code from another packet's table - NO_MATCHING_SUBSCRIBERS is a
+            // PUBACK code - makes the whole packet malformed, so it is refused before any of it
+            // is applied: half a SUBACK would leave this client holding subscriptions the broker
+            // never spoke about.
+            val unexpected = paired.filterNot { (_, code) -> code in SUBACK_REASON_CODES }
+            if (unexpected.isNotEmpty()) {
+                throw MqttException.ProtocolError(
+                    reasonCode = ReasonCode.PROTOCOL_ERROR,
+                    message =
+                        "SUBACK carried reason codes no SUBACK may carry: " +
+                            unexpected.joinToString { (sub, code) -> "'${sub.topicFilter}' ($code)" },
+                )
+            }
             val granted = paired.filter { (_, code) -> isSuccessfulSubAck(code) }
             subscriptionsMutex.withLock {
                 granted.forEach { (sub, _) -> activeSubscriptions[sub.topicFilter] = sub }
@@ -1110,6 +1124,23 @@ public class MqttClient
             private const val AUTH_BUFFER_CAPACITY = 8
             private const val MAX_REDIRECTS = 5
             private const val TAG = "MqttClient"
+
+            /** Every code §3.9.3 allows in a SUBACK, and nothing else. */
+            private val SUBACK_REASON_CODES =
+                setOf(
+                    ReasonCode.SUCCESS,
+                    ReasonCode.GRANTED_QOS_1,
+                    ReasonCode.GRANTED_QOS_2,
+                    ReasonCode.UNSPECIFIED_ERROR,
+                    ReasonCode.IMPLEMENTATION_SPECIFIC_ERROR,
+                    ReasonCode.NOT_AUTHORIZED,
+                    ReasonCode.TOPIC_FILTER_INVALID,
+                    ReasonCode.PACKET_IDENTIFIER_IN_USE,
+                    ReasonCode.QUOTA_EXCEEDED,
+                    ReasonCode.SHARED_SUBSCRIPTIONS_NOT_SUPPORTED,
+                    ReasonCode.SUBSCRIPTION_IDENTIFIERS_NOT_SUPPORTED,
+                    ReasonCode.WILDCARD_SUBSCRIPTIONS_NOT_SUPPORTED,
+                )
         }
     }
 

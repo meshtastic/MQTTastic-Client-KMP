@@ -38,6 +38,7 @@ import org.meshtastic.mqtt.packet.Unsubscribe
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -458,6 +459,41 @@ class MqttClientTest {
                 )
             }
             advanceUntilIdle()
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    @Test
+    fun subscribeRejectsASubAckCarryingACodeFromAnotherPacketsTable() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // NO_MATCHING_SUBSCRIBERS is a PUBACK code and §3.9.3 does not allow it here, so the
+            // packet is malformed and none of it may be applied - not even the filter alongside it
+            // that the broker did grant.
+            transport.enqueuePacket(
+                SubAck(
+                    packetIdentifier = 1,
+                    reasonCodes = listOf(ReasonCode.SUCCESS, ReasonCode.NO_MATCHING_SUBSCRIBERS),
+                ),
+            )
+            val error =
+                assertFailsWith<MqttException.ProtocolError> {
+                    client.subscribe(
+                        mapOf("a/#" to QoS.AT_MOST_ONCE, "b/#" to QoS.AT_MOST_ONCE),
+                    )
+                }
+            advanceUntilIdle()
+
+            // Named, so the filter the broker answered out of spec is the one in the message,
+            // and not the one beside it that was answered properly.
+            assertTrue(error.message.orEmpty().contains("b/#"))
+            assertFalse(error.message.orEmpty().contains("a/#"))
 
             client.disconnect()
             advanceUntilIdle()
