@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Breaking
 
+### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.9.0] - 2026-09-21
+
+### Breaking
+
 - **`subscribe` now throws when the broker refuses a topic filter.** A SUBACK carries one reason
   code per filter, and a code at 0x80 and above is a refusal: `Not authorized` from an ACL,
   `Topic filter invalid`, `Quota exceeded`. Those codes were read only to decide what to record,
@@ -22,11 +38,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   violation (§3.9.3) rather than a silent truncation: nothing is recorded and
   `MqttException.ProtocolError` is raised. Pairing a short list with the filters would attribute a
   refusal to whichever filter happened to line up.
-
-`resubscribe` after a reconnect keeps its old behaviour deliberately: a refusal there drops that
-filter and logs it. It runs inside the reconnect loop, where a throw fails the whole attempt, so a
-broker that starts refusing one filter would otherwise cost the client every other subscription it
-had just re-established, on a backoff, for ever.
 
 ## [0.8.2]
 
@@ -85,7 +96,6 @@ nothing a consumer compiles against has moved.
 
   Most visible under reconnect churn on flaky mobile networks with many concurrent publishers.
   Fixes [#123](https://github.com/meshtastic/MQTTastic-Client-KMP/issues/123).
-
 - Fatal-error teardown could skip closing the transport. `handleFatalError` cancelled the read loop
   before sending its DISCONNECT and closing, so when it was invoked *from* that read loop the very
   cancellation it had just requested aborted the rest of the teardown at the next suspension point
@@ -232,6 +242,7 @@ run failed to build.
 ## [0.6.0] - 2026-07-26
 
 ### Added
+
 - **TLS trust customisation for the TCP transport** (#103). `TcpTransportFactory` now
   accepts an optional `configureTls: (TLSConfigBuilder.() -> Unit)?` lambda, so a caller
   can reach a broker whose certificate chain is anchored in a private or self-signed CA
@@ -251,6 +262,7 @@ run failed to build.
   details and caveats.
 
 ### Changed
+
 - The public API surface is now locked by `explicitApi()` plus checked-in ABI dumps for
   the JVM **and** klib (native/wasm) surfaces, enforced by `apiCheck` in CI (#87). No
   existing declaration changed — this guards the surface against accidental drift.
@@ -260,6 +272,7 @@ run failed to build.
   native and iOS consumers need no toolchain change when upgrading from 0.5.0.
 
 ### Security
+
 - Every third-party GitHub Action is pinned to a full commit SHA, and OpenSSF Scorecard
   analysis now runs on the repository (#89, #96). CI-only — published artifacts are
   byte-for-byte unaffected.
@@ -267,6 +280,7 @@ run failed to build.
 ## [0.5.0] - 2026-07-16
 
 ### Changed
+
 - **Built with Kotlin 2.4.10** (#75, #76). Native and iOS consumers need a
   Kotlin 2.4.x toolchain to consume the published klibs; JVM and Android
   consumers are unaffected. This is the reason for the minor (rather than
@@ -279,6 +293,7 @@ run failed to build.
   Develocity plugin 4.5.0 (#74).
 
 ### Security
+
 - Pinned transitive npm `ws` to >= 8.21.0 in the wasm browser-test harness
   (memory-exhaustion DoS, Dependabot alert #2) (#79). Test-scope only — `ws`
   is not part of any published artifact.
@@ -286,6 +301,7 @@ run failed to build.
 ## [0.4.0] - 2026-06-22
 
 ### Changed
+
 - **BREAKING — split into per-transport modules.** The single `org.meshtastic:mqtt-client` artifact
   is replaced by a `:core` plus per-transport modules and a BOM (#27):
   - `org.meshtastic:mqtt-client-core` — all protocol logic + the transport SPI
@@ -307,6 +323,7 @@ run failed to build.
   [ADR-0006](docs/adr/0006-multi-module-distribution.md).
 
 ### Added
+
 - `build-logic` convention plugins (`mqtt.kmp.library`, `mqtt.publishing`) and a multi-module Dokka
   + Kover aggregation at the root.
 - ADRs 0006–0010 (multi-module distribution, `Mutex` send serialization, public-API allowlist,
@@ -315,6 +332,7 @@ run failed to build.
   boundary (#28, #29).
 
 ### Fixed
+
 - Android TLS handshake to a private MQTT broker addressed by an IP literal failed with
   "Domain specific configurations require that hostname aware checkServerTrusted(...) is
   used". The hostname-aware trust manager is now installed for IP-literal hosts too, not
@@ -323,6 +341,7 @@ run failed to build.
 ## [0.3.0] - 2026-04-28
 
 ### Added
+
 - **Full MQTT 3.1.1 protocol support** with seamless version auto-negotiation (#36)
   - All 15 encoder/decoder functions accept a `version` parameter
   - 3.1.1 wire protocol differences: no properties, 1-byte CONNACK return codes, QoS-only SUBSCRIBE options, body-less DISCONNECT, no AUTH packet
@@ -331,9 +350,11 @@ run failed to build.
   - New `MqttProtocolVersion` public enum (`V3_1_1`, `V5_0`)
 
 ### Fixed
+
 - Correct decoding of 3.1.1-format CONNACK (2 bytes) when a V3.1.1-only broker rejects a V5.0 CONNECT (#36)
 
 ### Changed
+
 - Bump Compose Multiplatform to 1.11.0-beta03, Material3 to 1.11.0-alpha07, Adaptive to 1.3.0-alpha07, compileSdk to 37 (#31)
 - Bump Kotlin to 2.3.21
 - Bump Ktor ecosystem to 3.4.3
@@ -343,6 +364,7 @@ run failed to build.
 ## [0.2.0] - 2026-04-17
 
 ### Changed (BREAKING)
+
 - **`ConnectionState` is now a `sealed class`** (was an `enum`) so disconnect / reconnect events
   carry diagnostic context. Pattern-match with `is` instead of `==`:
   - `Connecting` (object)
@@ -354,6 +376,7 @@ run failed to build.
   `state == ConnectionState.DISCONNECTED` → `state is ConnectionState.Disconnected`.
 
 ### Added
+
 - `MqttClient.probe(endpoint, timeoutMs, configure)` — one-shot connectivity diagnostic
   that performs a CONNECT/CONNACK handshake against an `MqttEndpoint`, classifies the
   outcome into a public `ProbeResult` sealed class (`Success`, `Rejected`, `DnsFailure`,
@@ -374,6 +397,7 @@ run failed to build.
 ## [0.1.0] - 2026-04-16
 
 ### Added
+
 - **Full MQTT 5.0 client** — complete implementation of all 15 packet types with encode/decode
 - **`MqttClient`** — public API with `connect`, `disconnect`, `publish`, `subscribe`, `unsubscribe`, `close`, and use-after-close protection
 - **`MqttException`** — sealed exception hierarchy: `ConnectionRejected` (broker rejected CONNECT), `ConnectionLost` (unexpected disconnect), `ProtocolError` (malformed packets)
@@ -426,3 +450,17 @@ run failed to build.
 - Integration test suite (Docker-based Mosquitto broker)
 - **CI/CD** — GitHub Actions workflows for build/test matrix and Maven Central publishing, [CodeQL](https://codeql.github.com/) security scanning (`java-kotlin` + `actions`, weekly, `security-and-quality` queries), and a release pipeline that ships sample app artifacts (`.apk`, linux-x64/arm64 `.deb`, `.dmg`, `.msi`, and a `wasmJs` browser zip) across a per-OS runner matrix
 - **Compose compiler metrics** — opt-in reports on the sample modules via `-PenableComposeMetrics=true`
+
+[Unreleased]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.8.2...v0.9.0
+[0.8.2]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/commits/v0.1.0
