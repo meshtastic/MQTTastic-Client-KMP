@@ -28,15 +28,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `none`, not `manual`: a traced build loads CodeQL's Kotlin compiler
-          # plugin, which refuses a Kotlin it does not know - "version 2.4.20 is
-          # too recent, CodeQL currently supports versions below 2.4.20" - and
-          # takes the whole job down as a configuration error. Buildless
-          # extraction never loads it, so this does not break again on the next
-          # Kotlin bump. Move back to `manual` only once CodeQL's ceiling is
-          # above the Kotlin in `libs.versions.toml`.
-          - language: java-kotlin
-            build-mode: none
+          # java-kotlin is absent on purpose, and neither build mode can bring it
+          # back while CodeQL's Kotlin ceiling sits below ours. Measured, both:
+          #
+          #   manual - the traced build loads CodeQL's Kotlin compiler plugin,
+          #     which refuses what it does not know ("Kotlin version 2.4.20 is
+          #     too recent. CodeQL currently supports versions below 2.4.20").
+          #   none - never loads that plugin, so it extracts no Kotlin, and this
+          #     repo has no Java at all: "CodeQL could not process any code
+          #     written in Java/Kotlin".
+          #
+          # Re-enable it when CodeQL supports the Kotlin in `libs.versions.toml`,
+          # and check that in a run rather than from the release notes - it was
+          # re-enabled once before against a Kotlin it could not read, and every
+          # job failed from then until it was removed again.
           - language: actions
             build-mode: none
 
