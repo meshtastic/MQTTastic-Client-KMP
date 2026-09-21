@@ -28,11 +28,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Re-enabled: the pinned codeql-action v4.37.8 ships CodeQL CLI 2.26.3,
-          # past the 2.26.1 that rejected Kotlin 2.4.10 as "too recent". The
-          # upstream ceiling is 2.4.20, so this stays green until Kotlin 2.4.20+.
+          # `none`, not `manual`: a traced build loads CodeQL's Kotlin compiler
+          # plugin, which refuses a Kotlin it does not know - "version 2.4.20 is
+          # too recent, CodeQL currently supports versions below 2.4.20" - and
+          # takes the whole job down as a configuration error. Buildless
+          # extraction never loads it, so this does not break again on the next
+          # Kotlin bump. Move back to `manual` only once CodeQL's ceiling is
+          # above the Kotlin in `libs.versions.toml`.
           - language: java-kotlin
-            build-mode: manual
+            build-mode: none
           - language: actions
             build-mode: none
 
@@ -40,36 +44,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up JDK 21
-        if: matrix.language == 'java-kotlin'
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
-        with:
-          distribution: temurin
-          java-version: '25.0.4+101.0.LTS'
-
-      - name: Cache Gradle
-        if: matrix.language == 'java-kotlin'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
           queries: security-and-quality
-
-      - name: Build (java-kotlin)
-        if: matrix.language == 'java-kotlin'
-        run: |
-          chmod +x gradlew
-          ./gradlew compileKotlinJvm --no-daemon --no-build-cache --stacktrace
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
