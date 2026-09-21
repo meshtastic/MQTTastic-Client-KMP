@@ -38,6 +38,7 @@ import org.meshtastic.mqtt.packet.Unsubscribe
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -373,7 +374,7 @@ class MqttClientTest {
     // --- Subscribe Only Records Successful SUBACK ---
 
     @Test
-    fun subscribeIgnoresFailedSubAck() =
+    fun subscribeThrowsOnRefusedSubAck() =
         runTest {
             val transport = FakeTransport()
             val config = defaultConfig(autoReconnect = false)
@@ -381,20 +382,118 @@ class MqttClientTest {
             client.connect(endpoint)
             advanceUntilIdle()
 
-            // SUBACK with failure reason code
             transport.enqueuePacket(
                 SubAck(
                     packetIdentifier = 1,
                     reasonCodes = listOf(ReasonCode.NOT_AUTHORIZED),
                 ),
             )
-            client.subscribe("secret/topic", QoS.AT_LEAST_ONCE)
+            // Without this the caller is told nothing and hears nothing, which no client can tell
+            // apart from a quiet topic.
+            val refusal =
+                assertFailsWith<MqttException.SubscriptionRefused> {
+                    client.subscribe("secret/topic", QoS.AT_LEAST_ONCE)
+                }
             advanceUntilIdle()
 
-            // Verify the SUBSCRIBE was sent
+            assertEquals(mapOf("secret/topic" to ReasonCode.NOT_AUTHORIZED), refusal.refused)
+            assertEquals(emptyList(), refusal.granted)
+            assertEquals(ReasonCode.NOT_AUTHORIZED, refusal.reasonCode)
+
             val sentSubscribe =
                 transport.decodeSentPackets().filterIsInstance<Subscribe>().first()
             assertEquals("secret/topic", sentSubscribe.subscriptions[0].topicFilter)
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    @Test
+    fun subscribeKeepsTheFiltersTheBrokerGranted() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // A SUBACK answers each filter separately, so one refusal must not discard the rest.
+            transport.enqueuePacket(
+                SubAck(
+                    packetIdentifier = 1,
+                    reasonCodes = listOf(ReasonCode.GRANTED_QOS_1, ReasonCode.NOT_AUTHORIZED),
+                ),
+            )
+            val refusal =
+                assertFailsWith<MqttException.SubscriptionRefused> {
+                    client.subscribe(
+                        mapOf("allowed/#" to QoS.AT_LEAST_ONCE, "secret/#" to QoS.AT_LEAST_ONCE),
+                    )
+                }
+            advanceUntilIdle()
+
+            assertEquals(listOf("allowed/#"), refusal.granted)
+            assertEquals(mapOf("secret/#" to ReasonCode.NOT_AUTHORIZED), refusal.refused)
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    @Test
+    fun subscribeRejectsASubAckWithTooFewReasonCodes() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // One code for two filters: nothing says which filter it answers, so pairing them would
+            // be a guess (§3.9.3).
+            transport.enqueuePacket(
+                SubAck(packetIdentifier = 1, reasonCodes = listOf(ReasonCode.SUCCESS)),
+            )
+            assertFailsWith<MqttException.ProtocolError> {
+                client.subscribe(
+                    mapOf("a/#" to QoS.AT_MOST_ONCE, "b/#" to QoS.AT_MOST_ONCE),
+                )
+            }
+            advanceUntilIdle()
+
+            client.disconnect()
+            advanceUntilIdle()
+            client.close()
+        }
+
+    @Test
+    fun subscribeRejectsASubAckCarryingACodeFromAnotherPacketsTable() =
+        runTest {
+            val transport = FakeTransport()
+            val client = connectedClient(transport, scope = this)
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            // NO_MATCHING_SUBSCRIBERS is a PUBACK code and §3.9.3 does not allow it here, so the
+            // packet is malformed and none of it may be applied - not even the filter alongside it
+            // that the broker did grant.
+            transport.enqueuePacket(
+                SubAck(
+                    packetIdentifier = 1,
+                    reasonCodes = listOf(ReasonCode.SUCCESS, ReasonCode.NO_MATCHING_SUBSCRIBERS),
+                ),
+            )
+            val error =
+                assertFailsWith<MqttException.ProtocolError> {
+                    client.subscribe(
+                        mapOf("a/#" to QoS.AT_MOST_ONCE, "b/#" to QoS.AT_MOST_ONCE),
+                    )
+                }
+            advanceUntilIdle()
+
+            // Named, so the filter the broker answered out of spec is the one in the message,
+            // and not the one beside it that was answered properly.
+            assertTrue(error.message.orEmpty().contains("b/#"))
+            assertFalse(error.message.orEmpty().contains("a/#"))
 
             client.disconnect()
             advanceUntilIdle()

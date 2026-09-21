@@ -523,7 +523,8 @@ public class MqttClient
         /**
          * Subscribe to a single topic filter with the specified [qos] and MQTT 5.0 subscription options.
          *
-         * Only records subscriptions whose SUBACK reason code indicates success.
+         * Throws [MqttException.SubscriptionRefused] if the broker rejects the filter, so a caller
+         * is never left believing it is subscribed to something it will hear nothing on.
          *
          * @param topicFilter The MQTT topic filter (e.g. "sensors/#").
          * @param qos Maximum QoS level for messages on this subscription.
@@ -558,7 +559,7 @@ public class MqttClient
             log.debug(TAG) { "Subscribing to '$topicFilter' qos=$qos" }
             wrapConnectionErrors {
                 val subAck = requireConnection().subscribe(listOf(sub), MqttProperties.EMPTY)
-                recordSuccessfulSubscriptions(listOf(sub), subAck)
+                recordSubAck(listOf(sub), subAck)
             }
             log.info(TAG) { "Subscribed to '$topicFilter'" }
         }
@@ -566,7 +567,8 @@ public class MqttClient
         /**
          * Subscribe to multiple topic filters with per-topic QoS levels.
          *
-         * Only records subscriptions whose SUBACK reason code indicates success.
+         * Throws [MqttException.SubscriptionRefused] if the broker rejects any of the filters; the
+         * ones it granted are subscribed, and the exception names both sets.
          *
          * @param topicFilters Map of topic filter to maximum QoS level.
          * @throws IllegalArgumentException if any topic filter is invalid (§4.7).
@@ -587,7 +589,7 @@ public class MqttClient
             log.debug(TAG) { "Subscribing to ${topicFilters.keys}" }
             wrapConnectionErrors {
                 val subAck = requireConnection().subscribe(subscriptions, MqttProperties.EMPTY)
-                recordSuccessfulSubscriptions(subscriptions, subAck)
+                recordSubAck(subscriptions, subAck)
             }
             log.info(TAG) { "Subscribed to ${topicFilters.keys}" }
         }
@@ -613,7 +615,7 @@ public class MqttClient
             log.debug(TAG) { "Subscribing to ${subscriptions.map { it.topicFilter }}" }
             wrapConnectionErrors {
                 val subAck = requireConnection().subscribe(subscriptions, MqttProperties.EMPTY)
-                recordSuccessfulSubscriptions(subscriptions, subAck)
+                recordSubAck(subscriptions, subAck)
             }
             log.info(TAG) { "Subscribed to ${subscriptions.map { it.topicFilter }}" }
         }
@@ -966,18 +968,58 @@ public class MqttClient
             }
         }
 
-        /** Record only successfully acknowledged subscriptions from the SUBACK response. */
-        private suspend fun recordSuccessfulSubscriptions(
+        /**
+         * Record the filters the broker granted, and refuse the call if it rejected any.
+         *
+         * A SUBACK carries one reason code per filter, in the order they were sent (§3.9.3), so a
+         * count that does not match makes every pairing a guess - that is a protocol violation and
+         * nothing is recorded. The granted filters are recorded before the refusal is raised, so a
+         * caller that catches [MqttException.SubscriptionRefused] keeps the subscriptions it did
+         * get and `resubscribe` replays exactly those.
+         */
+        private suspend fun recordSubAck(
             subscriptions: List<Subscription>,
             subAck: SubAck,
         ) {
-            subscriptionsMutex.withLock {
-                subscriptions.zip(subAck.reasonCodes).forEach { (sub, code) ->
-                    if (isSuccessfulSubAck(code)) {
-                        activeSubscriptions[sub.topicFilter] = sub
-                    }
-                }
+            if (subAck.reasonCodes.size != subscriptions.size) {
+                throw MqttException.ProtocolError(
+                    reasonCode = ReasonCode.PROTOCOL_ERROR,
+                    message =
+                        "SUBACK carried ${subAck.reasonCodes.size} reason codes for " +
+                            "${subscriptions.size} topic filters",
+                )
             }
+            val paired = subscriptions.zip(subAck.reasonCodes)
+            // §3.9.3 fixes the codes a SUBACK may carry, and the decoder accepts any byte the
+            // enum knows. A code from another packet's table - NO_MATCHING_SUBSCRIBERS is a
+            // PUBACK code - makes the whole packet malformed, so it is refused before any of it
+            // is applied: half a SUBACK would leave this client holding subscriptions the broker
+            // never spoke about.
+            val unexpected = paired.filterNot { (_, code) -> code in SUBACK_REASON_CODES }
+            if (unexpected.isNotEmpty()) {
+                throw MqttException.ProtocolError(
+                    reasonCode = ReasonCode.PROTOCOL_ERROR,
+                    message =
+                        "SUBACK carried reason codes no SUBACK may carry: " +
+                            unexpected.joinToString { (sub, code) -> "'${sub.topicFilter}' ($code)" },
+                )
+            }
+            val granted = paired.filter { (_, code) -> isSuccessfulSubAck(code) }
+            subscriptionsMutex.withLock {
+                granted.forEach { (sub, _) -> activeSubscriptions[sub.topicFilter] = sub }
+            }
+            val refused = paired.filterNot { (_, code) -> isSuccessfulSubAck(code) }
+            if (refused.isEmpty()) return
+            val byFilter = refused.associate { (sub, code) -> sub.topicFilter to code }
+            log.warn(TAG) { "Broker refused ${byFilter.keys}: ${byFilter.values}" }
+            throw MqttException.SubscriptionRefused(
+                reasonCode = refused.first().second,
+                message =
+                    "The broker refused " +
+                        byFilter.entries.joinToString { (filter, code) -> "'$filter' ($code)" },
+                refused = byFilter,
+                granted = granted.map { (sub, _) -> sub.topicFilter },
+            )
         }
 
         private fun isSuccessfulSubAck(code: ReasonCode): Boolean =
@@ -985,6 +1027,15 @@ public class MqttClient
                 code == ReasonCode.GRANTED_QOS_1 ||
                 code == ReasonCode.GRANTED_QOS_2
 
+        /**
+         * Replay the granted subscriptions after a reconnect.
+         *
+         * A refusal here drops the filter and logs it rather than raising
+         * [MqttException.SubscriptionRefused], unlike [subscribe]: this runs inside the reconnect
+         * loop, where a throw counts the whole attempt as failed and retries it. A broker that has
+         * started refusing one filter would then cost the client every other subscription it just
+         * re-established, on a backoff, for ever.
+         */
         private suspend fun resubscribe() {
             val subs =
                 subscriptionsMutex.withLock {
@@ -1073,6 +1124,23 @@ public class MqttClient
             private const val AUTH_BUFFER_CAPACITY = 8
             private const val MAX_REDIRECTS = 5
             private const val TAG = "MqttClient"
+
+            /** Every code §3.9.3 allows in a SUBACK, and nothing else. */
+            private val SUBACK_REASON_CODES =
+                setOf(
+                    ReasonCode.SUCCESS,
+                    ReasonCode.GRANTED_QOS_1,
+                    ReasonCode.GRANTED_QOS_2,
+                    ReasonCode.UNSPECIFIED_ERROR,
+                    ReasonCode.IMPLEMENTATION_SPECIFIC_ERROR,
+                    ReasonCode.NOT_AUTHORIZED,
+                    ReasonCode.TOPIC_FILTER_INVALID,
+                    ReasonCode.PACKET_IDENTIFIER_IN_USE,
+                    ReasonCode.QUOTA_EXCEEDED,
+                    ReasonCode.SHARED_SUBSCRIPTIONS_NOT_SUPPORTED,
+                    ReasonCode.SUBSCRIPTION_IDENTIFIERS_NOT_SUPPORTED,
+                    ReasonCode.WILDCARD_SUBSCRIPTIONS_NOT_SUPPORTED,
+                )
         }
     }
 

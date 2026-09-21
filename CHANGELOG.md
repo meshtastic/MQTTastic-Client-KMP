@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Breaking
+
+- **`subscribe` now throws when the broker refuses a topic filter.** A SUBACK carries one reason
+  code per filter, and a code at 0x80 and above is a refusal: `Not authorized` from an ACL,
+  `Topic filter invalid`, `Quota exceeded`. Those codes were read only to decide what to record,
+  so a refused subscription returned normally and the caller was left believing it was subscribed
+  to a topic it would hear nothing on - a state indistinguishable from a quiet broker. All three
+  overloads now raise `MqttException.SubscriptionRefused`, which names every refused filter with
+  its code (`refused`) and every accepted one (`granted`); the accepted ones are recorded first, so
+  catching it and reading `granted` continues with the subscriptions the broker did give.
+  A caller that ignored the result of `subscribe` is unaffected unless its broker refuses; one with
+  an exhaustive `when` over `MqttException` and no `else` branch has a new branch to add.
+- A SUBACK whose reason-code count does not match the number of filters sent is a protocol
+  violation (§3.9.3) rather than a silent truncation: nothing is recorded and
+  `MqttException.ProtocolError` is raised. Pairing a short list with the filters would attribute a
+  refusal to whichever filter happened to line up.
+
+`resubscribe` after a reconnect keeps its old behaviour deliberately: a refusal there drops that
+filter and logs it. It runs inside the reconnect loop, where a throw fails the whole attempt, so a
+broker that starts refusing one filter would otherwise cost the client every other subscription it
+had just re-established, on a backoff, for ever.
+
 ## [0.8.2]
 
 Maintenance release. The committed ABI dumps are unchanged from 0.8.1, so
