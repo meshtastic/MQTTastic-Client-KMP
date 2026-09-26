@@ -17,9 +17,12 @@
 package org.meshtastic.mqtt.architecture
 
 import com.lemonappdev.konsist.api.Konsist
+import com.lemonappdev.konsist.api.container.KoScope
+import com.lemonappdev.konsist.api.provider.KoPathProvider
 import com.lemonappdev.konsist.api.verify.assertFalse
 import com.lemonappdev.konsist.api.verify.assertTrue
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 /**
  * Architectural invariants for the `:core` module, enforced with
@@ -39,10 +42,14 @@ import kotlin.test.Test
  */
 class ArchitectureTest {
     private val coreCommonMainFiles by lazy {
-        Konsist
-            .scopeFromProduction()
+        production
             .files
-            .filter { it.path.contains("/core/src/commonMain/") }
+            .filter { it.scanPath.startsWith("/core/src/commonMain/") }
+    }
+
+    @Test
+    fun `core commonMain scope is not empty`() {
+        assertTrue(coreCommonMainFiles.isNotEmpty(), "no /core/src/commonMain/ files matched, so every rule here verified nothing")
     }
 
     @Test
@@ -71,8 +78,7 @@ class ArchitectureTest {
 
     @Test
     fun `MqttProperties stays internal`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .classes()
             .filter { it.name == "MqttProperties" }
             .assertTrue { it.hasInternalModifier }
@@ -80,8 +86,7 @@ class ArchitectureTest {
 
     @Test
     fun `MqttPacket sealed interface stays internal`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .interfaces()
             .filter { it.name == "MqttPacket" }
             .assertTrue { it.hasInternalModifier }
@@ -89,8 +94,7 @@ class ArchitectureTest {
 
     @Test
     fun `MqttPacket implementations stay internal`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .classes()
             .filter { it.hasParentWithName("MqttPacket") }
             .assertTrue { it.hasInternalModifier }
@@ -98,8 +102,7 @@ class ArchitectureTest {
 
     @Test
     fun `MqttPacket implementations are data classes`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .classes()
             .filter { it.hasParentWithName("MqttPacket") }
             .assertTrue { it.hasDataModifier }
@@ -107,8 +110,7 @@ class ArchitectureTest {
 
     @Test
     fun `MqttPacket implementation fields are immutable`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .classes()
             .filter { it.hasParentWithName("MqttPacket") }
             .flatMap { it.properties() }
@@ -117,32 +119,38 @@ class ArchitectureTest {
 
     @Test
     fun `core public top-level classes are on the allowlist`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .classes()
-            .filter { it.path.contains("/core/src/") && it.isTopLevel && !it.hasInternalModifier && !it.hasPrivateModifier }
+            .filter { it.scanPath.startsWith("/core/src/") && it.isTopLevel && !it.hasInternalModifier && !it.hasPrivateModifier }
             .assertTrue { it.name in PUBLIC_API_ALLOWLIST }
     }
 
     @Test
     fun `core public top-level interfaces are on the allowlist`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .interfaces()
-            .filter { it.path.contains("/core/src/") && it.isTopLevel && !it.hasInternalModifier && !it.hasPrivateModifier }
+            .filter { it.scanPath.startsWith("/core/src/") && it.isTopLevel && !it.hasInternalModifier && !it.hasPrivateModifier }
             .assertTrue { it.name in PUBLIC_API_ALLOWLIST }
     }
 
     @Test
     fun `core public top-level objects are on the allowlist`() {
-        Konsist
-            .scopeFromProduction()
+        production
             .objects()
-            .filter { it.path.contains("/core/src/") && it.isTopLevel && !it.hasInternalModifier && !it.hasPrivateModifier }
+            .filter { it.scanPath.startsWith("/core/src/") && it.isTopLevel && !it.hasInternalModifier && !it.hasPrivateModifier }
             .assertTrue { it.name in PUBLIC_API_ALLOWLIST }
     }
 
     private companion object {
+        /** Path relative to the scanned checkout; an absolute path carries `.claude` in every agent worktree. */
+        val KoPathProvider.scanPath: String
+            get() = projectPath.replace('\\', '/')
+
+        /** Production sources, minus agent worktrees nested under the scanned checkout's root. */
+        val production: KoScope by lazy {
+            Konsist.scopeFromProduction().slice { !it.scanPath.removePrefix("/").startsWith(".claude/") }
+        }
+
         /**
          * The complete set of public top-level types `:core` exposes. Promoting a new type to
          * `public` is a deliberate SemVer commitment — add it here in the same PR, or mark it
