@@ -16,7 +16,7 @@ android-minSdk = "24"
 android-compileSdk = "37"
 android-targetSdk = "36"
 vanniktechMavenPublish = "0.37.0"
-spotless = "8.10.2"
+spotless = "8.10.3"
 detekt = "1.23.8"
 # JetBrains gradle-changelog-plugin: parses and renders the hand-written
 # CHANGELOG.md. It never generates an entry from a commit.
