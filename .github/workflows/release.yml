@@ -1,75 +1,129 @@
 name: Release
 
-# Triggers:
-#   - Tag push (v*) — the normal, automatic release path.
-#   - workflow_dispatch — manual recovery / dry-run path (#82). Re-runs the
-#     pipeline for an existing tag, e.g. to recover from a partial publish or
-#     to backfill GitHub-release assets (SBOM, sample apps) for a version that
-#     already reached Maven Central.
-
+# Dispatch from main with the version a merged release PR cut in CHANGELOG.md, or push its tag.
+# Every gate runs before the tag is pushed, so a refused release leaves no tag behind.
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 0.5.0). Must match an existing tag vX.Y.Z.'
+        description: 'Version to release, e.g. 0.9.1 (CI creates the vX.Y.Z tag)'
         required: true
         type: string
       dry_run:
-        description: 'If true, validate and stage artifacts but skip publish, attestation, and release steps.'
+        description: 'Run every gate and stage the artifacts, but tag, publish and release nothing'
         required: false
         type: boolean
         default: false
 
-# One run per release version, across both triggers. cancel-in-progress must
-# stay false: cancelling a half-finished publish is exactly the
-# partial-publish state this workflow is hardened against.
 concurrency:
-  group: ${{ github.workflow }}-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
+  group: release-${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
-  publish:
-    name: Publish to Maven Central
-    # Linux publishes every target. Kotlin/Native cross-compiles the Apple klibs
-    # from any host, and this job runs no Apple tests to begin with — its gate is
-    # spotlessCheck/detektAll/jvmTest/apiCheck — so the macOS runner was only ever
-    # compiling klibs. Verified on 2.4.10: a Linux publishToMavenLocal emits the
-    # same 30 artifacts the 0.8.1 release shipped, iOS and macOS klibs included.
-    # (The sample-artifacts matrix below still uses macOS, for the Apple sample.)
+  release:
+    name: Gate, publish to Maven Central & release
+    # Kotlin/Native cross-compiles the Apple klibs from Linux, so Linux publishes every target.
+    # It cannot run the Apple tests; the green-CI gate covers them.
     runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      checks: read
+      statuses: read
+    env:
+      DRY_RUN: ${{ inputs.dry_run || false }}
     outputs:
-      version: ${{ steps.ver.outputs.version }}
-      ref: ${{ steps.ver.outputs.ref }}
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
     steps:
-      - name: Resolve version
-        # Tag push: version comes from the tag. workflow_dispatch: from the
-        # version input, which must name an existing tag (the checkout below
-        # fails otherwise). Downstream jobs consume these outputs so every
-        # job builds from the same tag regardless of trigger.
-        id: ver
-        run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "ref=refs/tags/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            tag="${GITHUB_REF_NAME}"
-            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.ver.outputs.ref }}
           submodules: true
           fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        env:
+          REQUESTED: ${{ inputs.version || github.ref_name }}
+        run: |
+          # A dispatch takes the bare version so the concurrency group above is canonical.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "${REQUESTED#v}" != "$REQUESTED" ]; then
+            echo "::error::pass the version without a leading v: ${REQUESTED#v}"
+            exit 1
+          fi
+          V="${REQUESTED#v}"
+          # settings.gradle.kts reads only vX.Y.Z tags as releases, so nothing else can release.
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$REQUESTED' is not a MAJOR.MINOR.PATCH release version"
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Release from main only
+        if: env.DRY_RUN != 'true'
+        run: |
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$GITHUB_REF is not on main; release from main (dry_run may run anywhere)"
+            exit 1
+          fi
+
+      - name: Verify an existing tag points at this commit
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          git fetch --quiet --force origin "refs/tags/v$V:refs/tags/v$V" 2>/dev/null || true
+          if git rev-parse --quiet --verify "v$V^{commit}" >/dev/null &&
+             [ "$(git rev-parse "v$V^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            if [ "$DRY_RUN" = true ]; then
+              echo "::warning::v$V already exists on another commit; a real release would stop here"
+            else
+              echo "::error::v$V already exists on another commit"
+              exit 1
+            fi
+          fi
+          echo "releasing $V from $(git rev-parse --short HEAD)"
+
+      - name: Render release notes
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          scripts/changelog.sh notes "$V" > release-notes.md
+          cat release-notes.md
+
+      # CI does not run on tags, so the Apple tests this runner cannot execute are only
+      # guaranteed by the required checks having passed on this exact commit.
+      - name: Require green CI on the commit being released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release-checks.sh green-ci "$(git rev-parse HEAD)"
+
+      # The version comes from git describe (settings.gradle.kts), so the tag exists locally before
+      # Gradle runs. It reaches origin only at "Push the release tag", and never on a dry run.
+      - name: Tag the release locally
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ "$(git rev-parse --quiet --verify "v$V^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            git tag -f -a "v$V" -m "v$V"
+          fi
+          DESCRIBED=$(git describe --tags --match 'v*' --exclude 'v*-*')
+          if [ "$DESCRIBED" != "v$V" ]; then
+            echo "::error::git describe resolves this commit to $DESCRIBED, not v$V"
+            exit 1
+          fi
+          echo "git describe: $DESCRIBED"
 
       - uses: ./.github/actions/gradle-setup
         with:
@@ -85,103 +139,83 @@ jobs:
             konan-${{ runner.os }}-
 
       - name: Validate before publish
-        run: ./gradlew spotlessCheck detektAll jvmTest apiCheck --stacktrace
-
-      - name: Verify the changelog has a section for this version
-        # `getChangelog` below does NOT fail when the declared version has no
-        # section — it silently returns the most recent released one, which would
-        # ship the PREVIOUS release's notes as this release's body. Check here
-        # instead, alongside the other pre-publish gates.
-        run: |
-          VERSION="${{ steps.ver.outputs.version }}"
-          # awk, not grep -E: the version is a literal and its dots are ERE
-          # wildcards, so `1.2.3` would match `1x2x3`. A prefix match is exactly
-          # the plugin's own acceptance set - `getChangelog` renders any heading
-          # starting `## [VERSION]`, suffix or not - so the gate neither passes
-          # what it would reject nor rejects what it would render.
-          if ! awk -v v="## [$VERSION]" 'index($0, v) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
-            echo "::error::CHANGELOG.md has no '## [$VERSION]' section — run './gradlew patchChangelog -PVERSION_NAME=$VERSION' and commit it before tagging."
-            exit 1
-          fi
-          echo "✓ CHANGELOG.md has a section for $VERSION"
-
-      - name: Render release notes
-        # The changelog section for this version IS the release notes. The
-        # alternative — `generate_release_notes: true` — describes the release from
-        # commit titles, which drifts from the hand-written entries the moment
-        # either is edited. The gate above already proved the section exists.
-        #
-        # Runs before anything is published, and on a dry run too: rendering is the
-        # first step that actually parses the changelog, and Sonatype rejects
-        # re-uploads, so a render that fails after publication leaves a half-made
-        # release that cannot be retried.
-        run: |
-          # Capture first so a Gradle failure fails this step (a pipeline would hide
-          # it — GitHub's default shell sets -e but not -o pipefail).
-          NOTES=$(./gradlew --console=plain -q getChangelog --no-header --no-links \
-            -PVERSION_NAME="${{ steps.ver.outputs.version }}")
-          # `-q` silences task output, but Develocity still prints the build-scan URL
-          # on its own line. `sed` rather than `grep -v`: grep exits 1 when it filters
-          # everything, which would fail the step on an empty section.
-          printf '%s\n' "$NOTES" \
-            | sed -E '/^(Publishing build scan|https:\/\/community\.develocity\.cloud)/d' \
-            > release-notes.md
-          echo "--- rendered release notes ---"
-          cat release-notes.md
+        run: >-
+          ./gradlew spotlessCheck detektAll jvmTest apiCheck
+          -PVERSION_NAME=${{ steps.version.outputs.version }} --stacktrace
 
       - name: Stage signed artifacts locally
-        run: ./gradlew publishToMavenLocal --stacktrace
+        run: >-
+          ./gradlew publishToMavenLocal
+          -PVERSION_NAME=${{ steps.version.outputs.version }} --stacktrace
         env:
           ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
 
-      - name: Collect Maven artifacts for attestation
-        shell: bash
+      - name: Refuse a -SNAPSHOT dependency
+        run: scripts/release-checks.sh no-snapshots "${{ steps.version.outputs.version }}"
+
+      - name: Collect every staged artifact for attestation
+        env:
+          V: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p maven-staging
           cd ~/.m2/repository
-          find org/meshtastic -type f \
+          find org/meshtastic -path "*/$V/*" -type f \
             -not -name "maven-metadata*" \
+            -not -name "*.asc" \
             -not -name "*.md5" \
             -not -name "*.sha1" \
             -not -name "*.sha256" \
             -not -name "*.sha512" \
             | while IFS= read -r f; do
-              mkdir -p "${{ github.workspace }}/maven-staging/$(dirname "$f")"
-              cp "$f" "${{ github.workspace }}/maven-staging/$f"
+              mkdir -p "$GITHUB_WORKSPACE/maven-staging/$(dirname "$f")"
+              cp "$f" "$GITHUB_WORKSPACE/maven-staging/$f"
             done
-          echo "Staged $(find "${{ github.workspace }}/maven-staging" -type f | wc -l) files for attestation"
+          find "$GITHUB_WORKSPACE/maven-staging" -type f | sed "s|^$GITHUB_WORKSPACE/maven-staging/||" | sort
 
-      - name: Attest Maven artifacts
-        if: inputs.dry_run != true
+      - name: Attest the staged artifacts
+        if: env.DRY_RUN != 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: maven-staging/**/*
 
       - name: Check Maven Central state
-        # Probe whether this version is already on Maven Central. If it is,
-        # the publish step below skips: Sonatype rejects re-uploads with
-        # "component already exists", which turns a re-run of a partially
-        # failed release (published to Central, then died before the GitHub
-        # release — the v0.5.0 outage run) into a hard failure. With this
-        # guard a plain re-run or a dispatch recovers safely.
-        id: mc_check
+        # Sonatype rejects a re-upload, so a re-run after a partial release skips the publish.
+        id: central
+        env:
+          V: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.ver.outputs.version }}"
-          HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
-            "https://repo1.maven.org/maven2/org/meshtastic/mqtt-client-core/$VERSION/mqtt-client-core-$VERSION.pom")
-          echo "Maven Central POM probe for v$VERSION: HTTP $HTTP"
-          if [ "$HTTP" = "200" ]; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::v$VERSION already on Maven Central — skipping publish step."
-          else
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          # Only a 404 means unpublished; anything else stops the release rather than guess.
+          for _ in 1 2 3 4 5; do
+            HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
+              "https://repo1.maven.org/maven2/org/meshtastic/mqtt-client-core/$V/mqtt-client-core-$V.pom" || echo 000)
+            echo "Maven Central POM probe for $V: HTTP $HTTP"
+            case "$HTTP" in
+              200) echo "published=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+              404) echo "published=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            esac
+            sleep 20
+          done
+          echo "::error::Maven Central did not answer 200 or 404 for $V"
+          exit 1
+
+      - name: Push the release tag
+        if: env.DRY_RUN != 'true'
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then
+            echo "v$V already on origin"
+            exit 0
           fi
+          git push origin "refs/tags/v$V"
 
       - name: Publish to Maven Central
-        if: steps.mc_check.outputs.already_published == 'false' && inputs.dry_run != true
-        run: ./gradlew publishAllPublicationsToMavenCentralRepository --stacktrace
+        if: env.DRY_RUN != 'true' && steps.central.outputs.published != 'true'
+        run: >-
+          ./gradlew publishAndReleaseToMavenCentral
+          -PVERSION_NAME=${{ steps.version.outputs.version }} --no-configuration-cache --stacktrace
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.OSSRH_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.OSSRH_PASSWORD }}
@@ -189,20 +223,27 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
 
-      - name: Create GitHub Release
-        # tag_name is explicit because on workflow_dispatch github.ref is a
-        # branch, not the release tag. For an existing release (e.g. one
-        # created manually after a failed run) this updates it in place.
-        if: inputs.dry_run != true
+      - name: Create or update the GitHub Release
+        if: env.DRY_RUN != 'true'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: v${{ steps.ver.outputs.version }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
           body_path: release-notes.md
+
+      - name: Dry-run summary
+        if: env.DRY_RUN == 'true'
+        run: echo "dry run passed every gate for ${{ steps.version.outputs.version }}; nothing was tagged, published or released"
 
   sample-artifacts:
     name: Build sample (${{ matrix.label }})
-    needs: [publish]
+    needs: [release]
     if: inputs.dry_run != true
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -233,7 +274,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.publish.outputs.ref }}
+          ref: ${{ needs.release.outputs.sha }}
           submodules: true
           fetch-depth: 0
 
@@ -244,7 +285,7 @@ jobs:
 
       - name: Build sample artifacts
         shell: bash
-        run: ./gradlew ${{ matrix.tasks }} --stacktrace
+        run: ./gradlew ${{ matrix.tasks }} -PVERSION_NAME=${{ needs.release.outputs.version }} --stacktrace
 
       - name: Zip wasmJs browser distribution
         if: matrix.web_zip == true
@@ -271,13 +312,13 @@ jobs:
             cp mqtt-sample-web-wasmjs.zip release-assets/
           fi
           ls -la release-assets/
-          echo "count=$(ls release-assets/ | wc -l)" >> "$GITHUB_OUTPUT"
+          echo "count=$(find release-assets -type f | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
 
       - name: Attach to GitHub Release
         if: steps.collect.outputs.count != '0'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: v${{ needs.publish.outputs.version }}
+          tag_name: v${{ needs.release.outputs.version }}
           files: release-assets/*
           fail_on_unmatched_files: false
 
@@ -289,9 +330,10 @@ jobs:
 
   sbom:
     name: SBOM & Provenance
-    needs: [publish]
+    needs: [release]
     if: inputs.dry_run != true
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
@@ -299,7 +341,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.publish.outputs.ref }}
+          ref: ${{ needs.release.outputs.sha }}
           submodules: true
           fetch-depth: 0
 
@@ -321,11 +363,11 @@ jobs:
 
       - name: Attach SBOMs to GitHub Release
         # anchore/sbom-action only auto-uploads release assets on tag/release
-        # events; on workflow_dispatch (recovery/backfill) attach explicitly.
+        # events; on workflow_dispatch attach explicitly.
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
-          tag_name: v${{ needs.publish.outputs.version }}
+          tag_name: v${{ needs.release.outputs.version }}
           files: |
             sbom.cdx.json
             sbom.spdx.json

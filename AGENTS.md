@@ -205,6 +205,7 @@ Honor the server's Receive Maximum property — do not exceed the allowed number
 - The vanniktech `maven-publish` plugin auto-creates per-target publications (e.g., `mqtt-client-core-jvm`, `mqtt-client-core-iosarm64`) and a root `kotlinMultiplatform` publication per module.
 - **Android publishing** requires the `android {}` block (Android Gradle KMP Library Plugin, `com.android.kotlin.multiplatform.library`) in each library module's `build.gradle.kts`. Configure `namespace`, `compileSdk`, and `minSdk` inside it. Without this, Android artifacts will not be published. `androidLibrary {}` is the deprecated name for the same block.
 - For Apple platforms, Maven publishes `.klib` artifacts. If XCFramework distribution is needed separately, that is a distinct build step (`assembleXCFramework`), not part of Maven publishing.
+- A release is a merged release PR plus a dispatch of `release.yml`, which creates the `vX.Y.Z` tag; see `RELEASING.md`. Cut changelog sections with `scripts/changelog.sh`, never by re-rendering the file.
 
 <git_and_prs>
 - **Commit Format:** Conventional Commits — `<type>(<scope>): <subject>`.
