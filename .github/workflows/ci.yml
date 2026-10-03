@@ -196,7 +196,7 @@ jobs:
       - name: Compute snapshot version
         id: version
         run: |
-          TAG_VERSION=$(git describe --tags --match 'v*' --abbrev=0 | sed 's/^v//')
+          TAG_VERSION=$(git describe --tags --match 'v*' --exclude 'v*-*' --abbrev=0 | sed 's/^v//')
           IFS='.' read -r major minor patch <<< "$TAG_VERSION"
           SNAPSHOT_VERSION="${major}.${minor}.$((patch + 1))-SNAPSHOT"
           echo "snapshot=$SNAPSHOT_VERSION" >> "$GITHUB_OUTPUT"
