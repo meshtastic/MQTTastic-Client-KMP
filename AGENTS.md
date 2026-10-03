@@ -6,7 +6,7 @@ You are an expert Kotlin Multiplatform engineer working on MQTTastic-Client-KMP,
 
 <context_and_memory>
 - **Project:** `org.meshtastic:mqtt-client-core` plus per-transport modules (`-transport-tcp`, `-transport-ws`) and a `-bom` — production-grade MQTT 5.0 and 3.1.1 client for Kotlin Multiplatform (JVM, Android, iOS, macOS, Linux, Windows, wasmJs).
-- **Stack:** Kotlin 2.4.10, Gradle 9.6.1, Ktor 3.5.1, kotlinx-coroutines 1.11.0, kotlinx-io-bytestring 0.9.1. Zero external deps beyond these.
+- **Stack:** Kotlin, Gradle, Ktor, kotlinx-coroutines and kotlinx-io-bytestring; versions live in `gradle/libs.versions.toml` and the Gradle wrapper in `gradle/wrapper/gradle-wrapper.properties`. Zero external deps beyond these.
 - **Reference Spec:** [OASIS MQTT 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html) and [OASIS MQTT 3.1.1](http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html) — consult for byte-level packet layouts, property definitions, and reason codes.
 </context_and_memory>
 
@@ -51,12 +51,11 @@ build-logic/convention     mqtt.kmp.library + mqtt.publishing convention plugins
 ```
 
 Each library module applies `applyDefaultHierarchyTemplate()` (via `mqtt.kmp.library`), so
-`nativeMain`/`appleMain`/`linuxMain`/`mingwMain` are auto-created. macosArm64 only (macosX64
-deprecated in Kotlin 2.3.20). The one custom intermediate source set is `:transport-ws`'s `cioMain`
+`nativeMain`/`appleMain`/`linuxMain`/`mingwMain` are auto-created. macOS is macosArm64 only.
+The one custom intermediate source set is `:transport-ws`'s `cioMain`
 (jvm + android + apple + linux), which holds the single CIO `HttpClient` builder and the TLS trust
-plumbing (`applyWsTls` and the `configurePlatformTrust` expect/actuals). The old `nonWebMain` set is
-gone: `:transport-tcp` simply omits the wasmJs target, so its `commonMain` is effectively the old
-"non-web" set.
+plumbing (`applyWsTls` and the `configurePlatformTrust` expect/actuals). `:transport-tcp` omits the
+wasmJs target, so its `commonMain` is non-web code.
 
 ### Packet codec pipeline
 
@@ -82,7 +81,7 @@ All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2
 ./gradlew jvmTest --tests "org.meshtastic.mqtt.MqttEncoderDecoderTest"
 
 # Single test method:
-./gradlew jvmTest --tests "org.meshtastic.mqtt.MqttEncoderDecoderTest.encodeConnectPacket"
+./gradlew jvmTest --tests "org.meshtastic.mqtt.MqttEncoderDecoderTest.connectMinimal"
 
 # Formatting & linting:
 ./gradlew spotlessCheck            # check formatting
@@ -96,7 +95,7 @@ All protocol features are fully implemented: 15 MQTT 5.0 packet types, QoS 0/1/2
 ./gradlew koverHtmlReport          # generate HTML coverage report
 
 # Documentation:
-./gradlew dokkaGeneratePublicationHtml  # generate API docs to library/build/dokka/html/
+./gradlew dokkaGeneratePublicationHtml  # generate aggregated API docs to build/dokka/html/
 
 # Full baseline verification:
 ./gradlew spotlessCheck detektAll allTests apiCheck koverVerify
@@ -113,7 +112,6 @@ Build system: Kotlin DSL (`build.gradle.kts`) with version catalog (`gradle/libs
 
 <rules>
 - **No Framework Bleed:** NEVER import `java.*`, `android.*`, or any platform API in `commonMain`. Use KMP equivalents: `kotlinx.coroutines.sync.Mutex` for locks, `kotlinx.io` or Ktor's `ByteReadChannel`/`ByteWriteChannel` for I/O.
-- **No Lazy Coding:** DO NOT use placeholders like `// ... existing code ...`. Always provide complete, valid code blocks for the sections you modify.
 - **Dependency Discipline:** Zero dependencies beyond Ktor + kotlinx-coroutines + kotlinx-io-bytestring (already a transitive Ktor dependency). Check `gradle/libs.versions.toml` before adding anything. Prefer removing dependencies over adding them.
 - **Zero Lint Tolerance:** A task is incomplete if `detektAll` fails or `spotlessCheck` does not pass.
 - **Spec Compliance:** Every packet encoder/decoder must match the byte-level layout in the OASIS MQTT 5.0 specification exactly. When in doubt, cite the relevant spec section number.
@@ -205,7 +203,7 @@ Honor the server's Receive Maximum property — do not exceed the allowed number
   - `mqtt-client-bom` (a `java-platform` BOM pinning the above to one version)
 - Supported project targets: JVM, Android, iOS (iosArm64, iosSimulatorArm64), macOS (macosArm64), Linux (linuxX64, linuxArm64), Windows (mingwX64), wasmJs (`:transport-tcp` omits wasmJs).
 - The vanniktech `maven-publish` plugin auto-creates per-target publications (e.g., `mqtt-client-core-jvm`, `mqtt-client-core-iosarm64`) and a root `kotlinMultiplatform` publication per module.
-- **Android publishing** requires the `android {}` block (Android Gradle KMP Library Plugin, `com.android.kotlin.multiplatform.library`) in each library module's `build.gradle.kts`. Configure `namespace`, `compileSdk`, and `minSdk` inside it. Without this, Android artifacts will not be published. (The older `androidLibrary {}` block name is deprecated since AGP 9.1.0-alpha09 — use `android {}` on AGP 8.12+.)
+- **Android publishing** requires the `android {}` block (Android Gradle KMP Library Plugin, `com.android.kotlin.multiplatform.library`) in each library module's `build.gradle.kts`. Configure `namespace`, `compileSdk`, and `minSdk` inside it. Without this, Android artifacts will not be published. `androidLibrary {}` is the deprecated name for the same block.
 - For Apple platforms, Maven publishes `.klib` artifacts. If XCFramework distribution is needed separately, that is a distinct build step (`assembleXCFramework`), not part of Maven publishing.
 
 <git_and_prs>
