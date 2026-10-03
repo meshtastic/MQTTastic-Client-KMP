@@ -36,6 +36,7 @@ jobs:
       id-token: write
       attestations: write
       checks: read
+      statuses: read
     env:
       DRY_RUN: ${{ inputs.dry_run || false }}
     outputs:
@@ -53,6 +54,11 @@ jobs:
         env:
           REQUESTED: ${{ inputs.version || github.ref_name }}
         run: |
+          # A dispatch takes the bare version so the concurrency group above is canonical.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "${REQUESTED#v}" != "$REQUESTED" ]; then
+            echo "::error::pass the version without a leading v: ${REQUESTED#v}"
+            exit 1
+          fi
           V="${REQUESTED#v}"
           # settings.gradle.kts reads only vX.Y.Z tags as releases, so nothing else can release.
           if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -180,10 +186,19 @@ jobs:
         env:
           V: ${{ steps.version.outputs.version }}
         run: |
-          HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
-            "https://repo1.maven.org/maven2/org/meshtastic/mqtt-client-core/$V/mqtt-client-core-$V.pom")
-          echo "Maven Central POM probe for $V: HTTP $HTTP"
-          echo "published=$([ "$HTTP" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          # Only a 404 means unpublished; anything else stops the release rather than guess.
+          for _ in 1 2 3 4 5; do
+            HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
+              "https://repo1.maven.org/maven2/org/meshtastic/mqtt-client-core/$V/mqtt-client-core-$V.pom" || echo 000)
+            echo "Maven Central POM probe for $V: HTTP $HTTP"
+            case "$HTTP" in
+              200) echo "published=true" >> "$GITHUB_OUTPUT"; exit 0 ;;
+              404) echo "published=false" >> "$GITHUB_OUTPUT"; exit 0 ;;
+            esac
+            sleep 20
+          done
+          echo "::error::Maven Central did not answer 200 or 404 for $V"
+          exit 1
 
       - name: Push the release tag
         if: env.DRY_RUN != 'true'

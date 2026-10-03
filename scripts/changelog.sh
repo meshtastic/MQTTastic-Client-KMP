@@ -26,23 +26,38 @@ cmd="$1"
 version="${2#v}"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || die "'$2' is not a SemVer version"
 
+# Shared awk: read the file into lines[1..count] and set footer to the first line of the
+# trailing block of "[x]: url" link definitions (count + 1 when there is none). A link
+# definition inside a section is prose, not footer.
+# shellcheck disable=SC2016 # an awk program, expanded by awk
+read_file='
+  function starts(s, p) { return substr(s, 1, length(p)) == p }
+  function islink(s) { return s ~ /^\[[^]]+\]: / }
+  function isblank(s) { return s ~ /^[[:space:]]*$/ }
+  { lines[++count] = $0 }
+  function find_footer(   i) {
+    footer = count + 1
+    for (i = count; i >= 1 && (isblank(lines[i]) || islink(lines[i])); i--)
+      if (islink(lines[i])) footer = i
+  }
+'
+
 # Body of the section headed "## [<version>]", up to the next "## " heading or the link footer,
 # with leading and trailing blank lines dropped.
 section() {
-  awk -v want="$1" '
-    function starts(s, p) { return substr(s, 1, length(p)) == p }
-    starts($0, "## ") {
-      if (inside) exit
-      h = "## [" want "]"
-      if ($0 == h || starts($0, h " ")) { inside = 1; found = 1; next }
-    }
-    inside && /^\[[^]]+\]: / { exit }
-    inside { lines[++n] = $0 }
+  awk -v want="$1" "$read_file"'
     END {
+      find_footer()
+      h = "## [" want "]"
+      for (i = 1; i < footer; i++) {
+        if (inside && starts(lines[i], "## ")) break
+        if (inside) body[++n] = lines[i]
+        else if (lines[i] == h || starts(lines[i], h " ")) { inside = 1; found = 1 }
+      }
       if (!found) exit 3
-      first = 1; while (first <= n && lines[first] ~ /^[[:space:]]*$/) first++
-      last = n;  while (last >= first && lines[last] ~ /^[[:space:]]*$/) last--
-      for (i = first; i <= last; i++) print lines[i]
+      first = 1; while (first <= n && isblank(body[first])) first++
+      last = n;  while (last >= first && isblank(body[last])) last--
+      for (i = first; i <= last; i++) print body[i]
     }
   ' "$file"
 }
@@ -67,35 +82,38 @@ case "$cmd" in
 
     tmp="$(mktemp "${file}.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
-    awk -v v="$version" -v d="$date" '
-      function starts(s, p) { return substr(s, 1, length(p)) == p }
-      # The newest released version, for the compare link.
-      starts($0, "## [") && $0 != "## [Unreleased]" && prev == "" {
-        prev = substr($0, 5); sub(/\].*/, "", prev)
-      }
-      # Repository base from any existing GitHub link in the footer.
-      /^\[[^]]+\]: https:\/\/github\.com\// && base == "" {
-        base = $0; sub(/^\[[^]]+\]: /, "", base)
-        n = split(base, p, "/"); base = p[1] "//" p[3] "/" p[4] "/" p[5]
-      }
-      { lines[++count] = $0 }
+    awk -v v="$version" -v d="$date" "$read_file"'
       END {
+        find_footer()
+        for (i = 1; i < footer; i++) {
+          # The newest released version, for the compare link.
+          if (prev == "" && starts(lines[i], "## [") && lines[i] != "## [Unreleased]") {
+            prev = substr(lines[i], 5); sub(/\].*/, "", prev)
+          }
+        }
+        for (i = footer; i <= count && base == ""; i++) {
+          # Repository base from an existing GitHub link in the footer.
+          if (lines[i] ~ /^\[[^]]+\]: https:\/\/github\.com\//) {
+            base = lines[i]; sub(/^\[[^]]+\]: /, "", base)
+            split(base, p, "/"); base = p[1] "//" p[3] "/" p[4] "/" p[5]
+          }
+        }
         if (prev == "") link = base "/releases/tag/v" v
         else link = base "/compare/v" prev "...v" v
         added = 0
         for (i = 1; i <= count; i++) {
           line = lines[i]
-          if (line == "## [Unreleased]") {
+          if (i < footer && line == "## [Unreleased]") {
             print line; print ""; print "## [" v "] - " d
             continue
           }
-          if (base != "" && starts(line, "[Unreleased]: ")) {
+          if (i >= footer && base != "" && starts(line, "[Unreleased]: ")) {
             print "[Unreleased]: " base "/compare/v" v "...HEAD"
             print "[" v "]: " link
             added = 1
             continue
           }
-          if (base != "" && !added && line ~ /^\[[^]]+\]: /) {
+          if (i >= footer && base != "" && !added && islink(line)) {
             print "[" v "]: " link
             added = 1
           }

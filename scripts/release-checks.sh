@@ -41,11 +41,19 @@ green_ci() {
   for check in "${checks[@]}"; do
     while :; do
       # check_name filters server-side; the unfiltered list is paginated and can hide the run.
-      if ! conclusion="$(gh api -X GET "repos/$repo/commits/$sha/check-runs" \
-        -f check_name="$check" --jq '[.check_runs[].conclusion] | if length == 0 then "" else (map(. // "pending") | first) end')"; then
+      # A re-run adds a run under the same name, so the newest one decides.
+      if ! conclusion="$(gh api -X GET "repos/$repo/commits/$sha/check-runs" -f check_name="$check" \
+        --jq '.check_runs | sort_by(.started_at) | last | if . == null then "" else (.conclusion // "pending") end')"; then
         echo "::warning::check-runs query failed for '$check'; retrying"
-        conclusion=""
+        conclusion="pending"
       fi
+      # A ruleset may require a commit status rather than a check run.
+      if [ -z "$conclusion" ] && ! conclusion="$(gh api "repos/$repo/commits/$sha/status" |
+        jq -r --arg c "$check" '[.statuses[] | select(.context == $c) | .state] | first // ""')"; then
+        echo "::warning::status query failed for '$check'; retrying"
+        conclusion="pending"
+      fi
+      # skipped and neutral pass, as they do for the ruleset itself.
       case "$conclusion" in
         success | skipped | neutral)
           echo "ok   $check ($conclusion)"
