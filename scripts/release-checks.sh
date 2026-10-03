@@ -23,32 +23,44 @@ green_ci() {
   local sha="$1"
   shift
   local repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}"
+  # checks[i] is a required context and apps[i] the app the ruleset pins it to (empty: any).
   # No mapfile: macOS runners ship Bash 3.2.
-  local -a checks=()
-  local name
+  local -a checks=() apps=()
+  local name app
   if [ $# -gt 0 ]; then
-    checks=("$@")
+    for name in "$@"; do
+      checks+=("$name")
+      apps+=("")
+    done
   else
-    while IFS= read -r name; do
-      [ -n "$name" ] && checks+=("$name")
+    while IFS=$'\t' read -r name app; do
+      [ -n "$name" ] || continue
+      checks+=("$name")
+      apps+=("$app")
     done < <(gh api "repos/$repo/rules/branches/main" \
-      --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context')
+      --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[] | "\(.context)\t\(.integration_id // "")"')
   fi
   [ ${#checks[@]} -gt 0 ] || die "no required checks on main and none named; refusing to release unchecked"
 
   local deadline=$((SECONDS + ${GREEN_CI_TIMEOUT:-2700}))
-  local check conclusion
-  for check in "${checks[@]}"; do
+  local i check conclusion
+  local -a filter
+  for ((i = 0; i < ${#checks[@]}; i++)); do
+    check="${checks[$i]}"
+    app="${apps[$i]}"
+    filter=(-f check_name="$check")
+    # Only the app the ruleset names may satisfy the check, as for the ruleset itself.
+    [ -z "$app" ] || filter+=(-f app_id="$app")
     while :; do
       # check_name filters server-side; the unfiltered list is paginated and can hide the run.
       # A re-run adds a run under the same name, so the newest one decides.
-      if ! conclusion="$(gh api -X GET "repos/$repo/commits/$sha/check-runs" -f check_name="$check" \
+      if ! conclusion="$(gh api -X GET "repos/$repo/commits/$sha/check-runs" "${filter[@]}" \
         --jq '.check_runs | sort_by(.started_at) | last | if . == null then "" else (.conclusion // "pending") end')"; then
         echo "::warning::check-runs query failed for '$check'; retrying"
         conclusion="pending"
       fi
-      # A ruleset may require a commit status rather than a check run.
-      if [ -z "$conclusion" ] && ! conclusion="$(gh api "repos/$repo/commits/$sha/status" |
+      # A context with no pinned app may be a commit status rather than a check run.
+      if [ -z "$conclusion" ] && [ -z "$app" ] && ! conclusion="$(gh api "repos/$repo/commits/$sha/status" |
         jq -r --arg c "$check" '[.statuses[] | select(.context == $c) | .state] | first // ""')"; then
         echo "::warning::status query failed for '$check'; retrying"
         conclusion="pending"
