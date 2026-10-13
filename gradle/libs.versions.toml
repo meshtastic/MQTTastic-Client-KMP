@@ -22,7 +22,7 @@ bcv = "0.18.2"
 dokka = "2.2.0"
 kover = "0.9.11"
 meshtastic-protobufs = "2.8.1"
-konsist = "0.17.3"
+konsist = "0.18.1"
 javaToolchain = "11"
 
 [libraries]
