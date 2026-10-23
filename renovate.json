@@ -1,5 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Org-wide policy for published KMP libraries — automerge baseline, 3-day soak, kotlin-toolchain and first-party holds. See meshtastic/.github:kmp-library.json for the rules and their rationale. The org.meshtastic:protobufs dependency is a Maven artifact here (the git submodule was removed in #50), so the preset's first-party hold governs it; no local overrides needed.",
-  "extends": ["local>meshtastic/.github:kmp-library"]
+  "description": "Org-wide policy for published KMP libraries — automerge baseline, 3-day soak, kotlin-toolchain and first-party holds. See meshtastic/.github:kmp-library.json for the rules and their rationale. The org.meshtastic:protobufs dependency is a Maven artifact here (the git submodule was removed in #50), so the preset's first-party hold governs it. The one local rule pins konsist.",
+  "extends": ["local>meshtastic/.github:kmp-library"],
+  "packageRules": [
+    {
+      "description": "konsist 0.18 ships JVM 17+ variants only, and jvmTest compiles against the library's JVM 11 toolchain.",
+      "matchPackageNames": ["com.lemonappdev:konsist"],
+      "allowedVersions": "<0.18"
+    }
+  ]
 }
