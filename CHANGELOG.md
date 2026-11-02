@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-02
+
+### Fixed
+
+- A 5.0 config with `topicAliasMaximum > 0` falls back to 3.1.1 instead of failing validation.
+  The alias maximum only offers to accept aliases, so the fallback drops it, and the connect
+  fallback, the reconnect after it and `probe` all build the 3.1.1 config the same way. A
+  reconnect after a fallback no longer fails on the alias offer either.
+- `validateV311Compatibility` rejects `will.userProperties`, which 3.1.1 cannot send. A 3.1.1
+  fallback used to drop them silently; a config that sets them now stays on 5.0.
+
 ## [0.9.0] - 2026-09-21
 
 ### Breaking
@@ -437,7 +448,8 @@ run failed to build.
 - **CI/CD** — GitHub Actions workflows for build/test matrix and Maven Central publishing, [CodeQL](https://codeql.github.com/) security scanning (`java-kotlin` + `actions`, weekly, `security-and-quality` queries), and a release pipeline that ships sample app artifacts (`.apk`, linux-x64/arm64 `.deb`, `.dmg`, `.msi`, and a `wasmJs` browser zip) across a per-OS runner matrix
 - **Compose compiler metrics** — opt-in reports on the sample modules via `-PenableComposeMetrics=true`
 
-[Unreleased]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/meshtastic/MQTTastic-Client-KMP/compare/v0.8.0...v0.8.1
