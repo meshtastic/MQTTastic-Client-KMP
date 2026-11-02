@@ -176,6 +176,14 @@ public data class MqttConfig(
     }
 
     /**
+     * This config as a 3.1.1 fallback. [topicAliasMaximum] only offers to accept aliases, so it is dropped rather than
+     * blocking the fallback; options that change what the client sends still fail [validateV311Compatibility].
+     *
+     * @throws IllegalArgumentException if any other 5.0-only option is configured.
+     */
+    internal fun v311Fallback(): MqttConfig = copy(protocolVersion = MqttProtocolVersion.V3_1_1, topicAliasMaximum = 0)
+
+    /**
      * Check whether this config is compatible with MQTT 3.1.1.
      *
      * Called eagerly when [protocolVersion] is [MqttProtocolVersion.V3_1_1], and
@@ -234,6 +242,9 @@ public data class MqttConfig(
             }
             require(!w.payloadFormatIndicator) {
                 "will payloadFormatIndicator is not supported in MQTT 3.1.1"
+            }
+            require(w.userProperties.isEmpty()) {
+                "will userProperties are not supported in MQTT 3.1.1"
             }
         }
     }

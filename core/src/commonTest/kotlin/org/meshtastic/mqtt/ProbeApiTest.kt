@@ -235,6 +235,26 @@ class ProbeApiTest {
         }
 
     @Test
+    fun probe_topicAliasOffer_stillFallsBackTo311() =
+        runTest {
+            val v5Transport = FakeTransport()
+            v5Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+            val v311Transport = FakeTransport(MqttProtocolVersion.V3_1_1)
+            v311Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            val transports = mutableListOf<MqttTransport>(v5Transport, v311Transport)
+
+            val result =
+                runProbeNegotiating(
+                    probeConfig().copy(topicAliasMaximum = 16),
+                    { transports.removeAt(0) },
+                    endpoint,
+                    timeoutMs = 5_000,
+                )
+
+            assertIs<ProbeResult.Success>(result)
+        }
+
+    @Test
     fun probe_transportFailureBeforeConnectWritten_doesNotFallBack() =
         runTest {
             // TCP-level failure before the CONNECT packet exists: no retry, one transport.

@@ -19,6 +19,7 @@ package org.meshtastic.mqtt
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -776,6 +777,15 @@ class Mqtt311Test {
             withWillContentType.validateV311Compatibility()
         }
 
+        val withWillUserProperties =
+            MqttConfig(
+                clientId = "test",
+                will = WillConfig(topic = "t", payload = ByteString(), userProperties = listOf("k" to "v")),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            withWillUserProperties.validateV311Compatibility()
+        }
+
         // Should pass — will with basic fields only
         val withBasicWill =
             MqttConfig(
@@ -881,6 +891,74 @@ class Mqtt311Test {
             assertEquals(MqttProtocolVersion.V5_0, client.negotiatedProtocolVersion)
 
             client.close()
+        }
+
+    @Test
+    fun versionFallbackDropsTheTopicAliasOffer() =
+        runTest {
+            val v5Transport = FakeTransport(MqttProtocolVersion.V5_0)
+            val v311Transport = FakeTransport(MqttProtocolVersion.V3_1_1)
+            val transports = mutableListOf(v5Transport, v311Transport)
+            v5Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+            v311Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = true,
+                    topicAliasMaximum = 16,
+                )
+            val client = MqttClient(config, this) { transports.removeAt(0) }
+
+            client.connect(endpoint)
+            advanceUntilIdle()
+
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
+            assertEquals(MqttProtocolVersion.V3_1_1, client.negotiatedProtocolVersion)
+            assertEquals(16, (v5Transport.decodeSentPackets().first() as Connect).properties.topicAliasMaximum)
+
+            client.close()
+        }
+
+    @Test
+    fun reconnectAfterFallbackStaysOn311() =
+        runTest {
+            val v5Transport = FakeTransport(MqttProtocolVersion.V5_0)
+            val firstV311 = FakeTransport(MqttProtocolVersion.V3_1_1)
+            val secondV311 = FakeTransport(MqttProtocolVersion.V3_1_1)
+            val transports = mutableListOf(v5Transport, firstV311, secondV311)
+            v5Transport.enqueuePacket(ConnAck(reasonCode = ReasonCode.UNSUPPORTED_PROTOCOL_VERSION))
+            firstV311.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+            secondV311.enqueuePacket(ConnAck(reasonCode = ReasonCode.SUCCESS))
+
+            val config =
+                MqttConfig(
+                    clientId = "test-client",
+                    keepAliveSeconds = 0,
+                    negotiateVersion = true,
+                    topicAliasMaximum = 16,
+                    autoReconnect = true,
+                    maxReconnectAttempts = 3,
+                )
+            val client = MqttClient(config, this) { transports.removeAt(0) }
+
+            client.connect(endpoint)
+            advanceUntilIdle()
+            assertEquals(MqttProtocolVersion.V3_1_1, client.negotiatedProtocolVersion)
+
+            firstV311.receiveError = RuntimeException("Connection reset")
+            firstV311.enqueuePacket(PingResp)
+            advanceUntilIdle()
+            advanceTimeBy(10_000)
+            advanceUntilIdle()
+
+            assertTrue(transports.isEmpty(), "the reconnect opened a third transport")
+            assertEquals(ConnectionState.Connected, client.connectionState.value)
+            assertEquals(4, (secondV311.decodeSentPackets().first() as Connect).protocolLevel)
+
+            client.close()
+            advanceUntilIdle()
         }
 
     @Test
