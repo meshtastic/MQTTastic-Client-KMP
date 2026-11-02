@@ -133,12 +133,13 @@ internal suspend fun runProbeNegotiating(
     val v5Refused =
         attempt.closedBeforeConnAck ||
             (attempt.result as? ProbeResult.Rejected)?.reasonCode == ReasonCode.UNSUPPORTED_PROTOCOL_VERSION
-    val canFallBack =
-        config.negotiateVersion &&
-            config.protocolVersion == MqttProtocolVersion.V5_0 &&
-            runCatching { config.validateV311Compatibility() }.isSuccess
-    return if (v5Refused && canFallBack && remainingMs > 0) {
-        val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
+    val fallbackConfig =
+        if (config.negotiateVersion && config.protocolVersion == MqttProtocolVersion.V5_0) {
+            runCatching { config.v311Fallback() }.getOrNull()
+        } else {
+            null
+        }
+    return if (v5Refused && fallbackConfig != null && remainingMs > 0) {
         runProbeAttempt(fallbackConfig, createTransport, endpoint, remainingMs).result
     } else {
         attempt.result

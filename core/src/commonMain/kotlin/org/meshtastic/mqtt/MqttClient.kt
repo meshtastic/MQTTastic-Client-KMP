@@ -727,10 +727,13 @@ public class MqttClient
         private suspend fun connectInternal(endpoint: MqttEndpoint) {
             val effectiveVersion = negotiatedProtocolVersion
             val effectiveConfig =
-                if (effectiveVersion != config.protocolVersion) {
-                    config.copy(protocolVersion = effectiveVersion)
-                } else {
-                    config
+                when {
+                    effectiveVersion == config.protocolVersion -> config
+
+                    // A reconnect after a fallback must drop the same 5.0-only offers the fallback did.
+                    effectiveVersion == MqttProtocolVersion.V3_1_1 -> config.v311Fallback()
+
+                    else -> config.copy(protocolVersion = effectiveVersion)
                 }
 
             val transport = effectiveTransportFactory(endpoint)
@@ -755,14 +758,15 @@ public class MqttClient
                         }
                     }
                     // Validate the config is compatible with 3.1.1 before retrying
-                    try {
-                        config.validateV311Compatibility()
-                    } catch (validationErr: IllegalArgumentException) {
-                        log.error(TAG) {
-                            "Cannot fall back to MQTT 3.1.1: ${validationErr.message}"
+                    val fallbackConfig =
+                        try {
+                            config.v311Fallback()
+                        } catch (validationErr: IllegalArgumentException) {
+                            log.error(TAG) {
+                                "Cannot fall back to MQTT 3.1.1: ${validationErr.message}"
+                            }
+                            throw e // Re-throw original rejection
                         }
-                        throw e // Re-throw original rejection
-                    }
                     try {
                         transport.close()
                     } catch (
@@ -771,7 +775,6 @@ public class MqttClient
                         // Best-effort close
                     }
 
-                    val fallbackConfig = config.copy(protocolVersion = MqttProtocolVersion.V3_1_1)
                     val fallbackTransport = effectiveTransportFactory(endpoint)
                     val fallbackConn = MqttConnection(fallbackTransport, fallbackConfig, scope, log)
                     try {
