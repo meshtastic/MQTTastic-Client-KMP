@@ -243,6 +243,9 @@ public data class MqttConfig(
             require(!w.payloadFormatIndicator) {
                 "will payloadFormatIndicator is not supported in MQTT 3.1.1"
             }
+            require(w.userProperties.isEmpty()) {
+                "will userProperties are not supported in MQTT 3.1.1"
+            }
         }
     }
 

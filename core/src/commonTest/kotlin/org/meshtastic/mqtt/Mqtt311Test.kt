@@ -777,6 +777,15 @@ class Mqtt311Test {
             withWillContentType.validateV311Compatibility()
         }
 
+        val withWillUserProperties =
+            MqttConfig(
+                clientId = "test",
+                will = WillConfig(topic = "t", payload = ByteString(), userProperties = listOf("k" to "v")),
+            )
+        assertFailsWith<IllegalArgumentException> {
+            withWillUserProperties.validateV311Compatibility()
+        }
+
         // Should pass — will with basic fields only
         val withBasicWill =
             MqttConfig(
