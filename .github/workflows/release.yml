@@ -225,7 +225,7 @@ jobs:
 
       - name: Create or update the GitHub Release
         if: env.DRY_RUN != 'true'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
@@ -316,7 +316,7 @@ jobs:
 
       - name: Attach to GitHub Release
         if: steps.collect.outputs.count != '0'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: v${{ needs.release.outputs.version }}
           files: release-assets/*
@@ -365,7 +365,7 @@ jobs:
         # anchore/sbom-action only auto-uploads release assets on tag/release
         # events; on workflow_dispatch attach explicitly.
         if: github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: v${{ needs.release.outputs.version }}
           files: |
